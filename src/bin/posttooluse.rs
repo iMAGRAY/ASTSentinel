@@ -1057,13 +1057,18 @@ async fn main() -> Result<()> {
                 });
                 println!("{}", output);
             } else {
-                // For non-blocking, output ONLY reason field (no decision)
-                // This might work because Claude Code displays reason with newlines
+                // For non-blocking, output detailed analysis in additionalContext
+                let context_message = if analysis.issues.is_empty() {
+                    format!("{}\n\n✅ Отличная работа! Серьезных проблем не обнаружено.", compact_summary)
+                } else {
+                    format!("{}\n\nАнализ завершен: найденные проблемы отображены выше", compact_summary)
+                };
+                
                 let output = serde_json::json!({
                     "reason": compact_summary,  // Newlines should be preserved here!
                     "hookSpecificOutput": {
                         "hookEventName": "PostToolUse",
-                        "additionalContext": "OK"  // Still need this for schema
+                        "additionalContext": context_message
                     }
                 });
                 println!("{}", output);
