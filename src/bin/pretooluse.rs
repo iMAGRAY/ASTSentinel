@@ -7,6 +7,11 @@ use tokio;
 use serde_json;
 
 use rust_validation_hooks::*;
+use rust_validation_hooks::project_context::{
+    scan_project_structure,
+    format_project_structure_for_ai,
+    ScanConfig,
+};
 
 /// xAI Grok client for security validation
 struct GrokSecurityClient {
@@ -407,6 +412,38 @@ async fn perform_validation(config: &Config, content: &str, hook_input: &HookInp
     // Add project context from environment
     if let Ok(project_dir) = std::env::var("CLAUDE_PROJECT_DIR") {
         prompt = format!("{}\n\nPROJECT: {}", prompt, project_dir);
+    }
+    
+    // Add project structure context
+    // Try multiple sources for working directory
+    let working_dir = if let Some(cwd) = &hook_input.cwd {
+        cwd.clone()
+    } else if let Ok(project_dir) = std::env::var("CLAUDE_PROJECT_DIR") {
+        project_dir
+    } else if let Ok(current) = std::env::current_dir() {
+        current.to_string_lossy().to_string()
+    } else {
+        ".".to_string()
+    };
+    
+    // Scan project structure with limited scope for performance
+    let scan_config = ScanConfig {
+        max_files: 800,  // Increased limit per user request
+        max_depth: 5,
+        include_hidden_files: false,
+        follow_symlinks: false,
+    };
+    
+    match scan_project_structure(&working_dir, Some(scan_config)) {
+        Ok(structure) => {
+            let project_context = format_project_structure_for_ai(&structure, 1500);
+            prompt = format!("{}\n\nPROJECT STRUCTURE:\n{}", prompt, project_context);
+            eprintln!("PreToolUse: Added project structure context ({} files, {} dirs)", 
+                structure.total_files, structure.directories.len());
+        }
+        Err(e) => {
+            eprintln!("PreToolUse: Could not scan project structure: {}", e);
+        }
     }
 
     // Initialize Grok client

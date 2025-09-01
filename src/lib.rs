@@ -2,6 +2,9 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Common utilities for Claude Code hooks
+pub mod project_context;
+
 /// Claude Code Hook input data structure - actual fields from Claude Code
 #[derive(Debug, Deserialize)]
 pub struct HookInput {
