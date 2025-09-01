@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 /// Common utilities for Claude Code hooks
 pub mod project_context;
-pub mod deception_detector;
 pub mod smart_deception_detector;
 
 /// Claude Code Hook input data structure - actual fields from Claude Code

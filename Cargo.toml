@@ -23,6 +23,7 @@ clap = { version = "4.0", features = ["derive"] }
 dotenv = "0.15"
 chrono = "0.4"
 regex = "1.10"
+lazy_static = "1.4"
 
 [dev-dependencies]
 tempfile = "3.8"

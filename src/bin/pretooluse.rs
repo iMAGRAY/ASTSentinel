@@ -12,7 +12,7 @@ use rust_validation_hooks::project_context::{
     format_project_structure_for_ai,
     ScanConfig,
 };
-// Use smart detector instead of old one
+// Use smart detector
 use rust_validation_hooks::smart_deception_detector::{
     detect_deception,
     DeceptionSeverity,
@@ -316,6 +316,7 @@ fn check_file_structure(file_path: &str, transcript_context: Option<&str>) -> Op
     None // Let AI handle everything else
 }
 
+
 /// Main PreToolUse hook execution
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -386,7 +387,7 @@ async fn main() -> Result<()> {
             let (decision, reason) = if structure_issue.starts_with("DENY:") {
                 ("deny".to_string(), structure_issue.replace("DENY: ", ""))
             } else {
-                ("ask".to_string(), format!("Project structure: {}. Confirm if this placement is intentional.", structure_issue))
+                ("deny".to_string(), format!("Project structure violation: {}. File placement violates project conventions.", structure_issue))
             };
             
             let output = PreToolUseOutput {
@@ -399,13 +400,16 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
             return Ok(());
         }
+        
+        // Duplicate detection removed - use smart_deception_detector instead
     }
 
     // Check for deceptive/mock code BEFORE sending to AI
     if matches!(hook_input.tool_name.as_str(), "Write" | "Edit" | "MultiEdit") && !content.is_empty() {
+        // Use smart deception detector
         let deception_report = detect_deception(&content, &file_path);
         
-        // Block critical deceptions immediately
+        // Block critical and high severity deceptions
         if deception_report.is_deceptive && 
            (deception_report.severity == DeceptionSeverity::Critical || 
             deception_report.severity == DeceptionSeverity::High) {
@@ -415,6 +419,7 @@ async fn main() -> Result<()> {
                 .map(|v| v.message.clone())
                 .collect::<Vec<_>>()
                 .join("; ");
+            
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -460,12 +465,27 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Skip validation for documentation files
+    if file_path.ends_with(".md") || file_path.ends_with(".rst") || 
+       file_path.ends_with(".txt") || file_path.contains("/docs/") ||
+       file_path.contains("\\docs\\") || file_path.contains("README") {
+        let output = PreToolUseOutput {
+            hook_specific_output: PreToolUseHookOutput {
+                hook_event_name: "PreToolUse".to_string(),
+                permission_decision: "allow".to_string(),
+                permission_decision_reason: Some("Documentation file - validation skipped".to_string()),
+            },
+        };
+        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        return Ok(());
+    }
+
     // Perform security validation with context
     match perform_validation(&config, &content, &hook_input).await {
         Ok(validation) => {
             let (decision, reason) = match validation.decision.as_str() {
                 "allow" => ("allow".to_string(), None),
-                "ask" => ("ask".to_string(), Some(validation.reason)),
+                "ask" => ("deny".to_string(), Some(format!("Security review required: {}", validation.reason))), // Convert ask to deny
                 "deny" => ("deny".to_string(), Some(validation.reason)),
                 _ => ("allow".to_string(), None), // Default to allow for unknown decisions
             };
@@ -480,16 +500,19 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
         }
         Err(e) => {
-            // Fail open on errors - allow without reason (per Claude Code Hooks spec)
+            // Fail secure on errors - block when validation fails
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
-                    permission_decision: "allow".to_string(),
-                    permission_decision_reason: None,
+                    permission_decision: "deny".to_string(),
+                    permission_decision_reason: Some(format!(
+                        "SECURITY VALIDATION FAILED: {} - Operation blocked for safety", 
+                        e
+                    )),
                 },
             };
             println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-            eprintln!("PreToolUse hook error: ⚠️ Security validation unavailable: {} - Operation allowed but not validated", e);
+            eprintln!("PreToolUse hook error: 🚨 Security validation failed: {} - Operation BLOCKED", e);
         }
     }
 

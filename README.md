@@ -1,0 +1,8 @@
+# README Test
+
+This should be allowed as documentation.
+
+Examples of patterns that normally get blocked:
+- TODO: Add feature
+- NOT IMPLEMENTED
+- mockData examples
