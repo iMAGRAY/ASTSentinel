@@ -630,6 +630,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
 }
 
 /// Format analysis into clean, structured output for terminal display
+#[allow(dead_code)]
 fn format_structured_analysis(analysis: &GrokCodeAnalysis) -> String {
     let mut output = String::new();
     
@@ -1131,7 +1132,7 @@ async fn main() -> Result<()> {
 }
 
 /// Perform code quality analysis using Grok-code-fast-1 with context
-async fn perform_analysis(config: &Config, content: &str, file_path: &str, hook_input: &HookInput) -> Result<GrokCodeAnalysis> {
+async fn perform_analysis(config: &Config, content: &str, _file_path: &str, hook_input: &HookInput) -> Result<GrokCodeAnalysis> {
     // Load analysis prompt
     let mut prompt = load_prompt("post_edit_validation.txt").await.context("Failed to load post-edit validation prompt")?;
     

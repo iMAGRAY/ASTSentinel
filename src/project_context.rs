@@ -1,8 +1,8 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Project structure representation for AI context
 #[derive(Debug, Serialize, Deserialize)]
@@ -360,7 +360,7 @@ fn is_code_file_extension(extension: &str) -> bool {
         
         // Programming languages
         "py" | "pyx" | "pyw" |
-        "rs" | "toml" |
+        "rs" |
         "java" | "kt" | "scala" |
         "cpp" | "cc" | "cxx" | "c" | "h" | "hpp" |
         "cs" | "vb" | "fs" |
@@ -372,13 +372,86 @@ fn is_code_file_extension(extension: &str) -> bool {
         "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "cmd" | "bat" |
         
         // Configuration and data
-        "json" | "yaml" | "yml" | "xml" | "toml" | "ini" | "conf" |
+        "json" | "yaml" | "yml" | "xml" | "ini" | "conf" | "toml" |
         "dockerfile" | "makefile" | "cmake" |
         "sql" | "graphql" | "proto" |
         
         // Documentation
         "md" | "rst" | "tex" | "adoc"
     )
+}
+
+/// Build a nested tree structure from flat directory paths
+/// Example: ["src", "src/bin", "tests", "tests/unit"] -> "src[bin],tests[unit]"
+fn format_directory_tree(directories: &[String]) -> String {
+    #[derive(Debug)]
+    struct DirNode {
+        name: String,
+        children: Vec<DirNode>,
+    }
+    
+    // Build tree structure from flat paths
+    fn build_tree(paths: &[String]) -> Vec<DirNode> {
+        let mut roots: Vec<DirNode> = Vec::new();
+        
+        // Sort paths to ensure parents come before children
+        let mut sorted_paths = paths.to_vec();
+        sorted_paths.sort();
+        
+        for path in sorted_paths {
+            let parts: Vec<&str> = path.split('/').collect();
+            insert_path(&mut roots, &parts);
+        }
+        
+        roots
+    }
+    
+    // Insert a path into the tree
+    fn insert_path(nodes: &mut Vec<DirNode>, parts: &[&str]) {
+        if parts.is_empty() {
+            return;
+        }
+        
+        let name = parts[0].to_string();
+        let remaining = &parts[1..];
+        
+        // Find or create node
+        let node = nodes.iter_mut().find(|n| n.name == name);
+        
+        if let Some(node) = node {
+            if !remaining.is_empty() {
+                insert_path(&mut node.children, remaining);
+            }
+        } else {
+            let mut new_node = DirNode {
+                name,
+                children: Vec::new(),
+            };
+            
+            if !remaining.is_empty() {
+                insert_path(&mut new_node.children, remaining);
+            }
+            
+            nodes.push(new_node);
+        }
+    }
+    
+    // Format tree to string recursively
+    fn format_nodes(nodes: &[DirNode]) -> String {
+        nodes.iter()
+            .map(|node| {
+                if node.children.is_empty() {
+                    node.name.clone()
+                } else {
+                    format!("{}[{}]", node.name, format_nodes(&node.children))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(",")
+    }
+    
+    let tree = build_tree(directories);
+    format_nodes(&tree)
 }
 
 /// Format project structure as ultra-compact string for AI context
@@ -391,72 +464,11 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
         structure.directories.len()
     ));
     
-    // Compact directory tree with grouped subdirectories to avoid repetition
+    // Compact directory tree with recursive nested structure
     if !structure.directories.is_empty() {
         output.push_str("D:");
-        
-        // Sort directories to ensure parent dirs come before children
-        let mut sorted_dirs = structure.directories.clone();
-        sorted_dirs.sort();
-        
-        // Group directories by parent
-        let mut dir_groups: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
-        let mut root_dirs = Vec::new();
-        
-        for dir in &sorted_dirs {
-            if let Some(slash_pos) = dir.rfind('/') {
-                // Has parent directory
-                let parent = &dir[..slash_pos];
-                let child = &dir[slash_pos + 1..];
-                dir_groups.entry(parent.to_string())
-                    .or_insert_with(Vec::new)
-                    .push(child.to_string());
-            } else {
-                // Root level directory
-                root_dirs.push(dir.clone());
-            }
-        }
-        
-        // Format output with grouped subdirectories
-        let mut formatted_dirs = Vec::new();
-        let mut processed = std::collections::HashSet::new();
-        
-        for root_dir in &root_dirs {
-            if let Some(children) = dir_groups.get(root_dir) {
-                // Has subdirectories - format as "parent/[child1,child2,...]"
-                formatted_dirs.push(format!("{}/[{}]", root_dir, children.join(",")));
-                processed.insert(root_dir.clone());
-                for child in children {
-                    processed.insert(format!("{}/{}", root_dir, child));
-                }
-            } else {
-                // No subdirectories - just the directory name
-                formatted_dirs.push(root_dir.clone());
-                processed.insert(root_dir.clone());
-            }
-        }
-        
-        // Add any remaining nested directories not yet processed
-        for (parent, children) in &dir_groups {
-            if !processed.contains(parent) {
-                // This is a nested directory not at root level
-                if children.len() > 1 {
-                    formatted_dirs.push(format!("{}/[{}]", parent, children.join(",")));
-                } else if children.len() == 1 {
-                    formatted_dirs.push(format!("{}/{}", parent, children[0]));
-                }
-                for child in children {
-                    processed.insert(format!("{}/{}", parent, child));
-                }
-            }
-        }
-        
-        // Output formatted directories
-        output.push_str(&formatted_dirs.join(","));
-        
-        if sorted_dirs.len() > processed.len() {
-            output.push_str(&format!(",+{}", sorted_dirs.len() - processed.len()));
-        }
+        let formatted = format_directory_tree(&structure.directories);
+        output.push_str(&formatted);
         output.push('\n');
     }
     
@@ -636,6 +648,44 @@ mod tests {
     }
     
     #[test]
+    fn test_format_directory_tree() {
+        // Test basic nesting
+        let dirs = vec![
+            "src".to_string(),
+            "src/bin".to_string(),
+            "tests".to_string(),
+            "tests/unit".to_string(),
+            "tests/integration".to_string(),
+        ];
+        
+        let result = format_directory_tree(&dirs);
+        assert_eq!(result, "src[bin],tests[integration,unit]");
+        
+        // Test deeper nesting
+        let dirs = vec![
+            "src".to_string(),
+            "src/bin".to_string(),
+            "src/bin/tools".to_string(),
+            "src/lib".to_string(),
+            "src/lib/utils".to_string(),
+            "src/lib/utils/helpers".to_string(),
+        ];
+        
+        let result = format_directory_tree(&dirs);
+        assert_eq!(result, "src[bin[tools],lib[utils[helpers]]]");
+        
+        // Test single directory
+        let dirs = vec!["src".to_string()];
+        let result = format_directory_tree(&dirs);
+        assert_eq!(result, "src");
+        
+        // Test empty input
+        let dirs: Vec<String> = vec![];
+        let result = format_directory_tree(&dirs);
+        assert_eq!(result, "");
+    }
+    
+    #[test]
     fn test_format_with_nested_directories() {
         let structure = ProjectStructure {
             root_path: "/test/project".to_string(),
@@ -668,10 +718,10 @@ mod tests {
         
         let formatted = format_project_structure_for_ai(&structure, 500);
         
-        // Check that nested directories are grouped to avoid repetition
-        // Now format is: tests/[integration,unit] instead of tests/integration,tests/unit
+        // Check that nested directories use recursive bracket notation
+        // Format: src[bin],tests[integration,unit]
         assert!(formatted.contains("D:"));
-        assert!(formatted.contains("src/[bin]")); // bin grouped under src
-        assert!(formatted.contains("tests/[integration,unit]")); // subdirs grouped under tests
+        assert!(formatted.contains("src[bin]")); // bin nested in src
+        assert!(formatted.contains("tests[integration,unit]")); // subdirs nested in tests
     }
 }

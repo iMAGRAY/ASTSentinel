@@ -12,6 +12,11 @@ use rust_validation_hooks::project_context::{
     format_project_structure_for_ai,
     ScanConfig,
 };
+// Use smart detector instead of old one
+use rust_validation_hooks::smart_deception_detector::{
+    detect_deception,
+    DeceptionSeverity,
+};
 
 /// xAI Grok client for security validation
 struct GrokSecurityClient {
@@ -273,6 +278,44 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
     Ok(result)
 }
 
+/// Simple check for obvious file placement issues
+fn check_file_structure(file_path: &str, transcript_context: Option<&str>) -> Option<String> {
+    // Normalize path separators
+    let path = file_path.replace('\\', "/").to_lowercase();
+    
+    // Check if user explicitly requested this location in current task
+    if let Some(context) = transcript_context {
+        let context_lower = context.to_lowercase();
+        // Look for explicit location requests
+        if context_lower.contains("in root") || 
+           context_lower.contains("in the root") ||
+           context_lower.contains("at root") ||
+           context_lower.contains("create it wherever") ||
+           context_lower.contains("put it anywhere") {
+            return None; // User explicitly requested, allow
+        }
+    }
+    
+    // Extract filename
+    let filename = path.split('/').last().unwrap_or(&path);
+    
+    // ONLY CHECK: Test files outside test directories
+    if filename.contains("test.") || filename.contains("_test.") || 
+       filename.contains(".spec.") || filename.contains("_spec.") {
+        // Check if NOT in test-related directories
+        // Path can start with test/tests or contain /test anywhere
+        let in_test_dir = path.starts_with("test") || path.contains("/test") || 
+                          path.starts_with("spec") || path.contains("/spec") ||
+                          path.contains("__test");
+        
+        if !in_test_dir {
+            return Some("DENY: Test files must be placed in test/tests/spec directories".to_string());
+        }
+    }
+    
+    None // Let AI handle everything else
+}
+
 /// Main PreToolUse hook execution
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -328,6 +371,67 @@ async fn main() -> Result<()> {
     let content = extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);
     let file_path = extract_file_path(&hook_input.tool_input);
 
+    // Check project structure for Write operations (not Edit/MultiEdit)
+    if hook_input.tool_name == "Write" && !file_path.is_empty() {
+        // Get transcript context for checking user intent
+        let transcript_context = if let Some(transcript_path) = &hook_input.transcript_path {
+            read_transcript_summary(transcript_path, 5, 500).ok()
+        } else {
+            None
+        };
+        
+        // Check if file placement violates project structure
+        if let Some(structure_issue) = check_file_structure(&file_path, transcript_context.as_deref()) {
+            // Check if it's a DENY case (starts with "DENY:")
+            let (decision, reason) = if structure_issue.starts_with("DENY:") {
+                ("deny".to_string(), structure_issue.replace("DENY: ", ""))
+            } else {
+                ("ask".to_string(), format!("Project structure: {}. Confirm if this placement is intentional.", structure_issue))
+            };
+            
+            let output = PreToolUseOutput {
+                hook_specific_output: PreToolUseHookOutput {
+                    hook_event_name: "PreToolUse".to_string(),
+                    permission_decision: decision,
+                    permission_decision_reason: Some(reason),
+                },
+            };
+            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            return Ok(());
+        }
+    }
+
+    // Check for deceptive/mock code BEFORE sending to AI
+    if matches!(hook_input.tool_name.as_str(), "Write" | "Edit" | "MultiEdit") && !content.is_empty() {
+        let deception_report = detect_deception(&content, &file_path);
+        
+        // Block critical deceptions immediately
+        if deception_report.is_deceptive && 
+           (deception_report.severity == DeceptionSeverity::Critical || 
+            deception_report.severity == DeceptionSeverity::High) {
+            
+            let violations_str = deception_report.violations
+                .iter()
+                .map(|v| v.message.clone())
+                .collect::<Vec<_>>()
+                .join("; ");
+            let output = PreToolUseOutput {
+                hook_specific_output: PreToolUseHookOutput {
+                    hook_event_name: "PreToolUse".to_string(),
+                    permission_decision: "deny".to_string(),
+                    permission_decision_reason: Some(format!(
+                        "DECEPTION DETECTED: {}. {}", 
+                        violations_str,
+                        deception_report.recommendation
+                    )),
+                },
+            };
+            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            eprintln!("🚨 BLOCKED DECEPTIVE CODE: {}", violations_str);
+            return Ok(());
+        }
+    }
+    
     // Allow non-code tools or empty content
     if !matches!(
         hook_input.tool_name.as_str(),
