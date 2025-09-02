@@ -1,0 +1,2 @@
+Test file in allowed directory.
+This should be allowed by the validation hooks.
