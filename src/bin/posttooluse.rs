@@ -10,55 +10,245 @@ use rust_validation_hooks::providers::ai::UniversalAIClient;
 // Use project context for better AI understanding  
 use rust_validation_hooks::analysis::project::{scan_project_with_cache, format_project_structure_for_ai_with_metrics};
 use std::path::PathBuf;
+// Use diff formatter for better AI context
+use rust_validation_hooks::validation::diff_formatter::{
+    format_edit_diff,
+    format_multi_edit_diff,
+    format_code_diff,
+};
 
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
 
 /// Format the analysis prompt with instructions and project context
-fn format_analysis_prompt(prompt: &str, project_context: Option<&str>) -> String {
+fn format_analysis_prompt(prompt: &str, project_context: Option<&str>, diff_context: Option<&str>) -> String {
     let context_section = if let Some(context) = project_context {
         format!("\n\nPROJECT CONTEXT:\n{}\n", context)
     } else {
         String::new()
     };
     
-    format!("{}{}
+    let diff_section = if let Some(diff) = diff_context {
+        format!("\n\nCODE CHANGES (diff format):\n{}\n", diff)
+    } else {
+        String::new()
+    };
+    
+    // JSON template as a raw string to avoid escaping issues
+    let json_template = r#"{
+  "summary": "[ ATTEMPT N | Rewards +X | Penalty +Y | Code Quality: Z/100 ] Brief assessment",
+  "overall_quality": "excellent|good|needs_improvement|poor",
+  "issues": [
+    {
+      "severity": "info|minor|major|critical|blocker",
+      "category": "intent|correctness|security|robustness|maintainability|performance|tests|lint",
+      "message": "Issue description",
+      "impact": 1-3,
+      "fix_cost": 1-3,
+      "confidence": 0.5-1.0,
+      "fix_suggestion": "How to fix"
+    }
+  ],
+  "suggestions": [
+    {
+      "category": "performance|security|maintainability|tests",
+      "description": "Improvement description",
+      "priority": "high|medium|low"
+    }
+  ],
+  "metrics": {
+    "complexity": "low|medium|high|extreme",
+    "readability": "excellent|good|fair|poor",
+    "test_coverage": "none|partial|good|excellent"
+  }
+}"#;
+    
+    format!("{}{}{}
 
 CRITICAL TOKEN LIMIT: Your response must NOT exceed 4500 tokens. Keep analysis concise but thorough.
 
 IMPORTANT: Output ONLY valid JSON object with these fields:
-{{
-  \"summary\": \"[ ATTEMPT N | Rewards +X | Penalty +Y | Code Quality: Z/100 ] Brief assessment\",
-  \"overall_quality\": \"excellent|good|needs_improvement|poor\",
-  \"issues\": [
-    {{
-      \"severity\": \"info|minor|major|critical|blocker\",
-      \"category\": \"intent|correctness|security|robustness|maintainability|performance|tests|lint\",
-      \"message\": \"Issue description\",
-      \"impact\": 1-3,
-      \"fix_cost\": 1-3,
-      \"confidence\": 0.5-1.0,
-      \"fix_suggestion\": \"How to fix\"
-    }}
-  ],
-  \"suggestions\": [
-    {{
-      \"category\": \"performance|security|maintainability|tests\",
-      \"description\": \"Improvement description\",
-      \"priority\": \"high|medium|low\"
-    }}
-  ],
-  \"metrics\": {{
-    \"complexity\": \"low|medium|high|extreme\",
-    \"readability\": \"excellent|good|fair|poor\",
-    \"test_coverage\": \"none|partial|good|excellent\"
-  }}
-}}
+{}
 
 NEVER include text outside JSON. Output ONLY the JSON object.
-TOKEN LIMIT: Keep response under 4500 tokens.", prompt, context_section)
+TOKEN LIMIT: Keep response under 4500 tokens.", prompt, context_section, diff_section, json_template)
 }
 
 // Use analysis structures from lib.rs
+
+/// Validate file path for security with strict boundary checks
+fn validate_file_path(path: &str) -> Result<PathBuf> {
+    // Early check for null bytes and control characters
+    if path.contains('\0') || path.contains('\r') {
+        anyhow::bail!("Invalid file path: contains null byte or carriage return");
+    }
+    
+    // Check path length to prevent buffer overflows
+    const MAX_PATH_LENGTH: usize = 4096;
+    if path.len() > MAX_PATH_LENGTH {
+        anyhow::bail!("Invalid file path: exceeds maximum path length");
+    }
+    
+    // Normalize Unicode to prevent bypass via different representations
+    let normalized_path = path.to_lowercase();
+    
+    // Check for various path traversal patterns using more comprehensive list
+    const SUSPICIOUS_PATTERNS: &[&str] = &[
+        "..", "~", 
+        "../", "..\\",  // Direct traversal
+        ".\\.", "./.",  // Hidden traversal
+        "%2e%2e", "%252e", "%252e%252e",  // URL encoded
+        "0x2e", "\\x2e",  // Hex encoded
+        "..;", "..", // Semicolon bypass
+        "\\\\", // UNC paths
+    ];
+    
+    for pattern in SUSPICIOUS_PATTERNS {
+        if normalized_path.contains(pattern) {
+            anyhow::bail!("Invalid file path: potential path traversal pattern detected");
+        }
+    }
+    
+    let path_buf = PathBuf::from(path);
+    
+    // CRITICAL: Reject absolute paths immediately - no exceptions
+    if path_buf.is_absolute() {
+        anyhow::bail!("Invalid file path: absolute paths are not allowed");
+    }
+    
+    // Get the current working directory as the security boundary
+    let cwd = std::env::current_dir()
+        .context("Failed to get current directory - cannot validate paths")?;
+    
+    // Join with CWD to get full path
+    let target_path = cwd.join(&path_buf);
+    
+    // Resolve the path properly
+    let canonical_path = if target_path.exists() {
+        // File exists - canonicalize it
+        target_path.canonicalize()
+            .context("Failed to canonicalize existing file path")?
+    } else {
+        // File doesn't exist - validate parent directory
+        let parent = target_path.parent()
+            .context("Invalid file path: no parent directory")?;
+        
+        if !parent.exists() {
+            anyhow::bail!("Invalid file path: parent directory does not exist");
+        }
+        
+        let canonical_parent = parent.canonicalize()
+            .context("Failed to canonicalize parent directory")?;
+        
+        // Verify parent is within bounds before joining
+        if !canonical_parent.starts_with(&cwd) {
+            anyhow::bail!("Invalid file path: parent directory is outside allowed boundary");
+        }
+        
+        // Get just the filename without any directory components
+        let file_name = path_buf.file_name()
+            .context("Invalid file path: no file name")?;
+        
+        // Ensure filename doesn't contain directory separators
+        let file_name_str = file_name.to_string_lossy();
+        if file_name_str.contains('/') || file_name_str.contains('\\') {
+            anyhow::bail!("Invalid file path: file name contains directory separator");
+        }
+        
+        canonical_parent.join(file_name)
+    };
+    
+    // Final boundary check - ensure resolved path is within CWD
+    if !canonical_path.starts_with(&cwd) {
+        anyhow::bail!("Invalid file path: resolved path is outside allowed directory");
+    }
+    
+    Ok(canonical_path)
+}
+
+/// Safely read file content with proper error handling
+async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
+    let validated_path = match validate_file_path(path) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("Warning: Failed to validate file path '{}': {}", path, e);
+            return Ok(None);
+        }
+    };
+    
+    match tokio::fs::read_to_string(&validated_path).await {
+        Ok(content) => Ok(Some(content)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // File doesn't exist yet - this is normal for new files
+            Ok(None)
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to read file '{}': {}", validated_path.display(), e);
+            Ok(None)
+        }
+    }
+}
+
+/// Generate diff context for tool operations
+async fn generate_diff_context(hook_input: &HookInput, file_path: &str) -> Result<String> {
+    // Read file content once and reuse it
+    let file_content = read_file_content_safe(file_path).await?;
+    
+    match hook_input.tool_name.as_str() {
+        "Edit" => {
+            // Extract and validate required fields for Edit operation
+            let old_string = hook_input.tool_input
+                .get("old_string")
+                .and_then(|v| v.as_str())
+                .context("Edit operation missing required 'old_string' field")?;
+            
+            let new_string = hook_input.tool_input
+                .get("new_string")
+                .and_then(|v| v.as_str())
+                .context("Edit operation missing required 'new_string' field")?;
+            
+            Ok(format_edit_diff(file_path, file_content.as_deref(), old_string, new_string, 3))
+        }
+        
+        "MultiEdit" => {
+            // Extract and validate edits array
+            let edits_array = hook_input.tool_input
+                .get("edits")
+                .and_then(|v| v.as_array())
+                .context("MultiEdit operation missing required 'edits' array")?;
+            
+            // Parse edits with validation
+            let mut edits = Vec::new();
+            for (idx, edit) in edits_array.iter().enumerate() {
+                let old_string = edit.get("old_string")
+                    .and_then(|v| v.as_str())
+                    .with_context(|| format!("Edit {} missing 'old_string'", idx))?;
+                
+                let new_string = edit.get("new_string")
+                    .and_then(|v| v.as_str())
+                    .with_context(|| format!("Edit {} missing 'new_string'", idx))?;
+                
+                edits.push((old_string.to_string(), new_string.to_string()));
+            }
+            
+            Ok(format_multi_edit_diff(file_path, file_content.as_deref(), &edits, 3))
+        }
+        
+        "Write" => {
+            // Extract and validate content field
+            let new_content = hook_input.tool_input
+                .get("content")
+                .and_then(|v| v.as_str())
+                .context("Write operation missing required 'content' field")?;
+            
+            Ok(format_code_diff(file_path, file_content.as_deref(), Some(new_content), 3))
+        }
+        
+        _ => {
+            // Not a code modification operation
+            Ok(String::new())
+        }
+    }
+}
 
 /// Load prompt from file relative to executable location
 async fn load_prompt(prompt_file: &str) -> Result<String> {
@@ -297,8 +487,18 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Format the prompt with context
-    let formatted_prompt = format_analysis_prompt(&prompt, project_context.as_deref());
+    // Generate diff context for the code changes  
+    let diff_context = match generate_diff_context(&hook_input, file_path).await {
+        Ok(diff) => diff,
+        Err(e) => {
+            // Log error but continue with analysis without diff
+            eprintln!("Warning: Failed to generate diff context: {}", e);
+            String::new()
+        }
+    };
+
+    // Format the prompt with context and diff
+    let formatted_prompt = format_analysis_prompt(&prompt, project_context.as_deref(), Some(&diff_context));
     
     // Create AI client and perform analysis
     let client = UniversalAIClient::new(config.clone())

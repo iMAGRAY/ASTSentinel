@@ -18,6 +18,12 @@ use rust_validation_hooks::validation::test_files::{
     detect_test_content,
     TestFileConfig,
 };
+// Use diff formatter for better AI context
+use rust_validation_hooks::validation::diff_formatter::{
+    format_edit_diff,
+    format_multi_edit_diff,
+    format_code_diff,
+};
 
 // Removed GrokSecurityClient - now using UniversalAIClient from ai_providers module
 
@@ -429,10 +435,98 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Format code changes as diff for better AI understanding
+fn format_code_as_diff(hook_input: &HookInput) -> String {
+    let mut diff = String::new();
+    
+    // Extract file path
+    let file_path = extract_file_path(&hook_input.tool_input);
+    
+    match hook_input.tool_name.as_str() {
+        "Edit" => {
+            // Extract old_string and new_string from tool_input
+            if let Some(old_string) = hook_input.tool_input.get("old_string")
+                .and_then(|v| v.as_str()) {
+                if let Some(new_string) = hook_input.tool_input.get("new_string")
+                    .and_then(|v| v.as_str()) {
+                    
+                    // Try to read the current file content for context
+                    let file_content = std::fs::read_to_string(&file_path).ok();
+                    
+                    diff = format_edit_diff(
+                        &file_path,
+                        file_content.as_deref(),
+                        old_string,
+                        new_string,
+                        3, // 3 lines of context
+                    );
+                }
+            }
+        },
+        "MultiEdit" => {
+            // Extract edits array from tool_input
+            if let Some(edits_value) = hook_input.tool_input.get("edits") {
+                if let Some(edits_array) = edits_value.as_array() {
+                    let mut edits = Vec::new();
+                    for edit in edits_array {
+                        if let (Some(old), Some(new)) = (
+                            edit.get("old_string").and_then(|v| v.as_str()),
+                            edit.get("new_string").and_then(|v| v.as_str())
+                        ) {
+                            edits.push((old.to_string(), new.to_string()));
+                        }
+                    }
+                    
+                    // Try to read the current file content for context
+                    let file_content = std::fs::read_to_string(&file_path).ok();
+                    
+                    diff = format_multi_edit_diff(
+                        &file_path,
+                        file_content.as_deref(),
+                        &edits,
+                        3, // 3 lines of context
+                    );
+                }
+            }
+        },
+        "Write" => {
+            // For Write operations, show as new file creation
+            if let Some(content) = hook_input.tool_input.get("content")
+                .and_then(|v| v.as_str()) {
+                
+                // Check if file exists
+                let old_content = std::fs::read_to_string(&file_path).ok();
+                
+                diff = format_code_diff(
+                    &file_path,
+                    old_content.as_deref(),
+                    Some(content),
+                    3, // 3 lines of context
+                );
+            }
+        },
+        _ => {
+            // For other operations, just show the content if available
+            let content = extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);
+            if !content.is_empty() {
+                diff = format!("Content:\n{}", content);
+            }
+        }
+    }
+    
+    diff
+}
+
 /// Perform security validation using Grok with context
 async fn perform_validation(config: &Config, content: &str, hook_input: &HookInput) -> Result<SecurityValidation> {
     // Load security prompt
     let mut prompt = load_prompt("edit_validation.txt").context("Failed to load edit validation prompt")?;
+    
+    // Format the code changes as diff for better AI understanding
+    let diff_context = format_code_as_diff(hook_input);
+    if !diff_context.is_empty() {
+        prompt = format!("{}\n\nCODE CHANGES (diff format):\n{}", prompt, diff_context);
+    }
 
     // Add context from transcript if available
     if let Some(transcript_path) = &hook_input.transcript_path {
