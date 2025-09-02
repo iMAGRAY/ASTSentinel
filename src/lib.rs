@@ -1,10 +1,38 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Common utilities for Claude Code hooks
-pub mod project_context;
-pub mod smart_deception_detector;
+
+/// Safely truncate a UTF-8 string to a maximum number of characters
+pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
+    let char_count = s.chars().count();
+    if char_count <= max_chars {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+        format!("{}…", truncated)
+    }
+}
+
+/// Code analysis modules for project inspection, AST parsing, and metrics
+pub mod analysis;
+
+/// Validation modules for code and file checks
+pub mod validation;
+
+/// External service providers for AI and other integrations
+pub mod providers;
+
+/// Caching modules for performance optimization
+pub mod cache;
+
+// Re-export commonly used types for convenience
+pub use analysis::{ComplexityMetrics, ProjectStructure, scan_project_structure, format_project_structure_for_ai, ScanConfig};
+pub use analysis::ast::{SupportedLanguage, MultiLanguageAnalyzer, ComplexityVisitor};
+pub use validation::{TestFileConfig, TestFileValidation, validate_test_file, detect_test_content};
+pub use providers::{UniversalAIClient, AIProvider};
+pub use cache::ProjectCache;
 
 /// Claude Code Hook input data structure - actual fields from Claude Code
 #[derive(Debug, Deserialize)]
@@ -221,18 +249,126 @@ pub struct GrokCodeMetrics {
     pub test_coverage: Option<String>, // "none", "partial", "good", "excellent"
 }
 
-/// Environment configuration
+
+/// Environment configuration with validation and type safety
+#[derive(Clone)]
 pub struct Config {
+    // Multi-provider API configurations
     pub openai_api_key: String,
+    pub anthropic_api_key: String,
+    pub google_api_key: String,
     pub xai_api_key: String,
+    
+    // Base URLs for different providers (can be overridden)
+    pub openai_base_url: String,
+    pub anthropic_base_url: String,
+    pub google_base_url: String,
     pub xai_base_url: String,
+    
+    // Provider selection for each hook (type-safe)
+    pub pretool_provider: providers::AIProvider,
+    pub posttool_provider: providers::AIProvider,
+    
+    // Model specifications
     pub pretool_model: String,
     pub posttool_model: String,
+    
+    // Common settings with defaults
     pub max_tokens: u32,
     pub temperature: f32,
     pub max_issues: usize,
     pub request_timeout_secs: u64,
     pub connect_timeout_secs: u64,
+}
+
+impl Config {
+    /// Create a new validated Config instance
+    pub fn new(
+        pretool_provider: providers::AIProvider,
+        posttool_provider: providers::AIProvider,
+        pretool_model: String,
+        posttool_model: String,
+    ) -> Self {
+        Self {
+            openai_api_key: String::new(),
+            anthropic_api_key: String::new(),
+            google_api_key: String::new(),
+            xai_api_key: String::new(),
+            
+            openai_base_url: providers::AIProvider::OpenAI.default_base_url().to_string(),
+            anthropic_base_url: providers::AIProvider::Anthropic.default_base_url().to_string(),
+            google_base_url: providers::AIProvider::Google.default_base_url().to_string(),
+            xai_base_url: providers::AIProvider::XAI.default_base_url().to_string(),
+            
+            pretool_provider,
+            posttool_provider,
+            pretool_model,
+            posttool_model,
+            
+            // Sensible defaults
+            max_tokens: 4000,
+            temperature: 0.1,
+            max_issues: 10,
+            request_timeout_secs: 60,
+            connect_timeout_secs: 30,
+        }
+    }
+    
+    /// Validate configuration and return errors if invalid
+    pub fn validate(&self) -> Result<()> {
+        // Validate API keys for required providers
+        if self.get_api_key_for_provider(&self.pretool_provider).is_empty() {
+            return Err(anyhow::anyhow!("API key missing for pretool provider: {}", self.pretool_provider));
+        }
+        
+        if self.get_api_key_for_provider(&self.posttool_provider).is_empty() {
+            return Err(anyhow::anyhow!("API key missing for posttool provider: {}", self.posttool_provider));
+        }
+        
+        // Validate models are not empty
+        if self.pretool_model.trim().is_empty() {
+            return Err(anyhow::anyhow!("Pretool model cannot be empty"));
+        }
+        
+        if self.posttool_model.trim().is_empty() {
+            return Err(anyhow::anyhow!("Posttool model cannot be empty"));
+        }
+        
+        // Validate reasonable ranges
+        if self.max_tokens == 0 || self.max_tokens > 100_000 {
+            return Err(anyhow::anyhow!("max_tokens must be between 1 and 100,000"));
+        }
+        
+        if self.temperature < 0.0 || self.temperature > 2.0 {
+            return Err(anyhow::anyhow!("temperature must be between 0.0 and 2.0"));
+        }
+        
+        if self.request_timeout_secs == 0 || self.request_timeout_secs > 600 {
+            return Err(anyhow::anyhow!("request_timeout_secs must be between 1 and 600"));
+        }
+        
+        Ok(())
+    }
+    
+    /// Get the appropriate API key for a given provider
+    pub fn get_api_key_for_provider(&self, provider: &providers::AIProvider) -> &str {
+        match provider {
+            providers::AIProvider::OpenAI => &self.openai_api_key,
+            providers::AIProvider::Anthropic => &self.anthropic_api_key,
+            providers::AIProvider::Google => &self.google_api_key,
+            providers::AIProvider::XAI => &self.xai_api_key,
+        }
+    }
+    
+    /// Get the appropriate base URL for a given provider
+    pub fn get_base_url_for_provider(&self, provider: &providers::AIProvider) -> &str {
+        match provider {
+            providers::AIProvider::OpenAI => &self.openai_base_url,
+            providers::AIProvider::Anthropic => &self.anthropic_base_url,
+            providers::AIProvider::Google => &self.google_base_url,
+            providers::AIProvider::XAI => &self.xai_base_url,
+        }
+    }
 }
 
 impl Config {
@@ -255,55 +391,73 @@ impl Config {
             }
         }
         
-        // Fallback to system environment variables
-        let xai_key = std::env::var("XAI_API_KEY").unwrap_or_default();
-        let key_display = if xai_key.is_empty() { 
-            "NOT SET".to_string()
-        } else { 
-            format!("{}...", &xai_key.chars().take(10).collect::<String>())
-        };
-        eprintln!("XAI_API_KEY loaded: {}", key_display);
+        // Load all API keys from environment
+        let openai_api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+        let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+        let google_api_key = std::env::var("GOOGLE_API_KEY").unwrap_or_default();
+        let xai_api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
         
-        // Parse and validate configurable values
-        let max_tokens = std::env::var("POSTTOOL_MAX_TOKENS")
-            .unwrap_or_else(|_| "5000".to_string())
+        // Parse provider selections with validation
+        let pretool_provider_str = std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let posttool_provider_str = std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        
+        let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>()
+            .with_context(|| format!("Invalid PRETOOL_PROVIDER: {}. Supported: openai, anthropic, google, xai", pretool_provider_str))?;
+        let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>()
+            .with_context(|| format!("Invalid POSTTOOL_PROVIDER: {}. Supported: openai, anthropic, google, xai", posttool_provider_str))?;
+        
+        // Parse and validate configurable values with proper bounds
+        let max_tokens = std::env::var("MAX_TOKENS")
+            .unwrap_or_else(|_| "4000".to_string())
             .parse::<u32>()
-            .unwrap_or(5000)
-            .min(8192); // Cap at reasonable limit per Grok docs
+            .unwrap_or(4000)
+            .clamp(100, 100_000);
         
-        let temperature = std::env::var("POSTTOOL_TEMPERATURE")
-            .unwrap_or_else(|_| "0.2".to_string())
+        let temperature = std::env::var("TEMPERATURE")
+            .unwrap_or_else(|_| "0.1".to_string())
             .parse::<f32>()
-            .unwrap_or(0.2)
-            .max(2.0)
-            .min(0.0); // Valid range per API docs
+            .unwrap_or(0.1)
+            .clamp(0.0, 2.0);
         
-        let max_issues = std::env::var("POSTTOOL_MAX_ISSUES")
-            .unwrap_or_else(|_| "3".to_string())
+        let max_issues = std::env::var("MAX_ISSUES")
+            .unwrap_or_else(|_| "10".to_string())
             .parse::<usize>()
-            .unwrap_or(3)
-            .min(1)
-            .max(3); // Claude Code Hooks spec limit
+            .unwrap_or(10)
+            .clamp(1, 50);
         
-        // Parse and validate timeout settings
         let request_timeout_secs = std::env::var("REQUEST_TIMEOUT_SECS")
-            .unwrap_or_else(|_| "30".to_string())
+            .unwrap_or_else(|_| "60".to_string())
             .parse::<u64>()
-            .unwrap_or(30);
+            .unwrap_or(60)
+            .clamp(10, 600);
         
         let connect_timeout_secs = std::env::var("CONNECT_TIMEOUT_SECS")
-            .unwrap_or_else(|_| "10".to_string())
+            .unwrap_or_else(|_| "30".to_string())
             .parse::<u64>()
-            .unwrap_or(10);
+            .unwrap_or(30)
+            .clamp(5, 120);
         
-        Ok(Config {
-            openai_api_key: std::env::var("OPENAI_API_KEY")
-                .unwrap_or_default(),
-            xai_api_key: xai_key,
+        // Create configuration with all providers supported
+        let config = Config {
+            openai_api_key,
+            anthropic_api_key,
+            google_api_key,
+            xai_api_key,
+            
+            // Load custom base URLs or use defaults
+            openai_base_url: std::env::var("OPENAI_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::OpenAI.default_base_url().to_string()),
+            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::Anthropic.default_base_url().to_string()),
+            google_base_url: std::env::var("GOOGLE_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::Google.default_base_url().to_string()),
             xai_base_url: std::env::var("XAI_BASE_URL")
-                .unwrap_or_else(|_| "https://api.x.ai/v1".to_string()),
+                .unwrap_or_else(|_| providers::AIProvider::XAI.default_base_url().to_string()),
+            
+            pretool_provider,
+            posttool_provider,
             pretool_model: std::env::var("PRETOOL_MODEL")
-                .unwrap_or_else(|_| "gpt-5".to_string()),
+                .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
             posttool_model: std::env::var("POSTTOOL_MODEL")
                 .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
             max_tokens,
@@ -311,7 +465,12 @@ impl Config {
             max_issues,
             request_timeout_secs,
             connect_timeout_secs,
-        })
+        };
+        
+        // Validate configuration before returning
+        config.validate().with_context(|| "Configuration validation failed")?;
+        
+        Ok(config)
     }
 }
 

@@ -1,4 +1,4 @@
-use rust_validation_hooks::project_context::{
+use rust_validation_hooks::analysis::project::{
     scan_project_structure,
     format_project_structure_for_ai,
     ScanConfig,

@@ -42,3 +42,5 @@ REQUIRED JSON RESPONSE FORMAT:
 }
 
 Be direct and practical. Focus on changes developers can implement immediately for better code quality.
+
+Your response must be ONLY the JSON object above, nothing else. No additional text or explanations.

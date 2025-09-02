@@ -1,0 +1,787 @@
+{
+  "structure": {
+    "root_path": ".",
+    "files": [
+      {
+        "path": ".\\CLAUDE.md",
+        "relative_path": "CLAUDE.md",
+        "file_type": "md",
+        "size_bytes": 5999,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\Cargo.lock",
+        "relative_path": "Cargo.lock",
+        "file_type": "lock",
+        "size_bytes": 56752,
+        "is_code_file": false
+      },
+      {
+        "path": ".\\Cargo.toml",
+        "relative_path": "Cargo.toml",
+        "file_type": "toml",
+        "size_bytes": 1545,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\README.md",
+        "relative_path": "README.md",
+        "file_type": "md",
+        "size_bytes": 169,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\docs\\Claude-Code-Hooks-Guide.md",
+        "relative_path": "docs/Claude-Code-Hooks-Guide.md",
+        "file_type": "md",
+        "size_bytes": 18858,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\docs\\GPT-5-Guide.md",
+        "relative_path": "docs/GPT-5-Guide.md",
+        "file_type": "md",
+        "size_bytes": 16503,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\docs\\XAI-Grok-Code-Fast-1.md",
+        "relative_path": "docs/XAI-Grok-Code-Fast-1.md",
+        "file_type": "md",
+        "size_bytes": 10800,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\analysis\\ast\\languages.rs",
+        "relative_path": "src/analysis/ast/languages.rs",
+        "file_type": "rs",
+        "size_bytes": 7741,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\analysis\\ast\\mod.rs",
+        "relative_path": "src/analysis/ast/mod.rs",
+        "file_type": "rs",
+        "size_bytes": 235,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\analysis\\ast\\visitor.rs",
+        "relative_path": "src/analysis/ast/visitor.rs",
+        "file_type": "rs",
+        "size_bytes": 17280,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\analysis\\metrics.rs",
+        "relative_path": "src/analysis/metrics.rs",
+        "file_type": "rs",
+        "size_bytes": 9285,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\analysis\\mod.rs",
+        "relative_path": "src/analysis/mod.rs",
+        "file_type": "rs",
+        "size_bytes": 316,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\analysis\\project.rs",
+        "relative_path": "src/analysis/project.rs",
+        "file_type": "rs",
+        "size_bytes": 44053,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\cache\\mod.rs",
+        "relative_path": "src/cache/mod.rs",
+        "file_type": "rs",
+        "size_bytes": 142,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\cache\\project.rs",
+        "relative_path": "src/cache/project.rs",
+        "file_type": "rs",
+        "size_bytes": 17628,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\calculator.js",
+        "relative_path": "src/calculator.js",
+        "file_type": "js",
+        "size_bytes": 378,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\legitimate_service.js",
+        "relative_path": "src/legitimate_service.js",
+        "file_type": "js",
+        "size_bytes": 482,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\legitimate_todos.js",
+        "relative_path": "src/legitimate_todos.js",
+        "file_type": "js",
+        "size_bytes": 656,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\lib.rs",
+        "relative_path": "src/lib.rs",
+        "file_type": "rs",
+        "size_bytes": 18896,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\providers\\ai.rs",
+        "relative_path": "src/providers/ai.rs",
+        "file_type": "rs",
+        "size_bytes": 33302,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\providers\\mod.rs",
+        "relative_path": "src/providers/mod.rs",
+        "file_type": "rs",
+        "size_bytes": 180,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\service.js",
+        "relative_path": "src/service.js",
+        "file_type": "js",
+        "size_bytes": 688,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\validation\\mod.rs",
+        "relative_path": "src/validation/mod.rs",
+        "file_type": "rs",
+        "size_bytes": 241,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\src\\validation\\test_files.rs",
+        "relative_path": "src/validation/test_files.rs",
+        "file_type": "rs",
+        "size_bytes": 18815,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\__mocks__\\mock_service.js",
+        "relative_path": "tests/__mocks__/mock_service.js",
+        "file_type": "js",
+        "size_bytes": 715,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\correct_location.test.js",
+        "relative_path": "tests/correct_location.test.js",
+        "file_type": "js",
+        "size_bytes": 151,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\edge_case_minimal.js",
+        "relative_path": "tests/edge_case_minimal.js",
+        "file_type": "js",
+        "size_bytes": 556,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\legitimate_code_test.js",
+        "relative_path": "tests/legitimate_code_test.js",
+        "file_type": "js",
+        "size_bytes": 2494,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\legitimate_mock.js",
+        "relative_path": "tests/legitimate_mock.js",
+        "file_type": "js",
+        "size_bytes": 1249,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\legitimate_with_todo.js",
+        "relative_path": "tests/legitimate_with_todo.js",
+        "file_type": "js",
+        "size_bytes": 1065,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\python_valid.py",
+        "relative_path": "tests/python_valid.py",
+        "file_type": "py",
+        "size_bytes": 1348,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\relaxed_hooks_test.js",
+        "relative_path": "tests/relaxed_hooks_test.js",
+        "file_type": "js",
+        "size_bytes": 984,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_compact_format.rs",
+        "relative_path": "tests/test_compact_format.rs",
+        "file_type": "rs",
+        "size_bytes": 1666,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_example.js",
+        "relative_path": "tests/test_example.js",
+        "file_type": "js",
+        "size_bytes": 454,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_project_cache.rs",
+        "relative_path": "tests/test_project_cache.rs",
+        "file_type": "rs",
+        "size_bytes": 9928,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_project_context_integration.rs",
+        "relative_path": "tests/test_project_context_integration.rs",
+        "file_type": "rs",
+        "size_bytes": 4616,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\todo_with_implementation.js",
+        "relative_path": "tests/todo_with_implementation.js",
+        "file_type": "js",
+        "size_bytes": 1062,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\user.test.js",
+        "relative_path": "tests/user.test.js",
+        "file_type": "js",
+        "size_bytes": 960,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\validator_with_returns.js",
+        "relative_path": "tests/validator_with_returns.js",
+        "file_type": "js",
+        "size_bytes": 1231,
+        "is_code_file": true
+      }
+    ],
+    "directories": [
+      "docs",
+      "prompts",
+      "src",
+      "src/analysis",
+      "src/analysis/ast",
+      "src/cache",
+      "src/providers",
+      "src/validation",
+      "tests",
+      "tests/__mocks__",
+      "tests/benchmarks",
+      "tests/fixtures",
+      "tests/integration",
+      "tests/mocks",
+      "tests/unit"
+    ],
+    "total_files": 39,
+    "scan_timestamp": "2025-09-02 11:48:47"
+  },
+  "metrics": {
+    "total_lines_of_code": 4819,
+    "code_by_language": {
+      "rs": {
+        "file_count": 16,
+        "lines_of_code": 3816,
+        "lines_of_comments": 692,
+        "blank_lines": 673,
+        "average_file_size": 238,
+        "complexity_estimate": 12.9381695,
+        "average_cyclomatic": 50.9375,
+        "average_cognitive": 80.8125,
+        "max_cyclomatic": 336,
+        "max_cognitive": 646,
+        "total_functions": 76,
+        "average_nesting_depth": 2.3125
+      },
+      "md": {
+        "file_count": 5,
+        "lines_of_code": 523,
+        "lines_of_comments": 0,
+        "blank_lines": 76,
+        "average_file_size": 104,
+        "complexity_estimate": 5.23,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "js": {
+        "file_count": 15,
+        "lines_of_code": 391,
+        "lines_of_comments": 67,
+        "blank_lines": 82,
+        "average_file_size": 26,
+        "complexity_estimate": 1.2571795,
+        "average_cyclomatic": 4.0666666,
+        "average_cognitive": 4.133333,
+        "max_cyclomatic": 19,
+        "max_cognitive": 17,
+        "total_functions": 38,
+        "average_nesting_depth": 0.0
+      },
+      "py": {
+        "file_count": 1,
+        "lines_of_code": 35,
+        "lines_of_comments": 5,
+        "blank_lines": 9,
+        "average_file_size": 35,
+        "complexity_estimate": 0.3013889,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "toml": {
+        "file_count": 1,
+        "lines_of_code": 54,
+        "lines_of_comments": 0,
+        "blank_lines": 8,
+        "average_file_size": 54,
+        "complexity_estimate": 0.54,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      }
+    },
+    "file_importance_scores": {
+      "src/legitimate_service.js": 1.0,
+      "tests/test_project_context_integration.rs": 1.0,
+      "src/providers/ai.rs": 1.0,
+      "docs/Claude-Code-Hooks-Guide.md": 0.5,
+      "tests/edge_case_minimal.js": 0.9,
+      "Cargo.lock": 0.3,
+      "src/service.js": 1.0,
+      "tests/legitimate_with_todo.js": 0.9,
+      "src/legitimate_todos.js": 1.0,
+      "src/analysis/metrics.rs": 1.0,
+      "tests/python_valid.py": 0.9,
+      "src/providers/mod.rs": 1.0,
+      "README.md": 0.8,
+      "tests/legitimate_code_test.js": 0.9,
+      "tests/todo_with_implementation.js": 0.9,
+      "src/analysis/mod.rs": 1.0,
+      "tests/__mocks__/mock_service.js": 0.9,
+      "tests/correct_location.test.js": 0.9,
+      "src/cache/project.rs": 1.0,
+      "tests/relaxed_hooks_test.js": 0.9,
+      "tests/legitimate_mock.js": 0.9,
+      "src/cache/mod.rs": 1.0,
+      "tests/test_compact_format.rs": 1.0,
+      "docs/XAI-Grok-Code-Fast-1.md": 0.5,
+      "docs/GPT-5-Guide.md": 0.5,
+      "src/calculator.js": 1.0,
+      "CLAUDE.md": 0.5,
+      "src/analysis/ast/languages.rs": 1.0,
+      "src/validation/mod.rs": 1.0,
+      "src/analysis/project.rs": 1.0,
+      "src/validation/test_files.rs": 1.0,
+      "tests/user.test.js": 0.9,
+      "src/analysis/ast/visitor.rs": 1.0,
+      "tests/test_project_cache.rs": 1.0,
+      "tests/validator_with_returns.js": 0.9,
+      "src/lib.rs": 1.0,
+      "src/analysis/ast/mod.rs": 1.0,
+      "Cargo.toml": 1.0,
+      "tests/test_example.js": 0.9
+    },
+    "project_complexity_score": 1.2056453,
+    "test_coverage_estimate": 0.41025642,
+    "documentation_ratio": 0.12820514,
+    "average_cyclomatic_complexity": 28.258064,
+    "average_cognitive_complexity": 43.70968,
+    "max_cyclomatic_complexity": 336,
+    "max_cognitive_complexity": 646,
+    "high_complexity_files": 3,
+    "complexity_distribution": {
+      "low_complexity": 27,
+      "medium_complexity": 1,
+      "high_complexity": 3,
+      "extreme_complexity": 0
+    }
+  },
+  "file_hashes": {
+    "src/analysis/ast/visitor.rs": {
+      "path": "src/analysis/ast/visitor.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799996,
+        "nanos_since_epoch": 865027900
+      },
+      "size": 17280,
+      "hash": null
+    },
+    "tests/legitimate_with_todo.js": {
+      "path": "tests/legitimate_with_todo.js",
+      "modified_time": {
+        "secs_since_epoch": 1756695799,
+        "nanos_since_epoch": 123653100
+      },
+      "size": 1065,
+      "hash": null
+    },
+    "tests/python_valid.py": {
+      "path": "tests/python_valid.py",
+      "modified_time": {
+        "secs_since_epoch": 1756696037,
+        "nanos_since_epoch": 151676400
+      },
+      "size": 1348,
+      "hash": null
+    },
+    "src/providers/mod.rs": {
+      "path": "src/providers/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799869,
+        "nanos_since_epoch": 104024500
+      },
+      "size": 180,
+      "hash": null
+    },
+    "tests/correct_location.test.js": {
+      "path": "tests/correct_location.test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756693438,
+        "nanos_since_epoch": 198334900
+      },
+      "size": 151,
+      "hash": null
+    },
+    "src/service.js": {
+      "path": "src/service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696897,
+        "nanos_since_epoch": 137958200
+      },
+      "size": 688,
+      "hash": null
+    },
+    "tests/validator_with_returns.js": {
+      "path": "tests/validator_with_returns.js",
+      "modified_time": {
+        "secs_since_epoch": 1756695820,
+        "nanos_since_epoch": 813525600
+      },
+      "size": 1231,
+      "hash": null
+    },
+    "src/cache/project.rs": {
+      "path": "src/cache/project.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801308,
+        "nanos_since_epoch": 539141200
+      },
+      "size": 17628,
+      "hash": null
+    },
+    "tests/user.test.js": {
+      "path": "tests/user.test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756747496,
+        "nanos_since_epoch": 713629300
+      },
+      "size": 960,
+      "hash": null
+    },
+    "README.md": {
+      "path": "README.md",
+      "modified_time": {
+        "secs_since_epoch": 1756748146,
+        "nanos_since_epoch": 495981600
+      },
+      "size": 169,
+      "hash": null
+    },
+    "tests/edge_case_minimal.js": {
+      "path": "tests/edge_case_minimal.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696101,
+        "nanos_since_epoch": 352019800
+      },
+      "size": 556,
+      "hash": null
+    },
+    "src/legitimate_service.js": {
+      "path": "src/legitimate_service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756694494,
+        "nanos_since_epoch": 222246600
+      },
+      "size": 482,
+      "hash": null
+    },
+    "CLAUDE.md": {
+      "path": "CLAUDE.md",
+      "modified_time": {
+        "secs_since_epoch": 1756692384,
+        "nanos_since_epoch": 171967100
+      },
+      "size": 5999,
+      "hash": null
+    },
+    "docs/XAI-Grok-Code-Fast-1.md": {
+      "path": "docs/XAI-Grok-Code-Fast-1.md",
+      "modified_time": {
+        "secs_since_epoch": 1756581572,
+        "nanos_since_epoch": 365788700
+      },
+      "size": 10800,
+      "hash": null
+    },
+    "src/analysis/metrics.rs": {
+      "path": "src/analysis/metrics.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756779199,
+        "nanos_since_epoch": 889268100
+      },
+      "size": 9285,
+      "hash": null
+    },
+    "src/validation/test_files.rs": {
+      "path": "src/validation/test_files.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756770690,
+        "nanos_since_epoch": 283289000
+      },
+      "size": 18815,
+      "hash": null
+    },
+    "src/analysis/mod.rs": {
+      "path": "src/analysis/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799835,
+        "nanos_since_epoch": 587147600
+      },
+      "size": 316,
+      "hash": null
+    },
+    "tests/relaxed_hooks_test.js": {
+      "path": "tests/relaxed_hooks_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756797761,
+        "nanos_since_epoch": 181789800
+      },
+      "size": 984,
+      "hash": null
+    },
+    "docs/GPT-5-Guide.md": {
+      "path": "docs/GPT-5-Guide.md",
+      "modified_time": {
+        "secs_since_epoch": 1756472074,
+        "nanos_since_epoch": 963191100
+      },
+      "size": 16503,
+      "hash": null
+    },
+    "src/calculator.js": {
+      "path": "src/calculator.js",
+      "modified_time": {
+        "secs_since_epoch": 1756749477,
+        "nanos_since_epoch": 389942000
+      },
+      "size": 378,
+      "hash": null
+    },
+    "tests/legitimate_mock.js": {
+      "path": "tests/legitimate_mock.js",
+      "modified_time": {
+        "secs_since_epoch": 1756798055,
+        "nanos_since_epoch": 247653100
+      },
+      "size": 1249,
+      "hash": null
+    },
+    "src/legitimate_todos.js": {
+      "path": "src/legitimate_todos.js",
+      "modified_time": {
+        "secs_since_epoch": 1756747939,
+        "nanos_since_epoch": 969332300
+      },
+      "size": 656,
+      "hash": null
+    },
+    "docs/Claude-Code-Hooks-Guide.md": {
+      "path": "docs/Claude-Code-Hooks-Guide.md",
+      "modified_time": {
+        "secs_since_epoch": 1756471997,
+        "nanos_since_epoch": 638815800
+      },
+      "size": 18858,
+      "hash": null
+    },
+    "src/providers/ai.rs": {
+      "path": "src/providers/ai.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801505,
+        "nanos_since_epoch": 856506100
+      },
+      "size": 33302,
+      "hash": null
+    },
+    "tests/__mocks__/mock_service.js": {
+      "path": "tests/__mocks__/mock_service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696176,
+        "nanos_since_epoch": 678479200
+      },
+      "size": 715,
+      "hash": null
+    },
+    "Cargo.toml": {
+      "path": "Cargo.toml",
+      "modified_time": {
+        "secs_since_epoch": 1756800791,
+        "nanos_since_epoch": 946722300
+      },
+      "size": 1545,
+      "hash": "1c04850a03dce2d7810d9f8f2845e9d6434aaa898b4690a9c309c51897410dd0"
+    },
+    "tests/todo_with_implementation.js": {
+      "path": "tests/todo_with_implementation.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696121,
+        "nanos_since_epoch": 32695800
+      },
+      "size": 1062,
+      "hash": null
+    },
+    "src/analysis/ast/languages.rs": {
+      "path": "src/analysis/ast/languages.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802437,
+        "nanos_since_epoch": 236354800
+      },
+      "size": 7741,
+      "hash": null
+    },
+    "src/validation/mod.rs": {
+      "path": "src/validation/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801255,
+        "nanos_since_epoch": 690469800
+      },
+      "size": 241,
+      "hash": null
+    },
+    "tests/test_example.js": {
+      "path": "tests/test_example.js",
+      "modified_time": {
+        "secs_since_epoch": 1756756278,
+        "nanos_since_epoch": 534269900
+      },
+      "size": 454,
+      "hash": null
+    },
+    "Cargo.lock": {
+      "path": "Cargo.lock",
+      "modified_time": {
+        "secs_since_epoch": 1756782399,
+        "nanos_since_epoch": 560655300
+      },
+      "size": 56752,
+      "hash": null
+    },
+    "tests/legitimate_code_test.js": {
+      "path": "tests/legitimate_code_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756733379,
+        "nanos_since_epoch": 744585800
+      },
+      "size": 2494,
+      "hash": null
+    },
+    "src/analysis/ast/mod.rs": {
+      "path": "src/analysis/ast/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799819,
+        "nanos_since_epoch": 200584700
+      },
+      "size": 235,
+      "hash": null
+    },
+    "src/analysis/project.rs": {
+      "path": "src/analysis/project.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802338,
+        "nanos_since_epoch": 149191400
+      },
+      "size": 44053,
+      "hash": null
+    },
+    "src/lib.rs": {
+      "path": "src/lib.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801660,
+        "nanos_since_epoch": 335292600
+      },
+      "size": 18896,
+      "hash": "712d18ffca42dd53bb20f870e556f852a5a9a913b46c28fffdc6a7eba7b1cc54"
+    },
+    "tests/test_project_cache.rs": {
+      "path": "tests/test_project_cache.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802907,
+        "nanos_since_epoch": 930314000
+      },
+      "size": 9928,
+      "hash": null
+    },
+    "tests/test_project_context_integration.rs": {
+      "path": "tests/test_project_context_integration.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802927,
+        "nanos_since_epoch": 612076400
+      },
+      "size": 4616,
+      "hash": null
+    },
+    "src/cache/mod.rs": {
+      "path": "src/cache/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801285,
+        "nanos_since_epoch": 815673100
+      },
+      "size": 142,
+      "hash": null
+    },
+    "tests/test_compact_format.rs": {
+      "path": "tests/test_compact_format.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802872,
+        "nanos_since_epoch": 573805400
+      },
+      "size": 1666,
+      "hash": null
+    }
+  },
+  "cache_timestamp": 1756802927,
+  "last_modified": {
+    "secs_since_epoch": 1756802927,
+    "nanos_since_epoch": 714576100
+  }
+}

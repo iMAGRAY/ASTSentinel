@@ -15,5 +15,5 @@
     "deny": [],
     "ask": []
   },
-  "outputStyle": "CONTEXT‑HARVESTER"
+  "outputStyle": "rust-gpt-5-made-prompt"
 }
