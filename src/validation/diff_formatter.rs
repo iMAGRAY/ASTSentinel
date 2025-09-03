@@ -202,6 +202,248 @@ fn compute_line_diff(old: &str, new: &str, context_lines: usize) -> String {
     result
 }
 
+/// Maximum file size for full context (100KB)
+const MAX_FILE_SIZE_FOR_FULL_CONTEXT: usize = 100_000;
+
+/// Format MultiEdit changes with full file context
+pub fn format_multi_edit_full_context(
+    file_path: &str,
+    file_content: Option<&str>,
+    edits: &[(String, String)], // Vec of (old_string, new_string) pairs
+) -> String {
+    let mut result = String::with_capacity(1024);
+    
+    result.push_str(&format!("=== MultiEdit on file: {} ===\n", file_path));
+    
+    if let Some(content) = file_content {
+        // Apply all edits to get the final content
+        let mut modified_content = content.to_string();
+        let mut successful_edits = 0;
+        let mut failed_edits = Vec::new();
+        
+        for (i, (old_str, new_str)) in edits.iter().enumerate() {
+            if modified_content.contains(old_str) {
+                modified_content = modified_content.replace(old_str, new_str);
+                successful_edits += 1;
+            } else {
+                failed_edits.push(i + 1);
+            }
+        }
+        
+        // Report any failed edits
+        if !failed_edits.is_empty() {
+            result.push_str(&format!("⚠️ {} edit(s) could not be applied (string not found): {:?}\n\n", 
+                failed_edits.len(), failed_edits));
+        }
+        
+        // Show full file with all changes
+        result.push_str(&format!("Applied {} of {} edits:\n\n", successful_edits, edits.len()));
+        result.push_str(&format_full_file_with_changes(file_path, Some(content), Some(&modified_content)));
+    } else {
+        // No file content available, list the edits
+        result.push_str("File content not available. Edits to apply:\n");
+        for (i, (old_str, new_str)) in edits.iter().enumerate() {
+            result.push_str(&format!("\nEdit #{}:\n", i + 1));
+            result.push_str(&format!("  - Replace: '{}'\n", truncate_for_display(old_str, 100)));
+            result.push_str(&format!("  + With:    '{}'\n", truncate_for_display(new_str, 100)));
+        }
+    }
+    
+    result.push_str(&format!("\n=== End of {} ===\n", file_path));
+    result
+}
+
+/// Truncate string for display purposes
+fn truncate_for_display(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
+/// Format a single line with line number and change marker
+#[inline]
+fn format_line(line_num: usize, marker: &str, content: &str) -> String {
+    // Ensure consistent spacing: "+" or "-" or "  " for unchanged
+    let padded_marker = if marker == " " { 
+        "  ".to_string() 
+    } else { 
+        format!("{} ", marker) 
+    };
+    format!("{:4} {}{}\n", line_num, padded_marker, content)
+}
+
+/// Safely truncate content at line boundary to avoid splitting UTF-8 chars
+fn truncate_at_line_boundary(content: &str, max_size: usize) -> &str {
+    if content.len() <= max_size {
+        return content;
+    }
+    
+    // Find the last newline before max_size
+    let truncate_pos = content[..max_size]
+        .rfind('\n')
+        .unwrap_or_else(|| {
+            // If no newline found, truncate at last valid UTF-8 boundary
+            let mut pos = max_size;
+            while pos > 0 && !content.is_char_boundary(pos) {
+                pos -= 1;
+            }
+            pos
+        });
+    
+    &content[..truncate_pos]
+}
+
+/// Format the entire file content with diff markers showing changes
+/// This provides full context for AI analysis with performance optimizations
+pub fn format_full_file_with_changes(
+    file_path: &str,
+    original_content: Option<&str>,
+    modified_content: Option<&str>,
+) -> String {
+    // Safely truncate large files at line boundaries
+    let (original, modified, was_truncated) = match (original_content, modified_content) {
+        (Some(o), Some(m)) if o.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT || m.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT => {
+            let truncated_o = truncate_at_line_boundary(o, MAX_FILE_SIZE_FOR_FULL_CONTEXT);
+            let truncated_m = truncate_at_line_boundary(m, MAX_FILE_SIZE_FOR_FULL_CONTEXT);
+            (Some(truncated_o), Some(truncated_m), true)
+        }
+        (o, m) => (o, m, false)
+    };
+    
+    // Pre-allocate capacity for better performance
+    let estimated_size = original.map(|s| s.len()).unwrap_or(0) 
+        + modified.map(|s| s.len()).unwrap_or(0) 
+        + 200; // Extra space for headers
+    let mut result = String::with_capacity(estimated_size);
+    
+    // Add file header
+    result.push_str(&format!("=== Full file: {} ===\n", file_path));
+    
+    // Add warning for large files
+    if was_truncated {
+        result.push_str("⚠️ File truncated for display (exceeds 100KB)\n\n");
+    }
+    
+    match (original, modified) {
+        (None, Some(new)) if new.is_empty() => {
+            result.push_str("(New empty file)\n");
+        }
+        (None, Some(new)) => {
+            // New file - show all lines as additions
+            result.push_str("(New file)\n\n");
+            for (i, line) in new.lines().enumerate() {
+                result.push_str(&format_line(i + 1, "+", line));
+            }
+        }
+        (Some(old), None) if old.is_empty() => {
+            result.push_str("(Empty file deleted)\n");
+        }
+        (Some(old), None) => {
+            // File deletion - show all lines as deletions
+            result.push_str("(File deleted)\n\n");
+            for (i, line) in old.lines().enumerate() {
+                result.push_str(&format_line(i + 1, "-", line));
+            }
+        }
+        (Some(old), Some(new)) => {
+            // File modification - show full file with changes marked
+            let old_lines: Vec<&str> = old.lines().collect();
+            let new_lines: Vec<&str> = new.lines().collect();
+            
+            // Simple line-by-line diff for full file view
+            let max_lines = std::cmp::max(old_lines.len(), new_lines.len());
+            let mut line_num = 1;
+            
+            for i in 0..max_lines {
+                match (old_lines.get(i), new_lines.get(i)) {
+                    (Some(old_line), Some(new_line)) if old_line == new_line => {
+                        // Unchanged line
+                        result.push_str(&format_line(line_num, " ", old_line));
+                        line_num += 1;
+                    }
+                    (Some(old_line), Some(new_line)) => {
+                        // Changed line - show both old and new
+                        result.push_str(&format_line(line_num, "-", old_line));
+                        result.push_str(&format_line(line_num, "+", new_line));
+                        line_num += 1;
+                    }
+                    (Some(old_line), None) => {
+                        // Line deleted
+                        result.push_str(&format_line(line_num, "-", old_line));
+                    }
+                    (None, Some(new_line)) => {
+                        // Line added
+                        result.push_str(&format_line(line_num, "+", new_line));
+                        line_num += 1;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        (None, None) => {
+            result.push_str("(No content)\n");
+        }
+    }
+    
+    result.push_str(&format!("\n=== End of {} ===\n", file_path));
+    result
+}
+
+/// Format Edit operation showing full file with changes inline
+pub fn format_edit_full_context(
+    file_path: &str,
+    file_content: Option<&str>,
+    old_string: &str,
+    new_string: &str,
+) -> String {
+    let mut result = String::new();
+    
+    result.push_str(&format!("=== Full file with Edit changes: {} ===\n", file_path));
+    
+    if let Some(content) = file_content {
+        // Apply the edit to get the new content
+        if let Some(pos) = content.find(old_string) {
+            let mut new_content = String::new();
+            new_content.push_str(&content[..pos]);
+            new_content.push_str(new_string);
+            new_content.push_str(&content[pos + old_string.len()..]);
+            
+            // Now show the full file with changes
+            for (i, (old_line, new_line)) in content.lines().zip(new_content.lines()).enumerate() {
+                if old_line == new_line {
+                    result.push_str(&format!("{:4}   {}\n", i + 1, old_line));
+                } else {
+                    result.push_str(&format!("{:4} - {}\n", i + 1, old_line));
+                    result.push_str(&format!("{:4} + {}\n", i + 1, new_line));
+                }
+            }
+            
+            // Handle any extra lines in the new content
+            let old_line_count = content.lines().count();
+            let new_line_count = new_content.lines().count();
+            
+            if new_line_count > old_line_count {
+                for (i, line) in new_content.lines().skip(old_line_count).enumerate() {
+                    result.push_str(&format!("{:4} + {}\n", old_line_count + i + 1, line));
+                }
+            }
+        } else {
+            // Old string not found, show original file
+            result.push_str("(Edit target not found, showing original file)\n\n");
+            for (i, line) in content.lines().enumerate() {
+                result.push_str(&format!("{:4}   {}\n", i + 1, line));
+            }
+        }
+    } else {
+        result.push_str("(File content not available)\n");
+    }
+    
+    result.push_str(&format!("\n=== End of {} ===\n", file_path));
+    result
+}
+
 /// Format MultiEdit operations as a unified diff
 pub fn format_multi_edit_diff(
     file_path: &str,

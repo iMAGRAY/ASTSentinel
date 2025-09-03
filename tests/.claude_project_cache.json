@@ -1,0 +1,554 @@
+{
+  "structure": {
+    "root_path": ".",
+    "files": [
+      {
+        "path": ".\\__mocks__\\mock_service.js",
+        "relative_path": "__mocks__/mock_service.js",
+        "file_type": "js",
+        "size_bytes": 715,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\correct_location.test.js",
+        "relative_path": "correct_location.test.js",
+        "file_type": "js",
+        "size_bytes": 151,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\demo_full_context.md",
+        "relative_path": "demo_full_context.md",
+        "file_type": "md",
+        "size_bytes": 1537,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\edge_case_minimal.js",
+        "relative_path": "edge_case_minimal.js",
+        "file_type": "js",
+        "size_bytes": 556,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\legitimate_code_test.js",
+        "relative_path": "legitimate_code_test.js",
+        "file_type": "js",
+        "size_bytes": 2494,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\legitimate_mock.js",
+        "relative_path": "legitimate_mock.js",
+        "file_type": "js",
+        "size_bytes": 1249,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\legitimate_with_todo.js",
+        "relative_path": "legitimate_with_todo.js",
+        "file_type": "js",
+        "size_bytes": 1065,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\python_valid.py",
+        "relative_path": "python_valid.py",
+        "file_type": "py",
+        "size_bytes": 1348,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\real_test.js",
+        "relative_path": "real_test.js",
+        "file_type": "js",
+        "size_bytes": 125,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\relaxed_hooks_test.js",
+        "relative_path": "relaxed_hooks_test.js",
+        "file_type": "js",
+        "size_bytes": 984,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\simple_test.rs",
+        "relative_path": "simple_test.rs",
+        "file_type": "rs",
+        "size_bytes": 1548,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_compact_format.rs",
+        "relative_path": "test_compact_format.rs",
+        "file_type": "rs",
+        "size_bytes": 1666,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_diff_formatter.rs",
+        "relative_path": "test_diff_formatter.rs",
+        "file_type": "rs",
+        "size_bytes": 5354,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_diff_hooks.js",
+        "relative_path": "test_diff_hooks.js",
+        "file_type": "js",
+        "size_bytes": 463,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_diff_output.sh",
+        "relative_path": "test_diff_output.sh",
+        "file_type": "sh",
+        "size_bytes": 1318,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_edit_real.json",
+        "relative_path": "test_edit_real.json",
+        "file_type": "json",
+        "size_bytes": 222,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_example.js",
+        "relative_path": "test_example.js",
+        "file_type": "js",
+        "size_bytes": 454,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_full_context.sh",
+        "relative_path": "test_full_context.sh",
+        "file_type": "sh",
+        "size_bytes": 1048,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_full_diff.json",
+        "relative_path": "test_full_diff.json",
+        "file_type": "json",
+        "size_bytes": 218,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_input.json",
+        "relative_path": "test_input.json",
+        "file_type": "json",
+        "size_bytes": 149,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_project_cache.rs",
+        "relative_path": "test_project_cache.rs",
+        "file_type": "rs",
+        "size_bytes": 9928,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\test_project_context_integration.rs",
+        "relative_path": "test_project_context_integration.rs",
+        "file_type": "rs",
+        "size_bytes": 4616,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\todo_with_implementation.js",
+        "relative_path": "todo_with_implementation.js",
+        "file_type": "js",
+        "size_bytes": 1062,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\user.test.js",
+        "relative_path": "user.test.js",
+        "file_type": "js",
+        "size_bytes": 960,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\validator_with_returns.js",
+        "relative_path": "validator_with_returns.js",
+        "file_type": "js",
+        "size_bytes": 1231,
+        "is_code_file": true
+      }
+    ],
+    "directories": [
+      "__mocks__",
+      "benchmarks",
+      "fixtures",
+      "integration",
+      "mocks",
+      "unit"
+    ],
+    "total_files": 25,
+    "scan_timestamp": "2025-09-02 17:48:17"
+  },
+  "metrics": {
+    "total_lines_of_code": 1014,
+    "code_by_language": {
+      "py": {
+        "file_count": 1,
+        "lines_of_code": 35,
+        "lines_of_comments": 5,
+        "blank_lines": 9,
+        "average_file_size": 35,
+        "complexity_estimate": 0.3013889,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "js": {
+        "file_count": 13,
+        "lines_of_code": 339,
+        "lines_of_comments": 62,
+        "blank_lines": 72,
+        "average_file_size": 26,
+        "complexity_estimate": 1.1492394,
+        "average_cyclomatic": 4.5384617,
+        "average_cognitive": 4.8461537,
+        "max_cyclomatic": 19,
+        "max_cognitive": 17,
+        "total_functions": 34,
+        "average_nesting_depth": 0.0
+      },
+      "rs": {
+        "file_count": 5,
+        "lines_of_code": 499,
+        "lines_of_comments": 52,
+        "blank_lines": 110,
+        "average_file_size": 99,
+        "complexity_estimate": 1.5093119,
+        "average_cyclomatic": 2.4,
+        "average_cognitive": 4.0,
+        "max_cyclomatic": 6,
+        "max_cognitive": 8,
+        "total_functions": 24,
+        "average_nesting_depth": 0.8
+      },
+      "sh": {
+        "file_count": 2,
+        "lines_of_code": 75,
+        "lines_of_comments": 0,
+        "blank_lines": 18,
+        "average_file_size": 37,
+        "complexity_estimate": 0.75,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "json": {
+        "file_count": 3,
+        "lines_of_code": 25,
+        "lines_of_comments": 0,
+        "blank_lines": 0,
+        "average_file_size": 8,
+        "complexity_estimate": 0.25,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "md": {
+        "file_count": 1,
+        "lines_of_code": 41,
+        "lines_of_comments": 0,
+        "blank_lines": 12,
+        "average_file_size": 41,
+        "complexity_estimate": 0.41,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      }
+    },
+    "file_importance_scores": {
+      "demo_full_context.md": 0.5,
+      "test_diff_output.sh": 0.7,
+      "test_full_context.sh": 0.7,
+      "test_full_diff.json": 0.7,
+      "test_input.json": 0.7,
+      "todo_with_implementation.js": 0.9,
+      "validator_with_returns.js": 0.9,
+      "correct_location.test.js": 0.9,
+      "python_valid.py": 0.9,
+      "test_edit_real.json": 0.7,
+      "test_project_context_integration.rs": 1.0,
+      "test_project_cache.rs": 1.0,
+      "legitimate_with_todo.js": 0.9,
+      "test_diff_formatter.rs": 1.0,
+      "test_compact_format.rs": 1.0,
+      "relaxed_hooks_test.js": 0.9,
+      "user.test.js": 0.9,
+      "legitimate_code_test.js": 0.9,
+      "test_diff_hooks.js": 0.9,
+      "real_test.js": 0.9,
+      "edge_case_minimal.js": 0.9,
+      "__mocks__/mock_service.js": 0.9,
+      "legitimate_mock.js": 0.9,
+      "simple_test.rs": 1.0,
+      "test_example.js": 0.9
+    },
+    "project_complexity_score": 0.23583335,
+    "test_coverage_estimate": 0.68,
+    "documentation_ratio": 0.04,
+    "average_cyclomatic_complexity": 3.9444444,
+    "average_cognitive_complexity": 4.611111,
+    "max_cyclomatic_complexity": 19,
+    "max_cognitive_complexity": 17,
+    "high_complexity_files": 0,
+    "complexity_distribution": {
+      "low_complexity": 18,
+      "medium_complexity": 0,
+      "high_complexity": 0,
+      "extreme_complexity": 0
+    }
+  },
+  "file_hashes": {
+    "correct_location.test.js": {
+      "path": "correct_location.test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756693438,
+        "nanos_since_epoch": 198334900
+      },
+      "size": 151,
+      "hash": null
+    },
+    "relaxed_hooks_test.js": {
+      "path": "relaxed_hooks_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756797761,
+        "nanos_since_epoch": 181789800
+      },
+      "size": 984,
+      "hash": null
+    },
+    "test_diff_formatter.rs": {
+      "path": "test_diff_formatter.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756823644,
+        "nanos_since_epoch": 870610400
+      },
+      "size": 5354,
+      "hash": null
+    },
+    "test_input.json": {
+      "path": "test_input.json",
+      "modified_time": {
+        "secs_since_epoch": 1756823158,
+        "nanos_since_epoch": 262438200
+      },
+      "size": 149,
+      "hash": null
+    },
+    "test_diff_hooks.js": {
+      "path": "test_diff_hooks.js",
+      "modified_time": {
+        "secs_since_epoch": 1756807002,
+        "nanos_since_epoch": 454559000
+      },
+      "size": 463,
+      "hash": null
+    },
+    "test_project_cache.rs": {
+      "path": "test_project_cache.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802907,
+        "nanos_since_epoch": 930314000
+      },
+      "size": 9928,
+      "hash": null
+    },
+    "validator_with_returns.js": {
+      "path": "validator_with_returns.js",
+      "modified_time": {
+        "secs_since_epoch": 1756695820,
+        "nanos_since_epoch": 813525600
+      },
+      "size": 1231,
+      "hash": null
+    },
+    "user.test.js": {
+      "path": "user.test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756747496,
+        "nanos_since_epoch": 713629300
+      },
+      "size": 960,
+      "hash": null
+    },
+    "python_valid.py": {
+      "path": "python_valid.py",
+      "modified_time": {
+        "secs_since_epoch": 1756696037,
+        "nanos_since_epoch": 151676400
+      },
+      "size": 1348,
+      "hash": null
+    },
+    "todo_with_implementation.js": {
+      "path": "todo_with_implementation.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696121,
+        "nanos_since_epoch": 32695800
+      },
+      "size": 1062,
+      "hash": null
+    },
+    "edge_case_minimal.js": {
+      "path": "edge_case_minimal.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696101,
+        "nanos_since_epoch": 352019800
+      },
+      "size": 556,
+      "hash": null
+    },
+    "real_test.js": {
+      "path": "real_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756824408,
+        "nanos_since_epoch": 871545500
+      },
+      "size": 125,
+      "hash": null
+    },
+    "demo_full_context.md": {
+      "path": "demo_full_context.md",
+      "modified_time": {
+        "secs_since_epoch": 1756823261,
+        "nanos_since_epoch": 631574400
+      },
+      "size": 1537,
+      "hash": null
+    },
+    "legitimate_with_todo.js": {
+      "path": "legitimate_with_todo.js",
+      "modified_time": {
+        "secs_since_epoch": 1756695799,
+        "nanos_since_epoch": 123653100
+      },
+      "size": 1065,
+      "hash": null
+    },
+    "legitimate_mock.js": {
+      "path": "legitimate_mock.js",
+      "modified_time": {
+        "secs_since_epoch": 1756798055,
+        "nanos_since_epoch": 247653100
+      },
+      "size": 1249,
+      "hash": null
+    },
+    "simple_test.rs": {
+      "path": "simple_test.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756823176,
+        "nanos_since_epoch": 267997900
+      },
+      "size": 1548,
+      "hash": null
+    },
+    "test_edit_real.json": {
+      "path": "test_edit_real.json",
+      "modified_time": {
+        "secs_since_epoch": 1756824427,
+        "nanos_since_epoch": 572695600
+      },
+      "size": 222,
+      "hash": null
+    },
+    "test_project_context_integration.rs": {
+      "path": "test_project_context_integration.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802927,
+        "nanos_since_epoch": 612076400
+      },
+      "size": 4616,
+      "hash": null
+    },
+    "test_compact_format.rs": {
+      "path": "test_compact_format.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802872,
+        "nanos_since_epoch": 573805400
+      },
+      "size": 1666,
+      "hash": null
+    },
+    "test_diff_output.sh": {
+      "path": "test_diff_output.sh",
+      "modified_time": {
+        "secs_since_epoch": 1756807047,
+        "nanos_since_epoch": 780966100
+      },
+      "size": 1318,
+      "hash": null
+    },
+    "test_full_diff.json": {
+      "path": "test_full_diff.json",
+      "modified_time": {
+        "secs_since_epoch": 1756823074,
+        "nanos_since_epoch": 217582200
+      },
+      "size": 218,
+      "hash": null
+    },
+    "__mocks__/mock_service.js": {
+      "path": "__mocks__/mock_service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696176,
+        "nanos_since_epoch": 678479200
+      },
+      "size": 715,
+      "hash": null
+    },
+    "legitimate_code_test.js": {
+      "path": "legitimate_code_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756733379,
+        "nanos_since_epoch": 744585800
+      },
+      "size": 2494,
+      "hash": null
+    },
+    "test_full_context.sh": {
+      "path": "test_full_context.sh",
+      "modified_time": {
+        "secs_since_epoch": 1756823119,
+        "nanos_since_epoch": 606894200
+      },
+      "size": 1048,
+      "hash": null
+    },
+    "test_example.js": {
+      "path": "test_example.js",
+      "modified_time": {
+        "secs_since_epoch": 1756756278,
+        "nanos_since_epoch": 534269900
+      },
+      "size": 454,
+      "hash": null
+    }
+  },
+  "cache_timestamp": 1756824497,
+  "last_modified": {
+    "secs_since_epoch": 1756824497,
+    "nanos_since_epoch": 381670000
+  }
+}

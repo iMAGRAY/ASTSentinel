@@ -10,11 +10,11 @@ use rust_validation_hooks::providers::ai::UniversalAIClient;
 // Use project context for better AI understanding  
 use rust_validation_hooks::analysis::project::{scan_project_with_cache, format_project_structure_for_ai_with_metrics};
 use std::path::PathBuf;
-// Use diff formatter for better AI context
+// Use diff formatter for better AI context - full file context for complete visibility
 use rust_validation_hooks::validation::diff_formatter::{
-    format_edit_diff,
-    format_multi_edit_diff,
-    format_code_diff,
+    format_full_file_with_changes,
+    format_edit_full_context,
+    format_multi_edit_full_context,
 };
 
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
@@ -188,7 +188,48 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
     }
 }
 
-/// Generate diff context for tool operations
+/// Apply a list of replacements to content, handling overlaps
+fn apply_replacements(
+    content: &str, 
+    replacements: &mut Vec<(usize, usize, String)>
+) -> Result<String> {
+    if replacements.is_empty() {
+        return Ok(content.to_string());
+    }
+    
+    // Sort by position in reverse to apply from end to start
+    replacements.sort_by(|a, b| b.0.cmp(&a.0));
+    
+    // Check for overlapping replacements
+    for i in 0..replacements.len() - 1 {
+        let (pos1, _len1, _) = &replacements[i];
+        let (pos2, len2, _) = &replacements[i + 1];
+        
+        // Since sorted in reverse, pos1 >= pos2
+        if *pos2 + *len2 > *pos1 {
+            anyhow::bail!(
+                "Overlapping edits detected at positions {} and {}",
+                pos2, pos1
+            );
+        }
+    }
+    
+    // Apply replacements
+    let mut result = content.to_string();
+    for (pos, old_len, new_str) in replacements {
+        if *pos + *old_len > result.len() {
+            anyhow::bail!(
+                "Invalid replacement position: {} + {} exceeds content length {}",
+                pos, old_len, result.len()
+            );
+        }
+        result.replace_range(*pos..*pos + *old_len, new_str);
+    }
+    
+    Ok(result)
+}
+
+/// Generate diff context for tool operations with FULL file content
 async fn generate_diff_context(hook_input: &HookInput, file_path: &str) -> Result<String> {
     // Read file content once and reuse it
     let file_content = read_file_content_safe(file_path).await?;
@@ -206,7 +247,8 @@ async fn generate_diff_context(hook_input: &HookInput, file_path: &str) -> Resul
                 .and_then(|v| v.as_str())
                 .context("Edit operation missing required 'new_string' field")?;
             
-            Ok(format_edit_diff(file_path, file_content.as_deref(), old_string, new_string, 3))
+            // Return FULL file with changes marked
+            Ok(format_edit_full_context(file_path, file_content.as_deref(), old_string, new_string))
         }
         
         "MultiEdit" => {
@@ -215,6 +257,11 @@ async fn generate_diff_context(hook_input: &HookInput, file_path: &str) -> Resul
                 .get("edits")
                 .and_then(|v| v.as_array())
                 .context("MultiEdit operation missing required 'edits' array")?;
+            
+            // Validate edits array is not empty
+            if edits_array.is_empty() {
+                anyhow::bail!("MultiEdit operation has empty 'edits' array");
+            }
             
             // Parse edits with validation
             let mut edits = Vec::new();
@@ -227,10 +274,20 @@ async fn generate_diff_context(hook_input: &HookInput, file_path: &str) -> Resul
                     .and_then(|v| v.as_str())
                     .with_context(|| format!("Edit {} missing 'new_string'", idx))?;
                 
+                // Validate strings are not empty
+                if old_string.is_empty() {
+                    anyhow::bail!("Edit {} has empty 'old_string'", idx);
+                }
+                
                 edits.push((old_string.to_string(), new_string.to_string()));
             }
             
-            Ok(format_multi_edit_diff(file_path, file_content.as_deref(), &edits, 3))
+            // Use the new format_multi_edit_full_context function for better diff output
+            Ok(format_multi_edit_full_context(
+                file_path,
+                file_content.as_deref(),
+                &edits
+            ))
         }
         
         "Write" => {
@@ -240,7 +297,12 @@ async fn generate_diff_context(hook_input: &HookInput, file_path: &str) -> Resul
                 .and_then(|v| v.as_str())
                 .context("Write operation missing required 'content' field")?;
             
-            Ok(format_code_diff(file_path, file_content.as_deref(), Some(new_content), 3))
+            // Return FULL file comparison (old vs new)
+            Ok(format_full_file_with_changes(
+                file_path, 
+                file_content.as_deref(), 
+                Some(new_content)
+            ))
         }
         
         _ => {

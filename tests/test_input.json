@@ -1,0 +1,7 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "test_new.js",
+    "content": "// New file\nfunction test() {\n    return 42;\n}"
+  }
+}

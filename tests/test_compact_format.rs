@@ -32,12 +32,17 @@ fn test_compact_format() {
                 println!("Actual size: {} chars", formatted.len());
             }
             
-            // Verify format is compact
-            let formatted = format_project_structure_for_ai(&structure, 500);
-            assert!(formatted.contains("FILES:"));
-            assert!(formatted.contains("DIRS:"));
-            assert!(!formatted.contains("PROJECT STRUCTURE"));
-            assert!(!formatted.contains("Scanned:"));
+            // Verify format is compact - test with larger size to include STATS
+            let formatted = format_project_structure_for_ai(&structure, 2000);
+            assert!(formatted.contains("PROJECT:"), "Should contain PROJECT: section");
+            assert!(formatted.contains("STATS:"), "Should contain STATS: section in full format");
+            assert!(!formatted.contains("PROJECT STRUCTURE"), "Should not contain verbose title");
+            assert!(!formatted.contains("Scanned:"), "Should not contain verbose scan info");
+            
+            // Test small format only has PROJECT
+            let small_formatted = format_project_structure_for_ai(&structure, 500);
+            assert!(small_formatted.contains("PROJECT:"), "Small format should have PROJECT:");
+            assert!(small_formatted.len() <= 500, "Should be truncated to max size");
             
             println!("\nTest passed! Format is ultra-compact.");
         }

@@ -111,7 +111,7 @@
         "path": ".\\src\\cache\\project.rs",
         "relative_path": "src/cache/project.rs",
         "file_type": "rs",
-        "size_bytes": 17628,
+        "size_bytes": 17837,
         "is_code_file": true
       },
       {
@@ -167,7 +167,7 @@
         "path": ".\\src\\validation\\diff_formatter.rs",
         "relative_path": "src/validation/diff_formatter.rs",
         "file_type": "rs",
-        "size_bytes": 10366,
+        "size_bytes": 20105,
         "is_code_file": true
       },
       {
@@ -196,6 +196,13 @@
         "relative_path": "tests/correct_location.test.js",
         "file_type": "js",
         "size_bytes": 151,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\demo_full_context.md",
+        "relative_path": "tests/demo_full_context.md",
+        "file_type": "md",
+        "size_bytes": 1537,
         "is_code_file": true
       },
       {
@@ -234,6 +241,13 @@
         "is_code_file": true
       },
       {
+        "path": ".\\tests\\real_test.js",
+        "relative_path": "tests/real_test.js",
+        "file_type": "js",
+        "size_bytes": 125,
+        "is_code_file": true
+      },
+      {
         "path": ".\\tests\\relaxed_hooks_test.js",
         "relative_path": "tests/relaxed_hooks_test.js",
         "file_type": "js",
@@ -241,10 +255,59 @@
         "is_code_file": true
       },
       {
+        "path": ".\\tests\\simple_test.rs",
+        "relative_path": "tests/simple_test.rs",
+        "file_type": "rs",
+        "size_bytes": 1548,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_absolute_path.json",
+        "relative_path": "tests/test_absolute_path.json",
+        "file_type": "json",
+        "size_bytes": 228,
+        "is_code_file": true
+      },
+      {
         "path": ".\\tests\\test_compact_format.rs",
         "relative_path": "tests/test_compact_format.rs",
         "file_type": "rs",
-        "size_bytes": 1666,
+        "size_bytes": 2199,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_diff_formatter.rs",
+        "relative_path": "tests/test_diff_formatter.rs",
+        "file_type": "rs",
+        "size_bytes": 5354,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_diff_hooks.js",
+        "relative_path": "tests/test_diff_hooks.js",
+        "file_type": "js",
+        "size_bytes": 463,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_diff_only.json",
+        "relative_path": "tests/test_diff_only.json",
+        "file_type": "json",
+        "size_bytes": 222,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_diff_output.sh",
+        "relative_path": "tests/test_diff_output.sh",
+        "file_type": "sh",
+        "size_bytes": 1318,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_edit_real.json",
+        "relative_path": "tests/test_edit_real.json",
+        "file_type": "json",
+        "size_bytes": 222,
         "is_code_file": true
       },
       {
@@ -255,10 +318,38 @@
         "is_code_file": true
       },
       {
+        "path": ".\\tests\\test_full_context.sh",
+        "relative_path": "tests/test_full_context.sh",
+        "file_type": "sh",
+        "size_bytes": 1048,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_full_diff.json",
+        "relative_path": "tests/test_full_diff.json",
+        "file_type": "json",
+        "size_bytes": 218,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_input.json",
+        "relative_path": "tests/test_input.json",
+        "file_type": "json",
+        "size_bytes": 149,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_multi_edit.json",
+        "relative_path": "tests/test_multi_edit.json",
+        "file_type": "json",
+        "size_bytes": 395,
+        "is_code_file": true
+      },
+      {
         "path": ".\\tests\\test_project_cache.rs",
         "relative_path": "tests/test_project_cache.rs",
         "file_type": "rs",
-        "size_bytes": 9928,
+        "size_bytes": 12183,
         "is_code_file": true
       },
       {
@@ -266,6 +357,13 @@
         "relative_path": "tests/test_project_context_integration.rs",
         "file_type": "rs",
         "size_bytes": 4616,
+        "is_code_file": true
+      },
+      {
+        "path": ".\\tests\\test_real_functionality.rs",
+        "relative_path": "tests/test_real_functionality.rs",
+        "file_type": "rs",
+        "size_bytes": 2737,
         "is_code_file": true
       },
       {
@@ -309,19 +407,61 @@
       "tests/mocks",
       "tests/unit"
     ],
-    "total_files": 41,
-    "scan_timestamp": "2025-09-02 12:53:32"
+    "total_files": 55,
+    "scan_timestamp": "2025-09-02 20:50:54"
   },
   "metrics": {
-    "total_lines_of_code": 5051,
+    "total_lines_of_code": 5632,
     "code_by_language": {
       "md": {
-        "file_count": 6,
-        "lines_of_code": 540,
+        "file_count": 7,
+        "lines_of_code": 581,
         "lines_of_comments": 0,
-        "blank_lines": 81,
-        "average_file_size": 90,
-        "complexity_estimate": 5.4,
+        "blank_lines": 93,
+        "average_file_size": 83,
+        "complexity_estimate": 5.81,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "toml": {
+        "file_count": 1,
+        "lines_of_code": 54,
+        "lines_of_comments": 0,
+        "blank_lines": 8,
+        "average_file_size": 54,
+        "complexity_estimate": 0.54,
+        "average_cyclomatic": 0.0,
+        "average_cognitive": 0.0,
+        "max_cyclomatic": 0,
+        "max_cognitive": 0,
+        "total_functions": 0,
+        "average_nesting_depth": 0.0
+      },
+      "js": {
+        "file_count": 17,
+        "lines_of_code": 414,
+        "lines_of_comments": 69,
+        "blank_lines": 85,
+        "average_file_size": 24,
+        "complexity_estimate": 1.2990283,
+        "average_cyclomatic": 3.764706,
+        "average_cognitive": 3.9411764,
+        "max_cyclomatic": 19,
+        "max_cognitive": 17,
+        "total_functions": 41,
+        "average_nesting_depth": 0.0
+      },
+      "sh": {
+        "file_count": 2,
+        "lines_of_code": 75,
+        "lines_of_comments": 0,
+        "blank_lines": 18,
+        "average_file_size": 37,
+        "complexity_estimate": 0.75,
         "average_cyclomatic": 0.0,
         "average_cognitive": 0.0,
         "max_cyclomatic": 0,
@@ -343,313 +483,124 @@
         "total_functions": 0,
         "average_nesting_depth": 0.0
       },
-      "js": {
-        "file_count": 15,
-        "lines_of_code": 391,
-        "lines_of_comments": 67,
-        "blank_lines": 82,
-        "average_file_size": 26,
-        "complexity_estimate": 1.2571795,
-        "average_cyclomatic": 4.0666666,
-        "average_cognitive": 4.133333,
-        "max_cyclomatic": 19,
-        "max_cognitive": 17,
-        "total_functions": 38,
-        "average_nesting_depth": 0.0
-      },
-      "rs": {
-        "file_count": 17,
-        "lines_of_code": 4031,
-        "lines_of_comments": 722,
-        "blank_lines": 717,
-        "average_file_size": 237,
-        "complexity_estimate": 13.546949,
-        "average_cyclomatic": 51.705883,
-        "average_cognitive": 85.82353,
-        "max_cyclomatic": 336,
-        "max_cognitive": 646,
-        "total_functions": 82,
-        "average_nesting_depth": 2.4705882
-      },
-      "toml": {
-        "file_count": 1,
-        "lines_of_code": 54,
+      "json": {
+        "file_count": 6,
+        "lines_of_code": 60,
         "lines_of_comments": 0,
-        "blank_lines": 8,
-        "average_file_size": 54,
-        "complexity_estimate": 0.54,
+        "blank_lines": 0,
+        "average_file_size": 10,
+        "complexity_estimate": 0.6,
         "average_cyclomatic": 0.0,
         "average_cognitive": 0.0,
         "max_cyclomatic": 0,
         "max_cognitive": 0,
         "total_functions": 0,
         "average_nesting_depth": 0.0
+      },
+      "rs": {
+        "file_count": 20,
+        "lines_of_code": 4413,
+        "lines_of_comments": 777,
+        "blank_lines": 800,
+        "average_file_size": 220,
+        "complexity_estimate": 14.237028,
+        "average_cyclomatic": 47.55,
+        "average_cognitive": 78.65,
+        "max_cyclomatic": 336,
+        "max_cognitive": 646,
+        "total_functions": 102,
+        "average_nesting_depth": 2.1
       }
     },
     "file_importance_scores": {
       "src/cache/project.rs": 1.0,
-      "docs/XAI-Grok-Code-Fast-1.md": 0.5,
-      "src/service.js": 1.0,
-      "src/providers/ai.rs": 1.0,
-      "tests/todo_with_implementation.js": 0.9,
+      "tests/test_diff_formatter.rs": 1.0,
+      "tests/test_diff_hooks.js": 0.9,
       "Cargo.lock": 0.3,
-      "CLAUDE.md": 0.5,
-      "tests/python_valid.py": 0.9,
-      "tests/test_compact_format.rs": 1.0,
-      "docs/GPT-5-Guide.md": 0.5,
-      "Cargo.toml": 1.0,
-      "src/lib.rs": 1.0,
-      "src/validation/mod.rs": 1.0,
-      "tests/legitimate_mock.js": 0.9,
-      "tests/relaxed_hooks_test.js": 0.9,
-      "tests/test_project_context_integration.rs": 1.0,
-      "src/analysis/ast/visitor.rs": 1.0,
-      "src/legitimate_todos.js": 1.0,
-      "tests/edge_case_minimal.js": 0.9,
-      "src/legitimate_service.js": 1.0,
-      "tests/__mocks__/mock_service.js": 0.9,
-      "src/providers/mod.rs": 1.0,
-      "docs/Claude-Code-Hooks-Guide.md": 0.5,
-      "tests/user.test.js": 0.9,
-      "src/validation/diff_formatter.rs": 1.0,
-      "tests/legitimate_code_test.js": 0.9,
-      "src/analysis/project.rs": 1.0,
-      "src/analysis/ast/languages.rs": 1.0,
-      "src/calculator.js": 1.0,
-      "README_HOOKS.md": 0.5,
-      "src/cache/mod.rs": 1.0,
-      "tests/legitimate_with_todo.js": 0.9,
+      "tests/test_input.json": 0.7,
       "tests/test_example.js": 0.9,
-      "src/validation/test_files.rs": 1.0,
+      "src/validation/diff_formatter.rs": 1.0,
+      "src/validation/mod.rs": 1.0,
+      "docs/GPT-5-Guide.md": 0.5,
+      "tests/__mocks__/mock_service.js": 0.9,
+      "tests/test_project_cache.rs": 1.0,
+      "tests/test_full_context.sh": 0.7,
+      "tests/test_project_context_integration.rs": 1.0,
+      "tests/test_real_functionality.rs": 1.0,
+      "README_HOOKS.md": 0.5,
+      "tests/simple_test.rs": 1.0,
+      "tests/test_compact_format.rs": 1.0,
+      "src/analysis/ast/mod.rs": 1.0,
+      "src/providers/mod.rs": 1.0,
       "tests/correct_location.test.js": 0.9,
       "src/analysis/mod.rs": 1.0,
-      "README.md": 0.8,
-      "src/analysis/ast/mod.rs": 1.0,
+      "src/legitimate_service.js": 1.0,
+      "tests/legitimate_mock.js": 0.9,
+      "tests/test_edit_real.json": 0.7,
+      "src/providers/ai.rs": 1.0,
+      "Cargo.toml": 1.0,
+      "docs/Claude-Code-Hooks-Guide.md": 0.5,
+      "src/legitimate_todos.js": 1.0,
+      "tests/test_diff_only.json": 0.7,
+      "src/cache/mod.rs": 1.0,
+      "src/analysis/ast/languages.rs": 1.0,
+      "src/analysis/project.rs": 1.0,
       "src/analysis/metrics.rs": 1.0,
-      "tests/test_project_cache.rs": 1.0,
-      "tests/validator_with_returns.js": 0.9
+      "src/analysis/ast/visitor.rs": 1.0,
+      "src/validation/test_files.rs": 1.0,
+      "tests/test_diff_output.sh": 0.7,
+      "README.md": 0.8,
+      "tests/todo_with_implementation.js": 0.9,
+      "tests/user.test.js": 0.9,
+      "tests/validator_with_returns.js": 0.9,
+      "tests/test_multi_edit.json": 0.7,
+      "tests/relaxed_hooks_test.js": 0.9,
+      "tests/legitimate_with_todo.js": 0.9,
+      "tests/demo_full_context.md": 0.7,
+      "tests/edge_case_minimal.js": 0.9,
+      "tests/legitimate_code_test.js": 0.9,
+      "tests/python_valid.py": 0.9,
+      "CLAUDE.md": 0.5,
+      "src/lib.rs": 1.0,
+      "tests/real_test.js": 0.9,
+      "src/service.js": 1.0,
+      "tests/test_absolute_path.json": 0.7,
+      "src/calculator.js": 1.0,
+      "tests/test_full_diff.json": 0.7,
+      "docs/XAI-Grok-Code-Fast-1.md": 0.5
     },
-    "project_complexity_score": 1.3345314,
-    "test_coverage_estimate": 0.3902439,
-    "documentation_ratio": 0.14634146,
-    "average_cyclomatic_complexity": 29.375,
-    "average_cognitive_complexity": 47.53125,
+    "project_complexity_score": 1.2144597,
+    "test_coverage_estimate": 0.54545456,
+    "documentation_ratio": 0.12727273,
+    "average_cyclomatic_complexity": 27.432432,
+    "average_cognitive_complexity": 44.324326,
     "max_cyclomatic_complexity": 336,
     "max_cognitive_complexity": 646,
-    "high_complexity_files": 3,
+    "high_complexity_files": 4,
     "complexity_distribution": {
-      "low_complexity": 27,
-      "medium_complexity": 2,
-      "high_complexity": 3,
+      "low_complexity": 32,
+      "medium_complexity": 1,
+      "high_complexity": 4,
       "extreme_complexity": 0
     }
   },
   "file_hashes": {
-    "tests/user.test.js": {
-      "path": "tests/user.test.js",
+    "src/analysis/project.rs": {
+      "path": "src/analysis/project.rs",
       "modified_time": {
-        "secs_since_epoch": 1756747496,
-        "nanos_since_epoch": 713629300
+        "secs_since_epoch": 1756802338,
+        "nanos_since_epoch": 149191400
       },
-      "size": 960,
+      "size": 44053,
       "hash": null
     },
-    "src/analysis/ast/languages.rs": {
-      "path": "src/analysis/ast/languages.rs",
+    "src/validation/test_files.rs": {
+      "path": "src/validation/test_files.rs",
       "modified_time": {
-        "secs_since_epoch": 1756802437,
-        "nanos_since_epoch": 236354800
+        "secs_since_epoch": 1756770690,
+        "nanos_since_epoch": 283289000
       },
-      "size": 7741,
-      "hash": null
-    },
-    "tests/test_compact_format.rs": {
-      "path": "tests/test_compact_format.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756802872,
-        "nanos_since_epoch": 573805400
-      },
-      "size": 1666,
-      "hash": null
-    },
-    "src/analysis/mod.rs": {
-      "path": "src/analysis/mod.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756799835,
-        "nanos_since_epoch": 587147600
-      },
-      "size": 316,
-      "hash": null
-    },
-    "tests/validator_with_returns.js": {
-      "path": "tests/validator_with_returns.js",
-      "modified_time": {
-        "secs_since_epoch": 1756695820,
-        "nanos_since_epoch": 813525600
-      },
-      "size": 1231,
-      "hash": null
-    },
-    "src/calculator.js": {
-      "path": "src/calculator.js",
-      "modified_time": {
-        "secs_since_epoch": 1756749477,
-        "nanos_since_epoch": 389942000
-      },
-      "size": 378,
-      "hash": null
-    },
-    "src/lib.rs": {
-      "path": "src/lib.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756801660,
-        "nanos_since_epoch": 335292600
-      },
-      "size": 18896,
-      "hash": "712d18ffca42dd53bb20f870e556f852a5a9a913b46c28fffdc6a7eba7b1cc54"
-    },
-    "src/analysis/ast/mod.rs": {
-      "path": "src/analysis/ast/mod.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756799819,
-        "nanos_since_epoch": 200584700
-      },
-      "size": 235,
-      "hash": null
-    },
-    "src/analysis/metrics.rs": {
-      "path": "src/analysis/metrics.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756779199,
-        "nanos_since_epoch": 889268100
-      },
-      "size": 9285,
-      "hash": null
-    },
-    "tests/test_project_cache.rs": {
-      "path": "tests/test_project_cache.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756802907,
-        "nanos_since_epoch": 930314000
-      },
-      "size": 9928,
-      "hash": null
-    },
-    "src/cache/mod.rs": {
-      "path": "src/cache/mod.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756801285,
-        "nanos_since_epoch": 815673100
-      },
-      "size": 142,
-      "hash": null
-    },
-    "tests/test_project_context_integration.rs": {
-      "path": "tests/test_project_context_integration.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756802927,
-        "nanos_since_epoch": 612076400
-      },
-      "size": 4616,
-      "hash": null
-    },
-    "tests/test_example.js": {
-      "path": "tests/test_example.js",
-      "modified_time": {
-        "secs_since_epoch": 1756756278,
-        "nanos_since_epoch": 534269900
-      },
-      "size": 454,
-      "hash": null
-    },
-    "tests/correct_location.test.js": {
-      "path": "tests/correct_location.test.js",
-      "modified_time": {
-        "secs_since_epoch": 1756693438,
-        "nanos_since_epoch": 198334900
-      },
-      "size": 151,
-      "hash": null
-    },
-    "docs/GPT-5-Guide.md": {
-      "path": "docs/GPT-5-Guide.md",
-      "modified_time": {
-        "secs_since_epoch": 1756472074,
-        "nanos_since_epoch": 963191100
-      },
-      "size": 16503,
-      "hash": null
-    },
-    "tests/legitimate_mock.js": {
-      "path": "tests/legitimate_mock.js",
-      "modified_time": {
-        "secs_since_epoch": 1756798055,
-        "nanos_since_epoch": 247653100
-      },
-      "size": 1249,
-      "hash": null
-    },
-    "README_HOOKS.md": {
-      "path": "README_HOOKS.md",
-      "modified_time": {
-        "secs_since_epoch": 1756804446,
-        "nanos_since_epoch": 102350200
-      },
-      "size": 636,
-      "hash": null
-    },
-    "tests/python_valid.py": {
-      "path": "tests/python_valid.py",
-      "modified_time": {
-        "secs_since_epoch": 1756696037,
-        "nanos_since_epoch": 151676400
-      },
-      "size": 1348,
-      "hash": null
-    },
-    "Cargo.toml": {
-      "path": "Cargo.toml",
-      "modified_time": {
-        "secs_since_epoch": 1756800791,
-        "nanos_since_epoch": 946722300
-      },
-      "size": 1545,
-      "hash": "1c04850a03dce2d7810d9f8f2845e9d6434aaa898b4690a9c309c51897410dd0"
-    },
-    "tests/todo_with_implementation.js": {
-      "path": "tests/todo_with_implementation.js",
-      "modified_time": {
-        "secs_since_epoch": 1756696121,
-        "nanos_since_epoch": 32695800
-      },
-      "size": 1062,
-      "hash": null
-    },
-    "docs/Claude-Code-Hooks-Guide.md": {
-      "path": "docs/Claude-Code-Hooks-Guide.md",
-      "modified_time": {
-        "secs_since_epoch": 1756471997,
-        "nanos_since_epoch": 638815800
-      },
-      "size": 18858,
-      "hash": null
-    },
-    "src/validation/mod.rs": {
-      "path": "src/validation/mod.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756805736,
-        "nanos_since_epoch": 255265500
-      },
-      "size": 266,
-      "hash": null
-    },
-    "tests/__mocks__/mock_service.js": {
-      "path": "tests/__mocks__/mock_service.js",
-      "modified_time": {
-        "secs_since_epoch": 1756696176,
-        "nanos_since_epoch": 678479200
-      },
-      "size": 715,
+      "size": 18815,
       "hash": null
     },
     "src/providers/mod.rs": {
@@ -661,42 +612,6 @@
       "size": 180,
       "hash": null
     },
-    "src/cache/project.rs": {
-      "path": "src/cache/project.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756801308,
-        "nanos_since_epoch": 539141200
-      },
-      "size": 17628,
-      "hash": null
-    },
-    "src/legitimate_todos.js": {
-      "path": "src/legitimate_todos.js",
-      "modified_time": {
-        "secs_since_epoch": 1756747939,
-        "nanos_since_epoch": 969332300
-      },
-      "size": 656,
-      "hash": null
-    },
-    "CLAUDE.md": {
-      "path": "CLAUDE.md",
-      "modified_time": {
-        "secs_since_epoch": 1756692384,
-        "nanos_since_epoch": 171967100
-      },
-      "size": 5999,
-      "hash": null
-    },
-    "Cargo.lock": {
-      "path": "Cargo.lock",
-      "modified_time": {
-        "secs_since_epoch": 1756782399,
-        "nanos_since_epoch": 560655300
-      },
-      "size": 56752,
-      "hash": null
-    },
     "src/providers/ai.rs": {
       "path": "src/providers/ai.rs",
       "modified_time": {
@@ -706,67 +621,40 @@
       "size": 33302,
       "hash": null
     },
-    "src/validation/diff_formatter.rs": {
-      "path": "src/validation/diff_formatter.rs",
+    "tests/test_diff_hooks.js": {
+      "path": "tests/test_diff_hooks.js",
       "modified_time": {
-        "secs_since_epoch": 1756806812,
-        "nanos_since_epoch": 630973900
+        "secs_since_epoch": 1756807002,
+        "nanos_since_epoch": 454559000
       },
-      "size": 10366,
+      "size": 463,
       "hash": null
     },
-    "src/service.js": {
-      "path": "src/service.js",
+    "tests/test_project_cache.rs": {
+      "path": "tests/test_project_cache.rs",
       "modified_time": {
-        "secs_since_epoch": 1756696897,
-        "nanos_since_epoch": 137958200
+        "secs_since_epoch": 1756835386,
+        "nanos_since_epoch": 364389200
       },
-      "size": 688,
+      "size": 12183,
       "hash": null
     },
-    "tests/edge_case_minimal.js": {
-      "path": "tests/edge_case_minimal.js",
+    "tests/demo_full_context.md": {
+      "path": "tests/demo_full_context.md",
       "modified_time": {
-        "secs_since_epoch": 1756696101,
-        "nanos_since_epoch": 352019800
+        "secs_since_epoch": 1756823261,
+        "nanos_since_epoch": 631574400
       },
-      "size": 556,
+      "size": 1537,
       "hash": null
     },
-    "tests/legitimate_with_todo.js": {
-      "path": "tests/legitimate_with_todo.js",
+    "tests/todo_with_implementation.js": {
+      "path": "tests/todo_with_implementation.js",
       "modified_time": {
-        "secs_since_epoch": 1756695799,
-        "nanos_since_epoch": 123653100
+        "secs_since_epoch": 1756696121,
+        "nanos_since_epoch": 32695800
       },
-      "size": 1065,
-      "hash": null
-    },
-    "src/analysis/ast/visitor.rs": {
-      "path": "src/analysis/ast/visitor.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756799996,
-        "nanos_since_epoch": 865027900
-      },
-      "size": 17280,
-      "hash": null
-    },
-    "src/analysis/project.rs": {
-      "path": "src/analysis/project.rs",
-      "modified_time": {
-        "secs_since_epoch": 1756802338,
-        "nanos_since_epoch": 149191400
-      },
-      "size": 44053,
-      "hash": null
-    },
-    "tests/legitimate_code_test.js": {
-      "path": "tests/legitimate_code_test.js",
-      "modified_time": {
-        "secs_since_epoch": 1756733379,
-        "nanos_since_epoch": 744585800
-      },
-      "size": 2494,
+      "size": 1062,
       "hash": null
     },
     "README.md": {
@@ -778,6 +666,60 @@
       "size": 169,
       "hash": null
     },
+    "src/legitimate_todos.js": {
+      "path": "src/legitimate_todos.js",
+      "modified_time": {
+        "secs_since_epoch": 1756747939,
+        "nanos_since_epoch": 969332300
+      },
+      "size": 656,
+      "hash": null
+    },
+    "docs/GPT-5-Guide.md": {
+      "path": "docs/GPT-5-Guide.md",
+      "modified_time": {
+        "secs_since_epoch": 1756472074,
+        "nanos_since_epoch": 963191100
+      },
+      "size": 16503,
+      "hash": null
+    },
+    "src/analysis/ast/mod.rs": {
+      "path": "src/analysis/ast/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799819,
+        "nanos_since_epoch": 200584700
+      },
+      "size": 235,
+      "hash": null
+    },
+    "tests/test_example.js": {
+      "path": "tests/test_example.js",
+      "modified_time": {
+        "secs_since_epoch": 1756756278,
+        "nanos_since_epoch": 534269900
+      },
+      "size": 454,
+      "hash": null
+    },
+    "tests/test_input.json": {
+      "path": "tests/test_input.json",
+      "modified_time": {
+        "secs_since_epoch": 1756823158,
+        "nanos_since_epoch": 262438200
+      },
+      "size": 149,
+      "hash": null
+    },
+    "tests/legitimate_with_todo.js": {
+      "path": "tests/legitimate_with_todo.js",
+      "modified_time": {
+        "secs_since_epoch": 1756695799,
+        "nanos_since_epoch": 123653100
+      },
+      "size": 1065,
+      "hash": null
+    },
     "tests/relaxed_hooks_test.js": {
       "path": "tests/relaxed_hooks_test.js",
       "modified_time": {
@@ -787,13 +729,274 @@
       "size": 984,
       "hash": null
     },
-    "src/legitimate_service.js": {
-      "path": "src/legitimate_service.js",
+    "tests/legitimate_mock.js": {
+      "path": "tests/legitimate_mock.js",
       "modified_time": {
-        "secs_since_epoch": 1756694494,
-        "nanos_since_epoch": 222246600
+        "secs_since_epoch": 1756798055,
+        "nanos_since_epoch": 247653100
       },
-      "size": 482,
+      "size": 1249,
+      "hash": null
+    },
+    "src/lib.rs": {
+      "path": "src/lib.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801660,
+        "nanos_since_epoch": 335292600
+      },
+      "size": 18896,
+      "hash": "712d18ffca42dd53bb20f870e556f852a5a9a913b46c28fffdc6a7eba7b1cc54"
+    },
+    "tests/simple_test.rs": {
+      "path": "tests/simple_test.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756823176,
+        "nanos_since_epoch": 267997900
+      },
+      "size": 1548,
+      "hash": null
+    },
+    "src/cache/mod.rs": {
+      "path": "src/cache/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756801285,
+        "nanos_since_epoch": 815673100
+      },
+      "size": 142,
+      "hash": null
+    },
+    "src/analysis/metrics.rs": {
+      "path": "src/analysis/metrics.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756779199,
+        "nanos_since_epoch": 889268100
+      },
+      "size": 9285,
+      "hash": null
+    },
+    "CLAUDE.md": {
+      "path": "CLAUDE.md",
+      "modified_time": {
+        "secs_since_epoch": 1756692384,
+        "nanos_since_epoch": 171967100
+      },
+      "size": 5999,
+      "hash": null
+    },
+    "docs/Claude-Code-Hooks-Guide.md": {
+      "path": "docs/Claude-Code-Hooks-Guide.md",
+      "modified_time": {
+        "secs_since_epoch": 1756471997,
+        "nanos_since_epoch": 638815800
+      },
+      "size": 18858,
+      "hash": null
+    },
+    "tests/edge_case_minimal.js": {
+      "path": "tests/edge_case_minimal.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696101,
+        "nanos_since_epoch": 352019800
+      },
+      "size": 556,
+      "hash": null
+    },
+    "tests/legitimate_code_test.js": {
+      "path": "tests/legitimate_code_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756733379,
+        "nanos_since_epoch": 744585800
+      },
+      "size": 2494,
+      "hash": null
+    },
+    "tests/python_valid.py": {
+      "path": "tests/python_valid.py",
+      "modified_time": {
+        "secs_since_epoch": 1756696037,
+        "nanos_since_epoch": 151676400
+      },
+      "size": 1348,
+      "hash": null
+    },
+    "src/analysis/ast/visitor.rs": {
+      "path": "src/analysis/ast/visitor.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799996,
+        "nanos_since_epoch": 865027900
+      },
+      "size": 17280,
+      "hash": null
+    },
+    "tests/test_compact_format.rs": {
+      "path": "tests/test_compact_format.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756834477,
+        "nanos_since_epoch": 639902100
+      },
+      "size": 2199,
+      "hash": null
+    },
+    "tests/test_diff_output.sh": {
+      "path": "tests/test_diff_output.sh",
+      "modified_time": {
+        "secs_since_epoch": 1756807047,
+        "nanos_since_epoch": 780966100
+      },
+      "size": 1318,
+      "hash": null
+    },
+    "tests/test_edit_real.json": {
+      "path": "tests/test_edit_real.json",
+      "modified_time": {
+        "secs_since_epoch": 1756824427,
+        "nanos_since_epoch": 572695600
+      },
+      "size": 222,
+      "hash": null
+    },
+    "tests/test_full_context.sh": {
+      "path": "tests/test_full_context.sh",
+      "modified_time": {
+        "secs_since_epoch": 1756823119,
+        "nanos_since_epoch": 606894200
+      },
+      "size": 1048,
+      "hash": null
+    },
+    "README_HOOKS.md": {
+      "path": "README_HOOKS.md",
+      "modified_time": {
+        "secs_since_epoch": 1756804446,
+        "nanos_since_epoch": 102350200
+      },
+      "size": 636,
+      "hash": null
+    },
+    "tests/__mocks__/mock_service.js": {
+      "path": "tests/__mocks__/mock_service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696176,
+        "nanos_since_epoch": 678479200
+      },
+      "size": 715,
+      "hash": null
+    },
+    "tests/correct_location.test.js": {
+      "path": "tests/correct_location.test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756693438,
+        "nanos_since_epoch": 198334900
+      },
+      "size": 151,
+      "hash": null
+    },
+    "tests/test_multi_edit.json": {
+      "path": "tests/test_multi_edit.json",
+      "modified_time": {
+        "secs_since_epoch": 1756834750,
+        "nanos_since_epoch": 162008500
+      },
+      "size": 395,
+      "hash": null
+    },
+    "tests/test_project_context_integration.rs": {
+      "path": "tests/test_project_context_integration.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802927,
+        "nanos_since_epoch": 612076400
+      },
+      "size": 4616,
+      "hash": null
+    },
+    "src/analysis/mod.rs": {
+      "path": "src/analysis/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756799835,
+        "nanos_since_epoch": 587147600
+      },
+      "size": 316,
+      "hash": null
+    },
+    "Cargo.lock": {
+      "path": "Cargo.lock",
+      "modified_time": {
+        "secs_since_epoch": 1756782399,
+        "nanos_since_epoch": 560655300
+      },
+      "size": 56752,
+      "hash": null
+    },
+    "Cargo.toml": {
+      "path": "Cargo.toml",
+      "modified_time": {
+        "secs_since_epoch": 1756800791,
+        "nanos_since_epoch": 946722300
+      },
+      "size": 1545,
+      "hash": "1c04850a03dce2d7810d9f8f2845e9d6434aaa898b4690a9c309c51897410dd0"
+    },
+    "src/cache/project.rs": {
+      "path": "src/cache/project.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756835183,
+        "nanos_since_epoch": 610884500
+      },
+      "size": 17837,
+      "hash": null
+    },
+    "src/validation/mod.rs": {
+      "path": "src/validation/mod.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756805736,
+        "nanos_since_epoch": 255265500
+      },
+      "size": 266,
+      "hash": null
+    },
+    "src/calculator.js": {
+      "path": "src/calculator.js",
+      "modified_time": {
+        "secs_since_epoch": 1756749477,
+        "nanos_since_epoch": 389942000
+      },
+      "size": 378,
+      "hash": null
+    },
+    "tests/real_test.js": {
+      "path": "tests/real_test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756824408,
+        "nanos_since_epoch": 871545500
+      },
+      "size": 125,
+      "hash": null
+    },
+    "src/service.js": {
+      "path": "src/service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756696897,
+        "nanos_since_epoch": 137958200
+      },
+      "size": 688,
+      "hash": null
+    },
+    "src/analysis/ast/languages.rs": {
+      "path": "src/analysis/ast/languages.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756802437,
+        "nanos_since_epoch": 236354800
+      },
+      "size": 7741,
+      "hash": null
+    },
+    "src/validation/diff_formatter.rs": {
+      "path": "src/validation/diff_formatter.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756835454,
+        "nanos_since_epoch": 286127800
+      },
+      "size": 20105,
       "hash": null
     },
     "docs/XAI-Grok-Code-Fast-1.md": {
@@ -805,19 +1008,82 @@
       "size": 10800,
       "hash": null
     },
-    "src/validation/test_files.rs": {
-      "path": "src/validation/test_files.rs",
+    "tests/test_diff_formatter.rs": {
+      "path": "tests/test_diff_formatter.rs",
       "modified_time": {
-        "secs_since_epoch": 1756770690,
-        "nanos_since_epoch": 283289000
+        "secs_since_epoch": 1756823644,
+        "nanos_since_epoch": 870610400
       },
-      "size": 18815,
+      "size": 5354,
+      "hash": null
+    },
+    "tests/test_absolute_path.json": {
+      "path": "tests/test_absolute_path.json",
+      "modified_time": {
+        "secs_since_epoch": 1756824508,
+        "nanos_since_epoch": 940100800
+      },
+      "size": 228,
+      "hash": null
+    },
+    "tests/test_diff_only.json": {
+      "path": "tests/test_diff_only.json",
+      "modified_time": {
+        "secs_since_epoch": 1756834533,
+        "nanos_since_epoch": 483657600
+      },
+      "size": 222,
+      "hash": null
+    },
+    "tests/test_full_diff.json": {
+      "path": "tests/test_full_diff.json",
+      "modified_time": {
+        "secs_since_epoch": 1756823074,
+        "nanos_since_epoch": 217582200
+      },
+      "size": 218,
+      "hash": null
+    },
+    "tests/test_real_functionality.rs": {
+      "path": "tests/test_real_functionality.rs",
+      "modified_time": {
+        "secs_since_epoch": 1756834364,
+        "nanos_since_epoch": 897831500
+      },
+      "size": 2737,
+      "hash": null
+    },
+    "tests/user.test.js": {
+      "path": "tests/user.test.js",
+      "modified_time": {
+        "secs_since_epoch": 1756747496,
+        "nanos_since_epoch": 713629300
+      },
+      "size": 960,
+      "hash": null
+    },
+    "tests/validator_with_returns.js": {
+      "path": "tests/validator_with_returns.js",
+      "modified_time": {
+        "secs_since_epoch": 1756695820,
+        "nanos_since_epoch": 813525600
+      },
+      "size": 1231,
+      "hash": null
+    },
+    "src/legitimate_service.js": {
+      "path": "src/legitimate_service.js",
+      "modified_time": {
+        "secs_since_epoch": 1756694494,
+        "nanos_since_epoch": 222246600
+      },
+      "size": 482,
       "hash": null
     }
   },
-  "cache_timestamp": 1756806812,
+  "cache_timestamp": 1756835454,
   "last_modified": {
-    "secs_since_epoch": 1756806812,
-    "nanos_since_epoch": 785669000
+    "secs_since_epoch": 1756835454,
+    "nanos_since_epoch": 566923400
   }
 }

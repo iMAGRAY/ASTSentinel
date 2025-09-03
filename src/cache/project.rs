@@ -293,26 +293,29 @@ struct CommentConfig {
 pub fn calculate_file_importance(file: &crate::analysis::project::ProjectFile) -> f32 {
     let mut score: f32 = 0.0;
     
-    // Base score by file type
-    score += match file.file_type.as_str() {
-        // Core application files
-        "rs" | "go" | "java" | "cpp" => 1.0,
-        "js" | "ts" | "py" | "rb" => 0.9,
-        
-        // Configuration and setup
-        "toml" | "yaml" | "json" if file.relative_path.contains("config") => 0.8,
-        "toml" if file.relative_path == "Cargo.toml" => 1.0,
-        "json" if file.relative_path == "package.json" => 1.0,
-        
-        // Tests
-        _ if file.relative_path.contains("test") => 0.7,
-        
-        // Documentation
-        "md" if file.relative_path == "README.md" => 0.8,
-        "md" => 0.5,
-        
-        _ => 0.3,
-    };
+    // Check if it's a test file first (highest priority)
+    if file.relative_path.contains("test") || file.relative_path.contains("spec") {
+        score = 0.7;
+    } else {
+        // Base score by file type
+        score += match file.file_type.as_str() {
+            // Core application files
+            "rs" | "go" | "java" | "cpp" => 1.0,
+            "js" | "ts" | "py" | "rb" => 0.9,
+            
+            // Configuration and setup
+            "toml" | "yaml" | "json" if file.relative_path.contains("config") => 0.8,
+            "toml" if file.relative_path == "Cargo.toml" => 1.0,
+            "json" if file.relative_path == "package.json" => 1.0,
+            
+            // Documentation
+            "md" if file.relative_path == "README.md" => 0.8,
+            "md" => 0.5,
+            
+            // Default for other files
+            _ => 0.3,
+        };
+    }
     
     // Boost for main/index files
     if file.relative_path.contains("main.") || 
