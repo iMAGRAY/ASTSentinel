@@ -1,0 +1,38 @@
+JSON RESPONSE FORMAT (REQUIRED):
+{
+  "decision": "allow|ask|deny|block",
+  "message": "<single line message focusing on user's task and critical issues>",
+  "risk_level": "low|medium|high|critical",
+  "detailed_feedback": {
+    "task_assistance": {
+      "current_task": "<what the user is trying to achieve from conversation context>",
+      "task_progress": "helps_achieve_goal|partially_complete|needs_more_work|blocking_issues",
+      "next_steps": ["<specific steps to complete the user's task>"],
+      "task_specific_issues": [
+        {
+          "type": "missing_functionality|incorrect_implementation|improvement_opportunity",
+          "description": "<how this relates to the user's task>",
+          "suggestion": "<specific fix to help achieve the goal>"
+        }
+      ]
+    },
+    "general_issues": [
+      {
+        "issue": "<specific issue not directly related to user's task>",
+        "severity": "critical|high|medium|low",
+        "suggestion": "<actionable improvement>",
+        "line": <line_number_if_applicable>
+      }
+    ],
+    "security_concerns": [
+      {
+        "type": "<vulnerability_type>",
+        "severity": "critical|high|medium|low",
+        "description": "<specific security issue>",
+        "recommendation": "<how to fix>"
+      }
+    ]
+  }
+}
+
+IMPORTANT: Keep all field names in English, but string values should be in the detected language!

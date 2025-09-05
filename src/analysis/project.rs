@@ -741,6 +741,45 @@ fn is_code_file_extension(extension: &str) -> bool {
     )
 }
 
+/// Build machine-readable tree structure with clear hierarchy
+fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
+    let mut output = String::new();
+    let mut file_tree: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
+    
+    // Group files by directory
+    for file in &structure.files {
+        // Split path into directory and filename
+        let path = &file.relative_path;
+        let (dir, filename) = if let Some(pos) = path.rfind(|c| c == '/' || c == '\\') {
+            (&path[..pos], &path[pos+1..])
+        } else {
+            (".", path.as_str())
+        };
+        
+        file_tree.entry(dir.to_string())
+            .or_insert_with(Vec::new)
+            .push(filename.to_string());
+    }
+    
+    // Format as hierarchical structure
+    for (dir, files) in file_tree.iter() {
+        if dir == "." {
+            // Root files
+            for file in files {
+                output.push_str(&format!("  /{}\n", file));
+            }
+        } else {
+            // Directory and its files
+            output.push_str(&format!("  /{}/\n", dir));
+            for file in files {
+                output.push_str(&format!("    {}\n", file));
+            }
+        }
+    }
+    
+    output
+}
+
 /// Build complete project tree with files and directories
 fn build_complete_project_tree(structure: &ProjectStructure) -> String {
     #[derive(Debug)]
@@ -817,6 +856,7 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
 
 /// Build a nested tree structure from flat directory paths
 /// Example: ["src", "src/bin", "tests", "tests/unit"] -> "src[bin],tests[unit]"
+#[cfg(test)]
 fn format_directory_tree(directories: &[String]) -> String {
     #[derive(Debug)]
     struct DirNode {
@@ -907,38 +947,38 @@ pub fn format_project_structure_for_ai_with_metrics(
         );
     }
     
-    // Standard format with enhanced metrics
+    // Standard format with enhanced metrics - machine-readable format
     let mut output = String::new();
     
-    // Build complete tree structure with files and directories
-    let tree = build_complete_project_tree(structure);
-    output.push_str(&format!("PROJECT:[{}]\n", tree));
+    // Build machine-readable tree structure
+    output.push_str("PROJECT_STRUCTURE:\n");
+    let tree = build_machine_readable_tree(structure);
+    output.push_str(&tree);
     
     // Add enhanced statistics if metrics available
+    output.push_str("\nPROJECT_METRICS:\n");
     if let Some(metrics) = metrics {
         output.push_str(&format!(
-            "STATS: {} files, {} dirs, {} LOC\n",
+            "  total_files: {}\n  total_dirs: {}\n  total_loc: {}\n",
             structure.total_files,
             structure.directories.len(),
             metrics.total_lines_of_code
         ));
         
-        // Add language breakdown with LOC
+        // Add language breakdown with LOC in machine-readable format
         if !metrics.code_by_language.is_empty() {
-            output.push_str("LANGUAGES:");
+            output.push_str("  languages:\n");
             let mut sorted_langs: Vec<_> = metrics.code_by_language.iter().collect();
             sorted_langs.sort_by(|a, b| b.1.lines_of_code.cmp(&a.1.lines_of_code));
             
-            for (i, (lang, stats)) in sorted_langs.iter().enumerate() {
-                if i > 0 { output.push(','); }
+            for (lang, stats) in sorted_langs.iter() {
                 output.push_str(&format!(
-                    "{}({} files,{} LOC)",
+                    "    - {}: {} files, {} LOC\n",
                     lang,
                     stats.file_count,
                     stats.lines_of_code
                 ));
             }
-            output.push('\n');
         }
         
         // Add project quality metrics

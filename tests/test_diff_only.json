@@ -1,9 +1,0 @@
-{
-  "tool_name": "Edit",
-  "tool_input": {
-    "file_path": "tests/real_test.js",
-    "old_string": "console.log(\"line 2\");",
-    "new_string": "console.log(\"MODIFIED LINE 2\");"
-  },
-  "transcript_path": null
-}

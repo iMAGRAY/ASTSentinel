@@ -1,1 +1,38 @@
 /target
+
+# Production deployment directory - should not be in git
+/hooks
+
+# Environment files with sensitive data
+.env
+.env.local
+**/.env
+**/.env.local
+*.env
+
+# But allow example files
+!.env.example
+!**/.env.example
+
+# Temporary and cache files
+.claude_project_cache.json
+**/.claude_project_cache.json
+
+# Test files and development artifacts
+test_*.js
+test_*.py
+test_*.rb
+debug_*.py
+post-context.txt
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

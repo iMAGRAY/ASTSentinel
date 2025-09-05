@@ -1,9 +1,0 @@
-{
-  "tool_name": "Edit",
-  "tool_input": {
-    "file_path": "tests/test_diff_hooks.js",
-    "old_string": "let total = 0;",
-    "new_string": "let total = 0; // Start with zero"
-  },
-  "transcript_path": null
-}

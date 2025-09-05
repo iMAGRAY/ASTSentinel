@@ -30,7 +30,7 @@ pub mod cache;
 // Re-export commonly used types for convenience
 pub use analysis::{ComplexityMetrics, ProjectStructure, scan_project_structure, format_project_structure_for_ai, ScanConfig};
 pub use analysis::ast::{SupportedLanguage, MultiLanguageAnalyzer, ComplexityVisitor};
-pub use validation::{TestFileConfig, TestFileValidation, validate_test_file, detect_test_content};
+// Test file validation removed - AI handles all validation now
 pub use providers::{UniversalAIClient, AIProvider};
 pub use cache::ProjectCache;
 
@@ -376,8 +376,10 @@ impl Config {
         // Try to load .env from the same directory as the executable
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
+                // Load .env (production) and optionally override with .env.local (development)
                 let env_file = exe_dir.join(".env");
                 eprintln!("Looking for .env at: {:?}", env_file);
+                
                 if env_file.exists() {
                     eprintln!(".env file found, loading...");
                     if let Err(e) = dotenv::from_path(&env_file) {
@@ -387,6 +389,17 @@ impl Config {
                     }
                 } else {
                     eprintln!(".env file not found");
+                }
+                
+                // Additionally check for .env.local to override settings in development
+                let env_local = exe_dir.join(".env.local");
+                if env_local.exists() {
+                    eprintln!("Found .env.local, loading overrides...");
+                    if let Err(e) = dotenv::from_path(&env_local) {
+                        eprintln!("Failed to load .env.local: {}", e);
+                    } else {
+                        eprintln!(".env.local loaded successfully");
+                    }
                 }
             }
         }

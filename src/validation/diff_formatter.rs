@@ -253,13 +253,54 @@ pub fn format_multi_edit_full_context(
     result
 }
 
-/// Truncate string for display purposes
-fn truncate_for_display(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
-        s.to_string()
-    } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+/// Truncate string for display purposes (UTF-8 safe)
+pub fn truncate_for_display(s: &str, max_len: usize) -> String {
+    const ELLIPSIS: &str = "...";
+    const ELLIPSIS_LEN: usize = 3;
+    
+    // Handle edge cases
+    if max_len == 0 || s.is_empty() {
+        return String::new();
     }
+    
+    if s.len() <= max_len {
+        return s.to_string();
+    }
+    
+    // Not enough space for ellipsis, just truncate
+    if max_len <= ELLIPSIS_LEN {
+        let mut char_count = 0;
+        let mut byte_count = 0;
+        
+        for ch in s.chars() {
+            let ch_len = ch.len_utf8();
+            if byte_count + ch_len > max_len {
+                break;
+            }
+            byte_count += ch_len;
+            char_count += 1;
+        }
+        
+        return s.chars().take(char_count).collect();
+    }
+    
+    // Normal case: truncate and add ellipsis
+    let content_max_len = max_len - ELLIPSIS_LEN;
+    let mut char_count = 0;
+    let mut byte_count = 0;
+    
+    for ch in s.chars() {
+        let ch_len = ch.len_utf8();
+        if byte_count + ch_len > content_max_len {
+            break;
+        }
+        byte_count += ch_len;
+        char_count += 1;
+    }
+    
+    let mut result = s.chars().take(char_count).collect::<String>();
+    result.push_str(ELLIPSIS);
+    result
 }
 
 /// Format a single line with line number and change marker
@@ -449,7 +490,6 @@ pub fn format_multi_edit_diff(
     file_path: &str,
     file_content: Option<&str>,
     edits: &[(String, String)], // Vec of (old_string, new_string)
-    _context_lines: usize,
 ) -> String {
     let mut result = String::new();
     
@@ -479,11 +519,7 @@ pub fn format_multi_edit_diff(
             current_content.replace_range(pos..pos + old_str.len(), new_str);
         } else {
             result.push_str(&format!("  ! String not found: \"{}\"\n", 
-                if old_str.len() > 50 { 
-                    format!("{}...", &old_str[..50]) 
-                } else { 
-                    old_str.clone() 
-                }
+                truncate_for_display(old_str, 50)
             ));
         }
     }
@@ -526,5 +562,69 @@ mod tests {
         assert!(diff.contains("- line 2"));
         assert!(diff.contains("+ modified line 2"));
         assert!(diff.contains("+ line 4"));
+    }
+
+    #[test]
+    fn test_truncate_for_display_short_string() {
+        let short = "Hello";
+        let result = truncate_for_display(short, 10);
+        assert_eq!(result, "Hello");
+    }
+
+    #[test]
+    fn test_truncate_for_display_exact_length() {
+        let exact = "Hello World";
+        let result = truncate_for_display(exact, 11);
+        assert_eq!(result, "Hello World");
+    }
+
+    #[test]
+    fn test_truncate_for_display_long_string() {
+        let long = "This is a very long string that should be truncated";
+        let result = truncate_for_display(long, 20);
+        // max_len=20, ellipsis takes 3, so 17 chars + "..."
+        assert_eq!(result, "This is a very lo...");
+    }
+
+    #[test]
+    fn test_truncate_for_display_utf8() {
+        let russian = "Привет мир это тестовая строка с русскими буквами";
+        let result = truncate_for_display(russian, 20);
+        // max_len=20, ellipsis takes 3, so 17 chars + "..."
+        // Each Cyrillic char is 2 bytes but we count by chars
+        assert_eq!(result, "Привет ми...");
+    }
+
+    #[test]
+    fn test_truncate_for_display_emoji() {
+        let emoji = "Hello 👋 World 🌍 Test";
+        let result = truncate_for_display(emoji, 15);
+        // max_len=15, ellipsis takes 3, so 12 chars + "..."
+        // Emoji counts as 1 char even though it's 4 bytes
+        assert_eq!(result, "Hello 👋 W...");
+    }
+
+    #[test]
+    fn test_truncate_for_display_mixed_utf8() {
+        let mixed = "Test тест 测试 テスト";
+        let result = truncate_for_display(mixed, 15);
+        // 15 chars limit means we can fit "Test тес" (8 chars) + "..." (3 chars)
+        assert_eq!(result, "Test тес...");
+    }
+
+    #[test]
+    fn test_truncate_for_display_zero_length() {
+        let text = "Hello World";
+        let result = truncate_for_display(text, 0);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn test_truncate_for_display_boundary_cases() {
+        // Test truncation at multi-byte character boundary
+        let text = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+        let result = truncate_for_display(text, 10);
+        // max_len=10, ellipsis takes 3, so 7 chars + "..."
+        assert_eq!(result, "абв...");
     }
 }

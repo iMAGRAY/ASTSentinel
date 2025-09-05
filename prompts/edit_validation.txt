@@ -6,6 +6,7 @@
 - **EVAL/EXEC** with direct untrusted user input → DENY  
 - **SQL INJECTION** obvious string concatenation without any sanitization → DENY
 - **HARDCODED PRODUCTION SECRETS** (real passwords/keys, not dev/test) → DENY
+  - **EXCEPTION**: .env files are ALWAYS ALLOWED to contain secrets (that's their purpose)
 - **COMMAND INJECTION** direct shell execution of user input → DENY
 - **PATH TRAVERSAL** clear malicious patterns (../../etc/passwd) → DENY
 
@@ -17,6 +18,8 @@
 5. Would mislead about actual functionality
 
 **ALWAYS ALLOW:**
+- **.env files** with any content (secrets, API keys, passwords - this is their purpose)
+- **Configuration files** (.env, .env.*, config.*, settings.*)
 - Browser extension code (manifest.json, background.js, content scripts)
 - Development placeholders with TODO/FIXME comments
 - Test files and mock implementations
@@ -104,6 +107,21 @@ function processPayment(amount) {
 - Part of browser extension
 
 ## ALLOW EXAMPLES - LEGITIMATE CASES
+
+```bash
+# ALLOW - .env file with secrets (this is the correct place for them)
+# File: .env
+DATABASE_PASSWORD=SuperSecret123!
+API_KEY=sk-proj-abcdef1234567890
+STRIPE_SECRET_KEY=sk_live_51234567890abcdef
+OPENAI_API_KEY=sk-1234567890abcdef
+
+# ALLOW - .env.production with production secrets
+# File: .env.production  
+PROD_DB_HOST=production.database.com
+PROD_DB_PASSWORD=ActualProductionPassword123
+JWT_SECRET=very-long-production-secret-key
+```
 
 ```javascript
 // ALLOW - Clearly marked mock in test file

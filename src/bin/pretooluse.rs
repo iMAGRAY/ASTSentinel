@@ -12,12 +12,7 @@ use rust_validation_hooks::analysis::project::{
 };
 // Use universal AI client
 use rust_validation_hooks::providers::ai::UniversalAIClient;
-// Use test file validator
-use rust_validation_hooks::validation::test_files::{
-    validate_test_file,
-    detect_test_content,
-    TestFileConfig,
-};
+// Test file validator removed - AI handles validation
 // Use diff formatter for better AI context
 use rust_validation_hooks::validation::diff_formatter::{
     format_edit_diff,
@@ -27,21 +22,101 @@ use rust_validation_hooks::validation::diff_formatter::{
 
 // Removed GrokSecurityClient - now using UniversalAIClient from ai_providers module
 
-/// Load prompt from file relative to executable location  
-fn load_prompt(prompt_file: &str) -> Result<String> {
-    // Robust path validation using Path components
-    let path = std::path::Path::new(prompt_file);
-    let components: Vec<_> = path.components().collect();
+use std::path::PathBuf;
+
+/// Validate path for security and ensure it's a directory
+fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
+    // Canonicalize handles path traversal, symlinks, and normalization
+    match std::fs::canonicalize(path) {
+        Ok(canonical) => {
+            if canonical.is_dir() {
+                Some(canonical)
+            } else {
+                None
+            }
+        }
+        Err(e) => {
+            eprintln!("Warning: Cannot validate prompts path: {}", e);
+            None
+        }
+    }
+}
+
+/// Find prompts directory from executable location
+fn find_prompts_from_exe() -> Option<PathBuf> {
+    let exe_path = match std::env::current_exe() {
+        Ok(path) => path,
+        Err(e) => {
+            eprintln!("Warning: Cannot determine executable path: {}", e);
+            return None;
+        }
+    };
     
-    // Ensure it's a simple filename (single Normal component)
-    if components.len() != 1 || !matches!(components[0], std::path::Component::Normal(_)) {
-        anyhow::bail!("Invalid prompt filename, must be simple filename: {}", prompt_file);
+    let parent = exe_path.parent()?;
+    
+    // Development scenario: check if we're in Cargo's target directory
+    let parent_name = parent.file_name()?.to_str()?;
+    if parent_name == "debug" || parent_name == "release" {
+        // Navigate up: binary -> debug/release -> target -> project_root
+        let project_root = parent.parent()?.parent()?;
+        let prompts_path = project_root.join("prompts");
+        if let Some(validated) = validate_prompts_path(&prompts_path) {
+            return Some(validated);
+        }
     }
     
-    // Get executable directory with explicit handling
-    let exe_path = std::env::current_exe().context("Failed to get executable path")?;
-    let exe_dir = exe_path.parent().context("Executable has no parent directory")?;
-    let prompt_path = exe_dir.join("prompts").join(prompt_file);
+    // Production scenario: prompts directory next to executable
+    let prompts_path = parent.join("prompts");
+    validate_prompts_path(&prompts_path)
+}
+
+/// Get the prompts directory path from environment or use default
+fn get_prompts_dir() -> PathBuf {
+    // Priority 1: Environment variable (with validation via canonicalize)
+    if let Ok(prompts_dir) = std::env::var("PROMPTS_DIR") {
+        let path = PathBuf::from(prompts_dir);
+        
+        // canonicalize already prevents path traversal, no need for string checks
+        if let Some(validated) = validate_prompts_path(&path) {
+            return validated;
+        }
+        eprintln!("Warning: PROMPTS_DIR path validation failed, trying fallbacks");
+    }
+    
+    // Priority 2: Find from executable location
+    if let Some(path) = find_prompts_from_exe() {
+        return path;
+    }
+    
+    // Priority 3: Fallback to current working directory
+    eprintln!("Warning: Using fallback prompts directory in current working directory");
+    PathBuf::from("prompts")
+}
+
+/// Load prompt from file relative to prompts directory with security validation
+fn load_prompt(prompt_file: &str) -> Result<String> {
+    // Validate filename to prevent path traversal
+    let path = std::path::Path::new(prompt_file);
+    
+    // Check for path traversal attempts
+    if prompt_file.contains("..") || prompt_file.contains("/") || prompt_file.contains("\\") {
+        anyhow::bail!("Invalid prompt filename - must be a simple filename without path separators: {}", prompt_file);
+    }
+    
+    // Additional validation: ensure it's just a filename
+    let components: Vec<_> = path.components().collect();
+    if components.len() != 1 || !matches!(components[0], std::path::Component::Normal(_)) {
+        anyhow::bail!("Invalid prompt filename - must be a simple filename: {}", prompt_file);
+    }
+    
+    let prompt_path = get_prompts_dir().join(prompt_file);
+    
+    // Final validation: ensure the resolved path is within the prompts directory
+    if let (Ok(canonical_prompt), Ok(canonical_dir)) = (std::fs::canonicalize(&prompt_path), std::fs::canonicalize(get_prompts_dir())) {
+        if !canonical_prompt.starts_with(&canonical_dir) {
+            anyhow::bail!("Security error: prompt file path escapes the prompts directory");
+        }
+    }
     
     std::fs::read_to_string(&prompt_path)
         .with_context(|| format!("Failed to read prompt file: {:?}", prompt_path))
@@ -158,43 +233,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
     Ok(result)
 }
 
-/// Simple check for obvious file placement issues
-fn check_file_structure(file_path: &str, transcript_context: Option<&str>) -> Option<String> {
-    // Normalize path separators
-    let path = file_path.replace('\\', "/").to_lowercase();
-    
-    // Check if user explicitly requested this location in current task
-    if let Some(context) = transcript_context {
-        let context_lower = context.to_lowercase();
-        // Look for explicit location requests
-        if context_lower.contains("in root") || 
-           context_lower.contains("in the root") ||
-           context_lower.contains("at root") ||
-           context_lower.contains("create it wherever") ||
-           context_lower.contains("put it anywhere") {
-            return None; // User explicitly requested, allow
-        }
-    }
-    
-    // Extract filename
-    let filename = path.split('/').last().unwrap_or(&path);
-    
-    // ONLY CHECK: Test files outside test directories
-    if filename.contains("test.") || filename.contains("_test.") || 
-       filename.contains(".spec.") || filename.contains("_spec.") {
-        // Check if NOT in test-related directories
-        // Path can start with test/tests or contain /test anywhere
-        let in_test_dir = path.starts_with("test") || path.contains("/test") || 
-                          path.starts_with("spec") || path.contains("/spec") ||
-                          path.contains("__test");
-        
-        if !in_test_dir {
-            return Some("DENY: Test files must be placed in test/tests/spec directories".to_string());
-        }
-    }
-    
-    None // Let AI handle everything else
-}
+// File structure checking function removed - AI handles all validation
 
 
 /// Main PreToolUse hook execution
@@ -255,75 +294,16 @@ async fn main() -> Result<()> {
     // Check project structure for Write operations (not Edit/MultiEdit)
     if hook_input.tool_name == "Write" && !file_path.is_empty() {
         // Get transcript context for checking user intent
-        let transcript_context = if let Some(transcript_path) = &hook_input.transcript_path {
+        let _transcript_context = if let Some(transcript_path) = &hook_input.transcript_path {
             read_transcript_summary(transcript_path, 5, 500).ok()
         } else {
             None
         };
         
-        // Check if file placement violates project structure
-        if let Some(structure_issue) = check_file_structure(&file_path, transcript_context.as_deref()) {
-            // Check if it's a DENY case (starts with "DENY:")
-            let (decision, reason) = if structure_issue.starts_with("DENY:") {
-                ("deny".to_string(), structure_issue.replace("DENY: ", ""))
-            } else {
-                ("deny".to_string(), format!("Project structure violation: {}. File placement violates project conventions.", structure_issue))
-            };
-            
-            let output = PreToolUseOutput {
-                hook_specific_output: PreToolUseHookOutput {
-                    hook_event_name: "PreToolUse".to_string(),
-                    permission_decision: decision,
-                    permission_decision_reason: Some(reason),
-                },
-            };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-            return Ok(());
-        }
+        // File structure checking removed - AI handles all validation now
     }
 
-    // Check for test files in write operations
-    if matches!(hook_input.tool_name.as_str(), "Write" | "Edit" | "MultiEdit") && !content.is_empty() {
-        // Check for test files outside test directories
-        // Skip validation for source files in src/ directory - they're not tests
-        let should_check_test_files = !file_path.contains("/src/") && !file_path.contains("\\src\\");
-        
-        if should_check_test_files {
-            let test_config = TestFileConfig::from_env();
-            let test_validation = validate_test_file(&file_path, &test_config);
-            
-            // Only check content for JavaScript/TypeScript files, not Rust source files
-            let is_js_ts = file_path.ends_with(".js") || file_path.ends_with(".ts") || 
-                          file_path.ends_with(".jsx") || file_path.ends_with(".tsx");
-            
-            let is_test_by_content = if !test_validation.is_test_file && !content.is_empty() && is_js_ts {
-                detect_test_content(&content)
-            } else {
-                false
-            };
-            
-            // Block test files outside test directories
-            if test_validation.should_block || (is_test_by_content && !test_validation.is_in_test_directory) {
-            let output = PreToolUseOutput {
-                hook_specific_output: PreToolUseHookOutput {
-                    hook_event_name: "PreToolUse".to_string(),
-                    permission_decision: "deny".to_string(),
-                    permission_decision_reason: Some(format!(
-                        "TEST FILE BLOCKED: {}. Place test files in designated directories: tests/, test/, __tests__, spec/, or fixtures/",
-                        if test_validation.should_block { 
-                            test_validation.reason 
-                        } else {
-                            format!("Test content detected in '{}' outside test directories", file_path)
-                        }
-                    )),
-                },
-            };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-            eprintln!("⚠️ BLOCKED TEST FILE: {} - should be in test directory", file_path);
-            return Ok(());
-            }
-        }
-    }
+    // Test file validation removed - AI handles all validation now
     
     // Allow non-code tools or empty content
     if !matches!(
@@ -353,10 +333,12 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Skip validation for documentation files
+    // Skip validation for documentation files (but not .txt files with potential secrets)
+    // Only skip pure documentation formats and files in docs folder
     if file_path.ends_with(".md") || file_path.ends_with(".rst") || 
-       file_path.ends_with(".txt") || file_path.contains("/docs/") ||
-       file_path.contains("\\docs\\") || file_path.contains("README") {
+       file_path.contains("/docs/") || file_path.contains("\\docs\\") || 
+       file_path.contains("README.md") || file_path.contains("CHANGELOG") ||
+       file_path.contains("LICENSE") {
         let output = PreToolUseOutput {
             hook_specific_output: PreToolUseHookOutput {
                 hook_event_name: "PreToolUse".to_string(),
@@ -484,7 +466,6 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
                         &file_path,
                         file_content.as_deref(),
                         &edits,
-                        3, // 3 lines of context
                     );
                 }
             }
@@ -521,6 +502,12 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
 async fn perform_validation(config: &Config, content: &str, hook_input: &HookInput) -> Result<SecurityValidation> {
     // Load security prompt
     let mut prompt = load_prompt("edit_validation.txt").context("Failed to load edit validation prompt")?;
+    
+    // Extract file path and add it to context
+    let file_path = extract_file_path(&hook_input.tool_input);
+    if !file_path.is_empty() {
+        prompt = format!("{}\n\nFILE BEING MODIFIED: {}", prompt, file_path);
+    }
     
     // Format the code changes as diff for better AI understanding
     let diff_context = format_code_as_diff(hook_input);

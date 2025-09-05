@@ -8,6 +8,7 @@ use anyhow::Result;
 
 /// Tree-sitter visitor for calculating complexity metrics
 pub struct ComplexityVisitor<'a> {
+    #[allow(dead_code)]
     source_code: &'a str,
     language: SupportedLanguage,
     
@@ -98,10 +99,10 @@ impl<'a> ComplexityVisitor<'a> {
     fn is_valid_parameter_list_type(&self, param_type: &str) -> bool {
         match self.get_parameter_node_kinds() {
             Ok(valid_types) => valid_types.iter().any(|&valid| valid == param_type),
-            Err(e) => {
+            Err(_e) => {
                 // Log error for debugging - this typically happens for Rust which uses syn instead
                 #[cfg(debug_assertions)]
-                eprintln!("Parameter validation error for {}: {}", self.language, e);
+                eprintln!("Parameter validation error for {}: {}", self.language, _e);
                 false
             }
         }

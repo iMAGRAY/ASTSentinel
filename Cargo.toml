@@ -13,13 +13,6 @@ path = "src/bin/pretooluse.rs"
 name = "posttooluse"
 path = "src/bin/posttooluse.rs"
 
-[[bin]]
-name = "show-context"
-path = "src/bin/debug/show_context.rs"
-
-[[bin]]
-name = "test-context"
-path = "src/bin/debug/test_context.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -53,6 +46,11 @@ tree-sitter-ruby = "0.21"
 
 [dev-dependencies]
 tempfile = "3.8"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "performance"
+harness = false
 
 [profile.release]
 lto = true
