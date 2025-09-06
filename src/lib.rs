@@ -382,10 +382,16 @@ impl Config {
                 
                 if env_file.exists() {
                     eprintln!(".env file found, loading...");
+                    // Clear existing API keys to ensure .env takes priority
+                    std::env::remove_var("OPENAI_API_KEY");
+                    std::env::remove_var("ANTHROPIC_API_KEY");
+                    std::env::remove_var("GOOGLE_API_KEY");
+                    std::env::remove_var("XAI_API_KEY");
+                    
                     if let Err(e) = dotenv::from_path(&env_file) {
                         eprintln!("Failed to load .env: {}", e);
                     } else {
-                        eprintln!(".env loaded successfully");
+                        eprintln!(".env loaded successfully (cleared system variables first)");
                     }
                 } else {
                     eprintln!(".env file not found");

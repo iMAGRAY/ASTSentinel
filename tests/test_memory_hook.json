@@ -1,0 +1,7 @@
+{
+  "hookEvent": "stop",
+  "conversationId": "test-conv-123",
+  "transcriptPath": "../tests/test_transcript.txt",
+  "memoryPath": "../tests/test_memory.md",
+  "contextWindow": 8000
+}

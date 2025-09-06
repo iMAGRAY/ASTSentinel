@@ -235,6 +235,142 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
 
 // File structure checking function removed - AI handles all validation
 
+/// Build comprehensive error chain from an error
+fn build_error_chain(error: &dyn std::error::Error) -> Vec<String> {
+    const MAX_DEPTH: usize = 10;
+    const MAX_ERROR_LENGTH: usize = 500;
+    
+    let mut error_chain = Vec::new();
+    let mut current_error = error;
+    
+    // Add the main error
+    let main_error = current_error.to_string();
+    let truncated = if main_error.len() > MAX_ERROR_LENGTH {
+        format!("{}... (truncated)", &main_error[..MAX_ERROR_LENGTH])
+    } else {
+        main_error
+    };
+    error_chain.push(truncated);
+    
+    // Walk the error chain
+    let mut depth = 0;
+    while let Some(source) = current_error.source() {
+        let source_str = source.to_string();
+        let truncated = if source_str.len() > MAX_ERROR_LENGTH {
+            format!("{}... (truncated)", &source_str[..MAX_ERROR_LENGTH])
+        } else {
+            source_str
+        };
+        error_chain.push(truncated);
+        current_error = source;
+        depth += 1;
+        
+        if depth >= MAX_DEPTH {
+            error_chain.push("...error chain truncated (too deep)...".to_string());
+            break;
+        }
+    }
+    
+    error_chain
+}
+
+/// Format error chain into a comprehensive message
+fn format_error_message(error_chain: &[String]) -> String {
+    if error_chain.is_empty() {
+        return "Unknown error occurred".to_string();
+    }
+    
+    if error_chain.len() == 1 {
+        error_chain[0].clone()
+    } else {
+        // Format as hierarchical error message
+        let mut message = error_chain[0].clone();
+        if error_chain.len() > 1 {
+            message.push_str("\nDetails: ");
+            message.push_str(&error_chain[1..].join(" <- "));
+        }
+        message
+    }
+}
+
+/// Safely escape string for JSON output
+fn escape_json_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len() * 2);
+    
+    for ch in s.chars() {
+        match ch {
+            '"' => result.push_str("\\\""),
+            '\\' => result.push_str("\\\\"),
+            '\n' => result.push_str("\\n"),
+            '\r' => result.push_str("\\r"),
+            '\t' => result.push_str("\\t"),
+            '\u{0008}' => result.push_str("\\b"),
+            '\u{000C}' => result.push_str("\\f"),
+            c if c.is_control() => {
+                // Escape other control characters as Unicode
+                result.push_str(&format!("\\u{:04x}", c as u32));
+            },
+            c => result.push(c),
+        }
+    }
+    
+    result
+}
+
+/// Format quality enforcement message for denied code
+fn format_quality_message(reason: &str) -> String {
+    format!(
+        "IMPLEMENT THE CODE WITH QUALITY, NOT JUST TO COMPLETE THE TASK\n\
+        [poor and fake code will always be blocked.]\n\n\
+        identified issues in your submitted changes:\n{}\n\n\
+        IMPROVE YOUR WORK—do not run away from problems by creating minimal simplified implementations\n\
+        [attempts to do so will also be blocked]",
+        reason
+    )
+}
+
+/// Output error response with proper fallback handling
+fn output_error_response(error: &anyhow::Error) {
+    // Build and log error chain
+    let error_chain = build_error_chain(&**error);
+    
+    eprintln!("PreToolUse validation error:");
+    eprintln!("  Debug: {:?}", error);
+    eprintln!("  Display: {}", error);
+    eprintln!("  Chain depth: {}", error_chain.len());
+    for (i, err) in error_chain.iter().enumerate() {
+        eprintln!("  Level {}: {}", i, err);
+    }
+    
+    // Format comprehensive error message
+    let error_message = format_error_message(&error_chain);
+    eprintln!("Final error message: {}", error_message);
+    
+    // Create output structure
+    let output = PreToolUseOutput {
+        hook_specific_output: PreToolUseHookOutput {
+            hook_event_name: "PreToolUse".to_string(),
+            permission_decision: "deny".to_string(),
+            permission_decision_reason: Some(error_message.clone()),
+        },
+    };
+    
+    // Try to serialize normally
+    match serde_json::to_string(&output) {
+        Ok(json) => {
+            println!("{}", json);
+        },
+        Err(ser_err) => {
+            // Fallback with manual JSON construction
+            eprintln!("Serialization failed: {}", ser_err);
+            let escaped = escape_json_string(&error_message);
+            println!(
+                r#"{{"hook_specific_output":{{"hook_event_name":"PreToolUse","permission_decision":"deny","permission_decision_reason":"{}"}}}}"#,
+                escaped
+            );
+        }
+    }
+}
 
 /// Main PreToolUse hook execution
 #[tokio::main]
@@ -305,74 +441,29 @@ async fn main() -> Result<()> {
 
     // Test file validation removed - AI handles all validation now
     
-    // Allow non-code tools or empty content
-    if !matches!(
-        hook_input.tool_name.as_str(),
-        "Write" | "Edit" | "MultiEdit"
-    ) {
-        let output = PreToolUseOutput {
-            hook_specific_output: PreToolUseHookOutput {
-                hook_event_name: "PreToolUse".to_string(),
-                permission_decision: "allow".to_string(),
-                permission_decision_reason: None,
-            },
-        };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-        return Ok(());
-    }
+    // All operations now go through AI validation - no automatic allows
 
-    if content.trim().is_empty() {
-        let output = PreToolUseOutput {
-            hook_specific_output: PreToolUseHookOutput {
-                hook_event_name: "PreToolUse".to_string(),
-                permission_decision: "allow".to_string(),
-                permission_decision_reason: None,
-            },
-        };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-        return Ok(());
-    }
-
-    // Skip validation for documentation files (but not .txt files with potential secrets)
-    // Only skip pure documentation formats and files in docs folder
-    if file_path.ends_with(".md") || file_path.ends_with(".rst") || 
-       file_path.contains("/docs/") || file_path.contains("\\docs\\") || 
-       file_path.contains("README.md") || file_path.contains("CHANGELOG") ||
-       file_path.contains("LICENSE") {
-        let output = PreToolUseOutput {
-            hook_specific_output: PreToolUseHookOutput {
-                hook_event_name: "PreToolUse".to_string(),
-                permission_decision: "allow".to_string(),
-                permission_decision_reason: Some("Documentation file - validation skipped".to_string()),
-            },
-        };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-        return Ok(());
-    }
-    
-    // Special handling for JSON configuration files
-    if file_path.ends_with(".json") || file_path.ends_with(".jsonc") {
-        // JSON files are typically configuration and shouldn't be blocked for test-related field names
-        // Still perform security validation but skip test file checks
-        let output = PreToolUseOutput {
-            hook_specific_output: PreToolUseHookOutput {
-                hook_event_name: "PreToolUse".to_string(),
-                permission_decision: "allow".to_string(),
-                permission_decision_reason: Some("Configuration file - test validation skipped".to_string()),
-            },
-        };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-        return Ok(());
-    }
+    // All file validation now handled by AI - no automatic skipping based on file extensions
 
     // Perform security validation with context
     match perform_validation(&config, &content, &hook_input).await {
         Ok(validation) => {
             let (decision, reason) = match validation.decision.as_str() {
                 "allow" => ("allow".to_string(), None),
-                "ask" => ("deny".to_string(), Some(format!("Security review required: {}", validation.reason))), // Convert ask to deny
-                "deny" => ("deny".to_string(), Some(validation.reason)),
-                _ => ("allow".to_string(), None), // Default to allow for unknown decisions
+                "deny" | "ask" => {
+                    // Note: Claude Code hooks only support "allow" and "deny" decisions
+                    // "ask" must be converted to "deny" with an informative message
+                    if validation.decision == "ask" {
+                        eprintln!("Info: 'ask' decision converted to 'deny' (Claude Code only supports allow/deny)");
+                    }
+                    let formatted_reason = format_quality_message(&validation.reason);
+                    ("deny".to_string(), Some(formatted_reason))
+                },
+                unknown => {
+                    eprintln!("Warning: Unknown validation decision '{}', defaulting to deny for safety", unknown);
+                    let formatted_reason = format_quality_message(&format!("Unknown decision type: {}", unknown));
+                    ("deny".to_string(), Some(formatted_reason))
+                }
             };
 
             let output = PreToolUseOutput {
@@ -385,32 +476,7 @@ async fn main() -> Result<()> {
             println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
         }
         Err(e) => {
-            // Categorize error for better user feedback without exposing details
-            let error_category = match e.to_string().to_lowercase() {
-                s if s.contains("timeout") => "timeout",
-                s if s.contains("connection") => "network",
-                s if s.contains("api") || s.contains("key") => "configuration",
-                s if s.contains("json") || s.contains("parse") => "response_format",
-                _ => "validation_failed"
-            };
-            
-            let user_message = match error_category {
-                "timeout" => "Security validation timed out",
-                "network" => "Security validation service unreachable",
-                "configuration" => "Security validation not configured",
-                "response_format" => "Security validation response invalid",
-                _ => "Security validation rejected the operation"
-            };
-            
-            // Always fail secure - deny on any error
-            let output = PreToolUseOutput {
-                hook_specific_output: PreToolUseHookOutput {
-                    hook_event_name: "PreToolUse".to_string(),
-                    permission_decision: "deny".to_string(),
-                    permission_decision_reason: Some(user_message.to_string()),
-                },
-            };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            output_error_response(&e);
         }
     }
 

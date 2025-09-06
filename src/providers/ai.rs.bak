@@ -123,36 +123,47 @@ impl UniversalAIClient {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
         
-        // GPT-5-nano uses Chat Completions API with special parameters
-        // No temperature, top_p, or stop allowed for reasoning models
+        // GPT-5 uses the new Responses API format
         let request_body = serde_json::json!({
             "model": self.config.pretool_model,
-            "messages": [
+            "input": [
                 {
                     "role": "system",
-                    "content": prompt
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": prompt
+                        }
+                    ]
                 },
                 {
                     "role": "user",
-                    "content": format!("Analyze this code for security risks:\n\n{}", code)
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": format!("Analyze this code for security risks:\n\n{}", code)
+                        }
+                    ]
                 }
             ],
-            "max_completion_tokens": 10000,  // Increased to 10k tokens for comprehensive validation
-            "response_format": {
-                "type": "json_schema",
-                "json_schema": {
+            "text": {
+                "format": {
+                    "type": "json_schema",
                     "name": "SecurityValidation",
-                    "schema": self.get_security_validation_schema(),
-                    "strict": true
+                    "schema": self.get_security_validation_schema()
                 }
-            }
+            },
+            "max_output_tokens": 1024,
+            "reasoning": {
+                "effort": "low"
+            },
+            "store": false
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
+            .post(format!("{}/responses", base_url))
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            // Don't add OpenAI-Project header for gpt-5-nano
             .json(&request_body)
             .send()
             .await
@@ -163,88 +174,25 @@ impl UniversalAIClient {
             return Err(anyhow::anyhow!("GPT-5 API error: {}", error_text));
         }
         
-        // GPT-5 uses standard Chat Completions response format
         #[derive(Deserialize)]
-        struct ChatCompletionResponse {
-            choices: Vec<ChatChoice>,
+        struct Gpt5Response {
+            output: Vec<serde_json::Value>,
+            output_text: Option<String>,
         }
         
-        #[derive(Deserialize)]
-        struct ChatChoice {
-            message: ChatMessage,
-        }
+        let gpt5_response: Gpt5Response = response.json().await
+            .context("Failed to parse GPT-5 response")?;
         
-        #[derive(Deserialize)]
-        struct ChatMessage {
-            content: String,
-        }
-        
-        // Parse response body
-        let response_text = response.text().await
-            .context("Failed to read GPT-5 response body")?;
-        
-        // Check for empty response
-        if response_text.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty response from GPT-5"));
-        }
-        
-        // Log only in debug mode
-        if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!("[DEBUG] GPT-5 response length: {} chars", response_text.len());
-            if response_text.len() < 500 {
-                eprintln!("[DEBUG] GPT-5 response: {}", response_text);
-            }
-        }
-        
-        // Parse as ChatCompletionResponse
-        let gpt5_response: ChatCompletionResponse = serde_json::from_str(&response_text)
-            .with_context(|| format!("Failed to parse GPT-5 response. First 200 chars: {}", 
-                &response_text.chars().take(200).collect::<String>()))?;
-        
-        // Extract content from response
-        let json_text = gpt5_response.choices
-            .first()
-            .and_then(|c| Some(c.message.content.clone()))
-            .ok_or_else(|| anyhow::anyhow!("No valid response in GPT-5 choices"))?;
-        
-        // Check for empty content
-        if json_text.trim().is_empty() {
-            return Err(anyhow::anyhow!("Empty content from GPT-5"));
-        }
-        
-        // Log only in debug mode
-        if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!("[DEBUG] GPT-5 content to parse: {}", 
-                &json_text.chars().take(200).collect::<String>());
-        }
+        // Try output_text first, then extract from output array    
+        let json_text = if let Some(text) = gpt5_response.output_text {
+            text
+        } else {
+            // Extract text from output array
+            Self::extract_text_from_output_array(&gpt5_response.output)
+        };
             
-        // Try to parse as SecurityValidation with better error handling
         let validation: SecurityValidation = serde_json::from_str(&json_text)
-            .or_else(|e| {
-                // If JSON parsing fails, try to create a validation from plain text
-                if json_text.to_lowercase().contains("deny") || 
-                   json_text.to_lowercase().contains("block") ||
-                   json_text.to_lowercase().contains("dangerous") {
-                    Ok(SecurityValidation {
-                        decision: "deny".to_string(),
-                        reason: json_text.clone(),
-                        security_concerns: Some(vec![json_text.clone()]),
-                        risk_level: "high".to_string(),
-                    })
-                } else if json_text.to_lowercase().contains("allow") ||
-                          json_text.to_lowercase().contains("safe") {
-                    Ok(SecurityValidation {
-                        decision: "allow".to_string(),
-                        reason: "Code appears safe".to_string(),
-                        security_concerns: None,
-                        risk_level: "low".to_string(),
-                    })
-                } else {
-                    Err(e)
-                }
-            })
-            .with_context(|| format!("Failed to parse security validation. Content: {}", 
-                &json_text.chars().take(200).collect::<String>()))?;
+            .context("Failed to parse security validation from GPT-5")?;
             
         Ok(validation)
     }
