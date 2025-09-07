@@ -8,10 +8,11 @@ use rust_validation_hooks::validation::diff_formatter::{
 fn benchmark_truncate_for_display(c: &mut Criterion) {
     let mut group = c.benchmark_group("truncate_for_display");
     
+    let long_string = "x".repeat(1000);
     let test_strings = vec![
         ("short", "Hello World"),
         ("medium", "This is a medium length string that needs to be truncated for display purposes"),
-        ("long_ascii", &"x".repeat(1000)),
+        ("long_ascii", long_string.as_str()),
         ("utf8_cyrillic", "Это тестовая строка с кириллицей для проверки производительности обрезки"),
         ("utf8_emoji", "Hello 👋 World 🌍 Test 🚀 Code 💻 Review 📝 Done ✅"),
         ("utf8_mixed", "Test тест 测试 テスト اختبار δοκιμή тест испытание"),

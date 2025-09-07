@@ -6,7 +6,7 @@ use serde_json;
 use std::time::Duration;
 use url::Url;
 
-use crate::{Config, SecurityValidation, GrokCodeAnalysis};
+use crate::{Config, SecurityValidation, GrokCodeAnalysis, GrokCodeIssue, GrokCodeSuggestion, GrokCodeMetrics};
 
 /// Supported AI providers for validation
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -102,19 +102,20 @@ impl UniversalAIClient {
         &self,
         code: &str,
         prompt: &str,
-    ) -> Result<GrokCodeAnalysis> {
+    ) -> Result<String> {
+        // Return raw response from AI instead of parsing into structures
         match self.config.posttool_provider {
             AIProvider::OpenAI => {
                 // Check if it's GPT-5 (uses different API)
                 if self.config.posttool_model.starts_with("gpt-5") {
-                    self.analyze_with_gpt5(code, prompt).await
+                    self.analyze_with_gpt5_raw(code, prompt).await
                 } else {
-                    self.analyze_with_openai(code, prompt).await
+                    self.analyze_with_openai_raw(code, prompt).await
                 }
             }
-            AIProvider::Anthropic => self.analyze_with_anthropic(code, prompt).await,
-            AIProvider::Google => self.analyze_with_google(code, prompt).await,
-            AIProvider::XAI => self.analyze_with_xai(code, prompt).await,
+            AIProvider::Anthropic => self.analyze_with_anthropic_raw(code, prompt).await,
+            AIProvider::Google => self.analyze_with_google_raw(code, prompt).await,
+            AIProvider::XAI => self.analyze_with_xai_raw(code, prompt).await,
         }
     }
     
@@ -646,9 +647,7 @@ impl UniversalAIClient {
             ],
             "text": {
                 "format": {
-                    "type": "json_schema",
-                    "name": "GrokCodeAnalysis",
-                    "schema": self.get_code_analysis_schema()
+                    "type": "json"
                 }
             },
             "max_output_tokens": 2048,
@@ -680,10 +679,465 @@ impl UniversalAIClient {
         let gpt5_response: Gpt5Response = response.json().await
             .context("Failed to parse GPT-5 response")?;
             
+        // Try to parse new format first, fallback to old format
+        if let Ok(new_format) = serde_json::from_str::<serde_json::Value>(&gpt5_response.output_text) {
+            if new_format.get("validation_result").is_some() {
+                // Convert new format to old GrokCodeAnalysis format
+                return self.convert_new_format_to_grok_analysis(new_format);
+            }
+        }
+        
+        // Fallback to old format parsing
         let analysis: GrokCodeAnalysis = serde_json::from_str(&gpt5_response.output_text)
             .context("Failed to parse code analysis from GPT-5")?;
             
         Ok(analysis)
+    }
+    
+    /// Analyze with GPT-5 and return raw response
+    async fn analyze_with_gpt5_raw(&self, code: &str, prompt: &str) -> Result<String> {
+        let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
+        
+        let request_body = serde_json::json!({
+            "model": self.config.posttool_model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": prompt
+                        }
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": format!("Analyze this code and provide detailed review:\n\n{}", code)
+                        }
+                    ]
+                }
+            ],
+            // Don't enforce any format - let AI follow the prompt
+            "text": {},
+            "max_output_tokens": 4500,
+            "reasoning": {
+                "effort": "high"
+            },
+            "store": false
+        });
+        
+        let response = self.client
+            .post(format!("{}/responses", base_url))
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send request to GPT-5")?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("GPT-5 API error: {}", error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct Gpt5Response {
+            output_text: String,
+        }
+        
+        let gpt5_response: Gpt5Response = response.json().await
+            .context("Failed to parse GPT-5 response")?;
+            
+        Ok(gpt5_response.output_text)
+    }
+    
+    /// Analyze with OpenAI and return raw response
+    async fn analyze_with_openai_raw(&self, code: &str, prompt: &str) -> Result<String> {
+        let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
+        
+        let request_body = serde_json::json!({
+            "model": self.config.posttool_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": prompt
+                },
+                {
+                    "role": "user",
+                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
+                }
+            ],
+            // Don't enforce response format
+            "max_tokens": 4500,
+            "temperature": self.config.temperature
+        });
+        
+        let response = self.client
+            .post(format!("{}/chat/completions", base_url))
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send request to OpenAI")?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("OpenAI API error: {}", error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct ChatResponse {
+            choices: Vec<ChatChoice>,
+        }
+        
+        #[derive(Deserialize)]
+        struct ChatChoice {
+            message: ChatMessage,
+        }
+        
+        #[derive(Deserialize)]
+        struct ChatMessage {
+            content: String,
+        }
+        
+        let chat_response: ChatResponse = response.json().await
+            .context("Failed to parse OpenAI response")?;
+            
+        chat_response.choices.first()
+            .map(|choice| choice.message.content.clone())
+            .ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))
+    }
+    
+    /// Analyze with Anthropic and return raw response
+    async fn analyze_with_anthropic_raw(&self, code: &str, prompt: &str) -> Result<String> {
+        let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
+        
+        let request_body = serde_json::json!({
+            "model": self.config.posttool_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": format!("{}\n\nAnalyze this code and provide detailed review:\n\n{}", prompt, code)
+                }
+            ],
+            "max_tokens": 4500,
+            "temperature": self.config.temperature,
+            "system": prompt
+        });
+        
+        let response = self.client
+            .post(format!("{}/v1/messages", base_url))
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01")
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send request to Anthropic")?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Anthropic API error: {}", error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct AnthropicResponse {
+            content: Vec<ContentBlock>,
+        }
+        
+        #[derive(Deserialize)]
+        struct ContentBlock {
+            text: String,
+        }
+        
+        let anthropic_response: AnthropicResponse = response.json().await
+            .context("Failed to parse Anthropic response")?;
+            
+        anthropic_response.content.first()
+            .map(|block| block.text.clone())
+            .ok_or_else(|| anyhow::anyhow!("No response from Anthropic"))
+    }
+    
+    /// Analyze with Google and return raw response
+    async fn analyze_with_google_raw(&self, code: &str, prompt: &str) -> Result<String> {
+        let api_key = self.config.get_api_key_for_provider(&AIProvider::Google);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::Google);
+        
+        let request_body = serde_json::json!({
+            "contents": [
+                {
+                    "parts": [
+                        {
+                            "text": format!("{}\n\nAnalyze this code and provide detailed review:\n\n{}", prompt, code)
+                        }
+                    ]
+                }
+            ],
+            "generationConfig": {
+                "temperature": self.config.temperature,
+                "maxOutputTokens": 4500,
+            }
+        });
+        
+        let response = self.client
+            .post(format!("{}?key={}", base_url, api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send request to Google")?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("Google API error: {}", error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct GoogleResponse {
+            candidates: Vec<Candidate>,
+        }
+        
+        #[derive(Deserialize)]
+        struct Candidate {
+            content: Content,
+        }
+        
+        #[derive(Deserialize)]
+        struct Content {
+            parts: Vec<Part>,
+        }
+        
+        #[derive(Deserialize)]
+        struct Part {
+            text: String,
+        }
+        
+        let google_response: GoogleResponse = response.json().await
+            .context("Failed to parse Google response")?;
+            
+        google_response.candidates.first()
+            .and_then(|c| c.content.parts.first())
+            .map(|p| p.text.clone())
+            .ok_or_else(|| anyhow::anyhow!("No response from Google"))
+    }
+    
+    /// Analyze with xAI and return raw response
+    async fn analyze_with_xai_raw(&self, code: &str, prompt: &str) -> Result<String> {
+        let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
+        
+        let request_body = serde_json::json!({
+            "model": self.config.posttool_model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": prompt
+                },
+                {
+                    "role": "user",
+                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
+                }
+            ],
+            "max_tokens": 4500,
+            "temperature": self.config.temperature
+        });
+        
+        let response = self.client
+            .post(format!("{}/chat/completions", base_url))
+            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .send()
+            .await
+            .context("Failed to send request to xAI")?;
+            
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(anyhow::anyhow!("xAI API error: {}", error_text));
+        }
+        
+        #[derive(Deserialize)]
+        struct XaiResponse {
+            choices: Vec<XaiChoice>,
+        }
+        
+        #[derive(Deserialize)]
+        struct XaiChoice {
+            message: XaiMessage,
+        }
+        
+        #[derive(Deserialize)]
+        struct XaiMessage {
+            content: String,
+        }
+        
+        let xai_response: XaiResponse = response.json().await
+            .context("Failed to parse xAI response")?;
+            
+        xai_response.choices.first()
+            .map(|choice| choice.message.content.clone())
+            .ok_or_else(|| anyhow::anyhow!("No response from xAI"))
+    }
+    
+    /// Convert new validation format to GrokCodeAnalysis format
+    fn convert_new_format_to_grok_analysis(&self, new_format: serde_json::Value) -> Result<GrokCodeAnalysis> {
+        let validation_result = new_format.get("validation_result")
+            .ok_or_else(|| anyhow::anyhow!("Missing validation_result in response"))?;
+        
+        // Extract overall assessment
+        let overall_assessment = validation_result.get("overall_assessment")
+            .ok_or_else(|| anyhow::anyhow!("Missing overall_assessment"))?;
+        
+        let quality_score = overall_assessment.get("quality_score")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(500);
+        
+        let status = overall_assessment.get("status")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Неизвестно");
+        
+        // Extract executive summary
+        let summary = validation_result.get("executive_summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or(status)
+            .to_string();
+        
+        // Determine overall quality based on score
+        let overall_quality = match quality_score {
+            850..=1000 => "excellent",
+            700..=849 => "good",
+            500..=699 => "needs_improvement",
+            _ => "poor",
+        }.to_string();
+        
+        // Convert critical issues and improvements to GrokCodeIssue format
+        let mut issues = Vec::new();
+        
+        // Add critical issues
+        if let Some(critical_issues) = validation_result.get("critical_issues").and_then(|v| v.as_array()) {
+            for issue in critical_issues {
+                if let Some(issue_obj) = issue.as_object() {
+                    issues.push(GrokCodeIssue {
+                        severity: "critical".to_string(),
+                        category: issue_obj.get("category")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("correctness")
+                            .to_lowercase(),
+                        message: issue_obj.get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Критическая проблема")
+                            .to_string(),
+                        line: issue_obj.get("line_reference")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32),
+                        impact: Some(3),
+                        fix_cost: Some(2),
+                        confidence: Some(0.95),
+                        fix_suggestion: issue_obj.get("solution")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                    });
+                }
+            }
+        }
+        
+        // Add improvement opportunities as issues
+        if let Some(improvements) = validation_result.get("improvement_opportunities").and_then(|v| v.as_array()) {
+            for improvement in improvements {
+                if let Some(imp_obj) = improvement.as_object() {
+                    let priority = imp_obj.get("priority")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("P2");
+                    
+                    let severity = match priority {
+                        "P0" | "P1" => "major",
+                        "P2" => "minor",
+                        _ => "info",
+                    };
+                    
+                    issues.push(GrokCodeIssue {
+                        severity: severity.to_string(),
+                        category: imp_obj.get("category")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("maintainability")
+                            .to_lowercase(),
+                        message: imp_obj.get("description")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("Возможность улучшения")
+                            .to_string(),
+                        line: imp_obj.get("line_reference")
+                            .and_then(|v| v.as_u64())
+                            .map(|v| v as u32),
+                        impact: Some(match priority {
+                            "P0" | "P1" => 2,
+                            _ => 1,
+                        }),
+                        fix_cost: Some(2),
+                        confidence: Some(0.8),
+                        fix_suggestion: imp_obj.get("solution")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                    });
+                }
+            }
+        }
+        
+        // Convert positive aspects to suggestions
+        let mut suggestions = Vec::new();
+        if let Some(positive_aspects) = validation_result.get("positive_aspects").and_then(|v| v.as_array()) {
+            for (i, aspect) in positive_aspects.iter().enumerate() {
+                if let Some(text) = aspect.as_str() {
+                    if i < 3 { // Limit to first 3 positive aspects
+                        suggestions.push(GrokCodeSuggestion {
+                            category: "strengths".to_string(),
+                            description: text.to_string(),
+                            priority: "low".to_string(),
+                            priority_score: Some(10.0),
+                            code_example: None,
+                        });
+                    }
+                }
+            }
+        }
+        
+        // Add metrics if available
+        let metrics = overall_assessment.get("score_breakdown").map(|breakdown| {
+            // Determine complexity based on overall score
+            let complexity = match quality_score {
+                800..=1000 => "low",
+                600..=799 => "medium",
+                _ => "high",
+            }.to_string();
+            
+            GrokCodeMetrics {
+                complexity: Some(complexity),
+                readability: breakdown.get("maintainability")
+                    .and_then(|m| m.get("score"))
+                    .and_then(|s| s.as_u64())
+                    .map(|score| match score {
+                        170..=200 => "excellent",
+                        140..=169 => "good",
+                        100..=139 => "fair",
+                        _ => "poor",
+                    }.to_string()),
+                test_coverage: None, // Not available in new format
+            }
+        });
+        
+        Ok(GrokCodeAnalysis {
+            summary,
+            overall_quality,
+            issues,
+            suggestions,
+            metrics,
+        })
     }
     
     /// Analyze code with standard OpenAI models
@@ -940,14 +1394,106 @@ impl UniversalAIClient {
     }
     
     /// Extract text content from GPT-5 output array
+    /// Handles mixed JSON responses where schema and data are returned together
     fn extract_text_from_output_array(output: &[serde_json::Value]) -> String {
         for output_item in output.iter() {
+            // Check status first - skip incomplete reasoning entries but accept incomplete content
+            if let Some(item_type) = output_item.get("type").and_then(|v| v.as_str()) {
+                if item_type == "reasoning" {
+                    // Skip reasoning entries as they don't contain actual content
+                    continue;
+                }
+            }
+            
+            // Check if this is an incomplete message - we'll accept incomplete content for now
+            if let Some(status) = output_item.get("status").and_then(|v| v.as_str()) {
+                if status == "incomplete" {
+                    eprintln!("Warning: GPT-5 returned incomplete response, extracting partial content");
+                }
+            }
+            
             // Handle GPT-5 message structure: output_item.content[].text
             if let Some(content_array) = output_item.get("content").and_then(|v| v.as_array()) {
                 for content_entry in content_array {
                     if let Some(text_content) = content_entry.get("text").and_then(|v| v.as_str()) {
                         let trimmed_text = text_content.trim();
                         if !trimmed_text.is_empty() {
+                            eprintln!("Extracted {} characters from GPT-5 content", trimmed_text.len());
+                            
+                            // Handle mixed JSON response (schema + data)
+                            // GPT-5 sometimes returns: {schema},\n{data}
+                            // We need to extract only the data part
+                            if trimmed_text.contains("},\n{") || trimmed_text.contains("},\\n{") {
+                                eprintln!("Detected mixed JSON response, extracting data section");
+                                
+                                // Try to find and parse individual JSON objects
+                                let mut last_valid_json = String::new();
+                                let mut brace_count = 0;
+                                let mut current_json = String::new();
+                                let mut in_string = false;
+                                let mut escape_next = false;
+                                
+                                for ch in trimmed_text.chars() {
+                                    if escape_next {
+                                        current_json.push(ch);
+                                        escape_next = false;
+                                        continue;
+                                    }
+                                    
+                                    if ch == '\\' && in_string {
+                                        escape_next = true;
+                                        current_json.push(ch);
+                                        continue;
+                                    }
+                                    
+                                    if ch == '"' && !escape_next {
+                                        in_string = !in_string;
+                                    }
+                                    
+                                    if !in_string {
+                                        if ch == '{' {
+                                            if brace_count == 0 && !current_json.is_empty() {
+                                                // Try to parse completed JSON
+                                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&current_json) {
+                                                    // Check if this is data (has active_context) not schema
+                                                    if parsed.get("active_context").is_some() || 
+                                                       parsed.get("technical_state").is_some() ||
+                                                       parsed.get("key_insights").is_some() {
+                                                        last_valid_json = current_json.clone();
+                                                        eprintln!("Found valid data JSON object");
+                                                    }
+                                                }
+                                                current_json.clear();
+                                            }
+                                            brace_count += 1;
+                                        } else if ch == '}' {
+                                            brace_count -= 1;
+                                        }
+                                    }
+                                    
+                                    current_json.push(ch);
+                                    
+                                    if brace_count == 0 && current_json.trim().ends_with('}') {
+                                        // Try to parse completed JSON
+                                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&current_json) {
+                                            // Check if this is data (has active_context) not schema
+                                            if parsed.get("active_context").is_some() || 
+                                               parsed.get("technical_state").is_some() ||
+                                               parsed.get("key_insights").is_some() {
+                                                last_valid_json = current_json.clone();
+                                                eprintln!("Found valid data JSON object at end");
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if !last_valid_json.is_empty() {
+                                    eprintln!("Returning extracted data JSON of {} chars", last_valid_json.len());
+                                    return last_valid_json;
+                                }
+                            }
+                            
+                            // If no mixed JSON detected or extraction failed, return as-is
                             return trimmed_text.to_string();
                         }
                     }
@@ -956,6 +1502,7 @@ impl UniversalAIClient {
                 // Fallback for direct string content
                 let trimmed_content = direct_content.trim();
                 if !trimmed_content.is_empty() {
+                    eprintln!("Extracted {} characters from GPT-5 direct content", trimmed_content.len());
                     return trimmed_content.to_string();
                 }
             }
@@ -974,30 +1521,30 @@ impl UniversalAIClient {
         if api_key.is_empty() {
             return Err(anyhow::anyhow!("OpenAI API key not configured"));
         }
-        eprintln!("GPT-5 Debug: Using API key ending with: ...{}", &api_key[api_key.len()-10..]);
+        
+        // Validate API key format for OpenAI (should start with 'sk-')
+        if !api_key.starts_with("sk-") {
+            return Err(anyhow::anyhow!("Invalid OpenAI API key format. Key should start with 'sk-'"));
+        }
         
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
         
-        // GPT-5 uses the new Responses API format - simple input string works better
+        // GPT-5 Responses API - request JSON format in prompt
+        let json_schema_str = serde_json::to_string_pretty(&self.get_memory_optimization_schema())?;
         let request_body = serde_json::json!({
             "model": model,
-            "input": format!("{}\n\n{}", prompt, context),
-            "text": {
-                "format": {
-                    "type": "json_schema",
-                    "name": "MemoryOptimization",
-                    "schema": self.get_memory_optimization_schema()
-                }
-            },
-            "max_output_tokens": 15000,
+            "input": format!("{}\n\n{}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{}", 
+                prompt, context, json_schema_str),
+            "max_output_tokens": 12000,
             "reasoning": {
                 "effort": "medium"
-            },
-            "store": false
+            }
         });
         
-        // Debug logging for GPT-5 troubleshooting
-        eprintln!("GPT-5 Debug: Model = {}", model);
+        // Debug logging for GPT-5 troubleshooting (only in debug mode)
+        if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
+            eprintln!("GPT-5 Debug: Model = {}", model);
+        }
         
         // Implement retry logic for transient failures
         let mut retries = 3;
@@ -1051,12 +1598,16 @@ impl UniversalAIClient {
                                     eprintln!("GPT-5 response content is empty");
                                 } else {
                                     eprintln!("Parsing content of length: {}", text_content.len());
+                                    // GPT-5 with JSON Schema should return valid JSON
                                     match serde_json::from_str::<serde_json::Value>(&text_content) {
-                                        Ok(optimization) => return Ok(optimization),
+                                        Ok(optimization) => {
+                                            eprintln!("GPT-5 returned valid JSON structure");
+                                            return Ok(optimization);
+                                        },
                                         Err(e) => {
-                                            eprintln!("Failed to parse JSON response: {}", e);
+                                            eprintln!("Failed to parse JSON response from GPT-5: {}", e);
                                             eprintln!("Response content: {}", text_content);
-                                            last_error = Some(anyhow::anyhow!("Failed to parse optimization: {}", e));
+                                            last_error = Some(anyhow::anyhow!("GPT-5 JSON parsing failed: {}", e));
                                         }
                                     }
                                 }
@@ -1067,9 +1618,20 @@ impl UniversalAIClient {
                         }
                     } else {
                         let status = resp.status();
-                        // Don't log the full error text as it might contain sensitive info
-                        last_error = Some(anyhow::anyhow!("API request failed with status {}", status));
-                        eprintln!("GPT-5 API error (attempt {}): Status {}", 4 - retries, status);
+                        // Try to get error details for debugging
+                        let error_text = resp.text().await.unwrap_or_else(|_| "Unable to read error".to_string());
+                        // Log first 500 chars of error for debugging
+                        let error_preview: String = error_text.chars().take(500).collect();
+                        eprintln!("GPT-5 API error (attempt {}): Status {} - {}", 4 - retries, status, error_preview);
+                        last_error = Some(anyhow::anyhow!("API request failed with status {}. {}", status, 
+                            if error_preview.contains("context_length_exceeded") {
+                                "Context too long"
+                            } else if error_preview.contains("invalid_schema") {
+                                "Invalid JSON schema"
+                            } else {
+                                "Memory not optimized"
+                            }
+                        ));
                     }
                 }
                 Err(e) => {
@@ -1080,43 +1642,273 @@ impl UniversalAIClient {
             
             retries -= 1;
             if retries > 0 {
-                // Wait before retrying (exponential backoff)
-                tokio::time::sleep(std::time::Duration::from_secs(2_u64.pow(3 - retries as u32))).await;
+                // Wait before retrying (exponential backoff with jitter)
+                let base_delay_secs = 2_u64.pow(3 - retries as u32);
+                let jitter = rand::random::<f64>() * 0.5 + 0.75; // 0.75 to 1.25 multiplier
+                let delay_ms = (base_delay_secs as f64 * 1000.0 * jitter) as u64;
+                let delay_with_jitter = delay_ms.max(100).min(300_000); // Min 100ms, Max 5 minutes
+                tokio::time::sleep(Duration::from_secs_f64(delay_with_jitter as f64 / 1000.0)).await;
             }
         }
         
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed to call GPT-5 after 3 attempts")))
     }
     
+    /// Create MemoryOptimization structure from GPT-5 text response
+    #[allow(dead_code)]
+    fn create_memory_optimization_from_text(text_content: &str) -> serde_json::Value {
+        // Extract key information from GPT-5 response for memory optimization
+        let content_summary = if text_content.chars().count() > 200 {
+            let truncated: String = text_content.chars().take(200).collect();
+            format!("{}...", truncated)
+        } else {
+            text_content.to_string()
+        };
+        
+        // Detect code and errors with case-insensitive checking
+        let text_lower = text_content.to_lowercase();
+        let has_code = Self::detect_code_content(&text_lower);
+        let has_errors = Self::detect_error_content(&text_lower);
+        
+        // Determine current task based on content
+        let current_task = if has_code {
+            "Code implementation and optimization"
+        } else if has_errors {
+            "Error resolution and debugging"  
+        } else {
+            "General problem solving and analysis"
+        };
+        
+        // Extract working files if mentioned
+        let working_files = if text_content.contains(".py") {
+            vec!["Python scripts".to_string()]
+        } else if text_content.contains(".js") || text_content.contains(".ts") {
+            vec!["JavaScript/TypeScript files".to_string()]
+        } else if text_content.contains(".rs") {
+            vec!["Rust source files".to_string()]
+        } else {
+            vec![]
+        };
+        
+        // Create structured memory optimization
+        serde_json::json!({
+            "active_context": {
+                "current_task": current_task,
+                "working_files": if working_files.is_empty() { None } else { Some(working_files) },
+                "last_action": "Processed and analyzed conversation content with GPT-5",
+                "next_steps": [
+                    "Review generated analysis",
+                    "Apply improvements based on insights",
+                    "Test implementation changes"
+                ],
+                "status": "in_progress"
+            },
+            "technical_state": [
+                {
+                    "type": "content_analysis",
+                    "content": content_summary,
+                    "location": "Recent conversation",
+                    "status": "analyzed"
+                }
+            ],
+            "user_patterns": {
+                "detail_level": "detailed",
+                "common_requests": if has_code {
+                    ["code implementation", "debugging", "optimization"]
+                } else {
+                    ["problem analysis", "explanation", "guidance"]
+                },
+                "problem_solving_style": "analytical and systematic approach"
+            },
+            "key_insights": if has_code {
+                ["Code implementation detected in conversation", "Technical problem-solving approach"]
+            } else if has_errors {
+                ["Error resolution process identified", "Debugging methodology applied"]
+            } else {
+                ["Analysis and explanation provided", "General problem-solving guidance"]
+            },
+            "solutions_archive": [
+                {
+                    "problem": "Memory optimization from conversation analysis",
+                    "solution": "Created structured context from GPT-5 text response",
+                    "files_changed": None::<Vec<String>>,
+                    "verification": "Successfully processed conversation content",
+                    "why_this_approach": "GPT-5 provided text analysis instead of JSON, converted to structured format"
+                }
+            ],
+            "total_tokens": text_content.len() / 4, // Rough token estimate
+            "reduction_ratio": 0.8 // Assumed reduction from raw conversation to structured format
+        })
+    }
+    
+    /// Detect code content in text (case-insensitive)
+    #[allow(dead_code)]
+    fn detect_code_content(text_lower: &str) -> bool {
+        text_lower.contains("```") ||
+        text_lower.contains("def ") ||
+        text_lower.contains("function") ||
+        text_lower.contains("class ") ||
+        text_lower.contains("import ") ||
+        text_lower.contains("const ") ||
+        text_lower.contains("let ") ||
+        text_lower.contains("var ") ||
+        text_lower.contains("fn ") ||
+        text_lower.contains("struct ") ||
+        text_lower.contains("impl ")
+    }
+    
+    /// Detect error content in text (case-insensitive) 
+    #[allow(dead_code)]
+    fn detect_error_content(text_lower: &str) -> bool {
+        text_lower.contains("error") ||
+        text_lower.contains("exception") ||
+        text_lower.contains("failed") ||
+        text_lower.contains("panic") ||
+        text_lower.contains("crash") ||
+        text_lower.contains("bug")
+    }
+    
     /// Get the JSON schema for memory optimization
     fn get_memory_optimization_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
-            "required": ["optimized_memories", "total_tokens", "reduction_ratio", "key_insights"],
+            "required": ["active_context", "technical_state", "user_patterns", "key_insights", "solutions_archive", "total_tokens", "reduction_ratio"],
             "additionalProperties": false,
             "properties": {
-                "optimized_memories": {
+                "active_context": {
+                    "type": "object",
+                    "required": ["current_task", "last_action", "next_steps", "status"],
+                    "properties": {
+                        "current_task": {
+                            "type": "string",
+                            "description": "What the user is working on right now"
+                        },
+                        "working_files": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Files currently being modified"
+                        },
+                        "last_action": {
+                            "type": "string", 
+                            "description": "Last thing that was done"
+                        },
+                        "next_steps": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "What needs to happen next"
+                        },
+                        "status": {
+                            "type": "string",
+                            "enum": ["in_progress", "blocked", "ready_for_testing", "completed"],
+                            "description": "Current status of work"
+                        }
+                    }
+                },
+                "technical_state": {
                     "type": "array",
+                    "description": "Specific technical details that must be preserved",
                     "items": {
                         "type": "object",
-                        "required": ["timestamp", "category", "content", "relevance_score"],
-                        "additionalProperties": false,
+                        "required": ["type", "content"],
                         "properties": {
-                            "timestamp": {
-                                "type": "string"
-                            },
-                            "category": {
+                            "type": {
                                 "type": "string",
-                                "enum": ["TASKS", "SOLUTIONS", "ERRORS", "DECISIONS", "CONTEXT", "TOOLS", "INSIGHTS"]
+                                "enum": ["file_path", "function_name", "command", "error", "config", "code_snippet"]
                             },
-                            "content": {
-                                "type": "string"
+                            "content": {"type": "string"},
+                            "location": {"type": "string"},
+                            "status": {"type": "string", "enum": ["working", "broken", "needs_testing"]}
+                        }
+                    }
+                },
+                "user_patterns": {
+                    "type": "object",
+                    "description": "How this user prefers to work",
+                    "properties": {
+                        "detail_level": {
+                            "type": "string",
+                            "enum": ["brief", "moderate", "detailed"],
+                            "description": "Preferred level of explanation detail"
+                        },
+                        "common_requests": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Types of tasks user frequently requests"
+                        },
+                        "problem_solving_style": {
+                            "type": "string",
+                            "description": "How user likes problems approached"
+                        }
+                    }
+                },
+                "key_insights": {
+                    "type": "array",
+                    "description": "Critical discoveries and learnings from the conversation",
+                    "items": {
+                        "type": "string",
+                        "description": "A specific insight or discovery made during the conversation"
+                    }
+                },
+                "solutions_archive": {
+                    "type": "array",
+                    "description": "Completed solutions with full context",
+                    "items": {
+                        "type": "object",
+                        "required": ["problem", "solution", "verification"],
+                        "properties": {
+                            "problem": {"type": "string"},
+                            "solution": {"type": "string"},
+                            "files_changed": {
+                                "type": "array",
+                                "items": {"type": "string"}
                             },
-                            "relevance_score": {
-                                "type": "number",
-                                "minimum": 0.0,
-                                "maximum": 1.0
-                            }
+                            "verification": {"type": "string"},
+                            "why_this_approach": {"type": "string"}
+                        }
+                    }
+                },
+                "ai_error_patterns": {
+                    "type": "array",
+                    "description": "AI error patterns for learning and improvement",
+                    "items": {
+                        "type": "object",
+                        "required": ["error_type", "pattern", "frequency", "guidance"],
+                        "properties": {
+                            "error_type": {"type": "string"},
+                            "pattern": {"type": "string"},
+                            "frequency": {"type": "integer", "minimum": 1},
+                            "last_seen": {"type": "string"},
+                            "context": {"type": "string"},
+                            "guidance": {"type": "string"}
+                        }
+                    }
+                },
+                "learning_insights": {
+                    "type": "array",
+                    "description": "Learning insights for better AI guidance",
+                    "items": {
+                        "type": "object",
+                        "required": ["category", "insight", "confidence", "source", "timestamp"],
+                        "properties": {
+                            "category": {"type": "string"},
+                            "insight": {"type": "string"},
+                            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+                            "source": {"type": "string"},
+                            "timestamp": {"type": "string"}
+                        }
+                    }
+                },
+                "documentation_refs": {
+                    "type": "array",
+                    "description": "Relevant documentation references",
+                    "items": {
+                        "type": "object",
+                        "required": ["file_path", "section", "summary", "relevance"],
+                        "properties": {
+                            "file_path": {"type": "string"},
+                            "section": {"type": "string"},
+                            "summary": {"type": "string"},
+                            "relevance": {"type": "number", "minimum": 0.0, "maximum": 1.0}
                         }
                     }
                 },
@@ -1128,12 +1920,6 @@ impl UniversalAIClient {
                     "type": "number",
                     "minimum": 0.0,
                     "maximum": 1.0
-                },
-                "key_insights": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         })

@@ -1,0 +1,42 @@
+RESPOND ONLY WITH YAML IN THIS EXACT FORMAT:
+
+```yaml
+code_analysis:
+  quality_score: 750
+  status: "Хорошее качество с возможностями улучшения"
+  
+  summary: "Краткий анализ кода с описанием основных находок"
+  
+  task_context:
+    current_task: "Что пытается достичь пользователь"
+    progress: "helps_achieve_goal" # или partially_complete, needs_more_work
+    next_steps:
+      - "Конкретный шаг для завершения задачи"
+      - "Следующий шаг"
+  
+  critical_issues:
+    - priority: "P0"
+      category: "SECURITY"
+      description: "Описание критической проблемы"
+      impact: "Влияние на систему"
+      solution: "Конкретное решение"
+      line: 15
+  
+  improvements:
+    - priority: "P1"
+      category: "PERFORMANCE"
+      description: "Возможность оптимизации"
+      benefit: "Польза от улучшения"
+      solution: "Как исправить"
+    - priority: "P2"
+      category: "MAINTAINABILITY"
+      description: "Улучшение поддерживаемости"
+      solution: "Рефакторинг для читаемости"
+  
+  positive_aspects:
+    - "Что работает хорошо"
+    - "Еще один плюс"
+    - "Правильная архитектура"
+```
+
+ВАЖНО: Отвечай ТОЛЬКО на русском языке во всех текстовых полях!

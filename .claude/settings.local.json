@@ -10,7 +10,10 @@
       "Read(C:\\Users\\1\\AppData\\Local\\Temp/**)",
       "Read(C:\\Users\\1\\.claude/**)",
       "Read(C:\\Users\\1\\.claude\\hooks\\rust_validation_hooks\\prompts/**)",
-      "Read(C:\\Users\\1\\.claude\\hooks\\rust_validation_hooks/**)"
+      "Read(C:\\Users\\1\\.claude\\hooks\\rust_validation_hooks/**)",
+      "Read(//c/Users/1/**)",
+      "Bash(rg:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

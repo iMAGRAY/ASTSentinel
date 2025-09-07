@@ -1,0 +1,48 @@
+RESPOND ONLY WITH XML IN THIS EXACT FORMAT:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<code-analysis>
+  <quality-score>750</quality-score>
+  <status>Хорошее качество с возможностями улучшения</status>
+  
+  <summary>
+    <![CDATA[Краткий анализ кода с описанием основных находок]]>
+  </summary>
+  
+  <task-context>
+    <current-task><![CDATA[Что пытается достичь пользователь]]></current-task>
+    <progress>helps_achieve_goal|partially_complete|needs_more_work</progress>
+    <next-steps>
+      <step><![CDATA[Конкретный шаг для завершения задачи]]></step>
+      <step><![CDATA[Следующий шаг]]></step>
+    </next-steps>
+  </task-context>
+  
+  <critical-issues>
+    <issue priority="P0">
+      <category>SECURITY</category>
+      <description><![CDATA[Описание критической проблемы]]></description>
+      <impact><![CDATA[Влияние на систему]]></impact>
+      <solution><![CDATA[Конкретное решение]]></solution>
+      <line>15</line>
+    </issue>
+  </critical-issues>
+  
+  <improvements>
+    <improvement priority="P1">
+      <category>PERFORMANCE</category>
+      <description><![CDATA[Возможность оптимизации]]></description>
+      <benefit><![CDATA[Польза от улучшения]]></benefit>
+      <solution><![CDATA[Как исправить]]></solution>
+    </improvement>
+  </improvements>
+  
+  <positive-aspects>
+    <aspect><![CDATA[Что работает хорошо]]></aspect>
+    <aspect><![CDATA[Еще один плюс]]></aspect>
+  </positive-aspects>
+</code-analysis>
+```
+
+ВАЖНО: Отвечай ТОЛЬКО на русском языке во всех полях CDATA!

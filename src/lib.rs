@@ -5,14 +5,37 @@ use std::collections::HashMap;
 /// Common utilities for Claude Code hooks
 
 /// Safely truncate a UTF-8 string to a maximum number of characters
+/// Handles zero-width characters properly for accurate length calculation
 pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
-    let char_count = s.chars().count();
-    if char_count <= max_chars {
+    // Count visible characters, excluding zero-width characters
+    let visible_chars: Vec<char> = s.chars().filter(|&c| !is_zero_width_char(c)).collect();
+    let visible_count = visible_chars.len();
+    
+    if visible_count <= max_chars {
         s.to_string()
     } else {
-        let truncated: String = s.chars().take(max_chars.saturating_sub(1)).collect();
+        let truncated: String = visible_chars.iter().take(max_chars.saturating_sub(1)).collect();
         format!("{}…", truncated)
     }
+}
+
+/// Sanitize input string by removing potentially malicious zero-width characters
+/// Used to prevent obfuscation attacks in user input
+pub fn sanitize_zero_width_chars(input: &str) -> String {
+    input.chars()
+        .filter(|&c| !is_zero_width_char(c))
+        .collect()
+}
+
+/// Check if character is a zero-width character that could be used for obfuscation
+fn is_zero_width_char(c: char) -> bool {
+    matches!(c, 
+        '\u{200B}' |  // Zero Width Space
+        '\u{200C}' |  // Zero Width Non-Joiner  
+        '\u{200D}' |  // Zero Width Joiner
+        '\u{2060}' |  // Word Joiner
+        '\u{FEFF}'    // Zero Width No-Break Space
+    )
 }
 
 /// Code analysis modules for project inspection, AST parsing, and metrics
@@ -26,6 +49,9 @@ pub mod providers;
 
 /// Caching modules for performance optimization
 pub mod cache;
+
+/// Centralized validation constants for memory optimization
+pub mod validation_constants;
 
 // Re-export commonly used types for convenience
 pub use analysis::{ComplexityMetrics, ProjectStructure, scan_project_structure, format_project_structure_for_ai, ScanConfig};

@@ -1,0 +1,10 @@
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Please create a function to calculate fibonacci numbers"}
+{"type":"assistant","assistant":"Claude","message":"I'll create a fibonacci function for you. Here's an efficient implementation using memoization."}
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Can you make it iterative instead?"}
+{"type":"assistant","assistant":"Claude","message":"Sure! Here's an iterative version that's more memory efficient."}
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Add type hints please"}
+{"type":"assistant","assistant":"Claude","message":"I've added comprehensive type hints to the function for better code clarity."}
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Test with n=10"}
+{"type":"assistant","assistant":"Claude","message":"Testing fibonacci(10) returns 55. The function works correctly!"}
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Optimize for large numbers"}
+{"type":"assistant","assistant":"Claude","message":"I've optimized the function using matrix exponentiation for O(log n) complexity."}

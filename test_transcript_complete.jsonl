@@ -1,0 +1,6 @@
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Please create a function to calculate fibonacci numbers"}
+{"type":"assistant","assistant":"Claude","message":"I'll create a fibonacci function for you. Here's an efficient implementation:\n\n```python\ndef fibonacci(n: int) -> int:\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    \n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    return b\n```"}
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Can you add memoization?"}
+{"type":"assistant","assistant":"Claude","message":"Here's the memoized version:\n\n```python\nfrom functools import lru_cache\n\n@lru_cache(maxsize=None)\ndef fibonacci_memoized(n: int) -> int:\n    if n <= 0:\n        return 0\n    elif n == 1:\n        return 1\n    return fibonacci_memoized(n - 1) + fibonacci_memoized(n - 2)\n```"}
+{"type":"user","user":"Test User","message":"UNIQUE_TEST_2024_12_06_MEMORY_HOOK: Test with n=10"}
+{"type":"assistant","assistant":"Claude","message":"Testing:\n\n```python\nresult = fibonacci_memoized(10)\nprint(f'fibonacci(10) = {result}')  # Output: 55\n```\n\nThe function works correctly!"}

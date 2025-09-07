@@ -40,60 +40,38 @@ fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
     }
 }
 
-/// Find prompts directory from executable location
-/// 
-/// This function assumes the following directory structures:
-/// - Development: executable in target/debug/ or target/release/, prompts in project root
-/// - Production: executable and prompts directory in the same parent directory
-fn find_prompts_from_exe() -> Option<PathBuf> {
-    // Get current executable path, may fail if exe was moved/deleted
+
+/// Get the prompts directory path - always next to executable
+fn get_prompts_dir() -> PathBuf {
+    // Always look for prompts directory next to executable
     let exe_path = match std::env::current_exe() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Warning: Cannot determine executable path: {}", e);
-            return None;
+            eprintln!("Error: Cannot determine executable path: {}", e);
+            eprintln!("Falling back to current directory + prompts");
+            return PathBuf::from("prompts");
         }
     };
     
-    let parent = exe_path.parent()?;
-    
-    // Development scenario: check if we're in Cargo's target directory
-    // Structure: project_root/target/{debug|release}/binary
-    let parent_name = parent.file_name()?.to_str()?;
-    if parent_name == "debug" || parent_name == "release" {
-        // Navigate up: binary -> debug/release -> target -> project_root
-        let project_root = parent.parent()?.parent()?;
-        let prompts_path = project_root.join("prompts");
-        if let Some(validated) = validate_prompts_path(&prompts_path) {
-            return Some(validated);
+    let parent = match exe_path.parent() {
+        Some(parent) => parent,
+        None => {
+            eprintln!("Error: Cannot get parent directory of executable");
+            eprintln!("Falling back to current directory + prompts");
+            return PathBuf::from("prompts");
         }
-    }
+    };
     
     // Production scenario: prompts directory next to executable
     let prompts_path = parent.join("prompts");
-    validate_prompts_path(&prompts_path)
-}
-
-/// Get the prompts directory path from environment or use default
-fn get_prompts_dir() -> PathBuf {
-    // Priority 1: Environment variable (with validation via canonicalize)
-    if let Ok(prompts_dir) = std::env::var("PROMPTS_DIR") {
-        let path = PathBuf::from(prompts_dir);
-        
-        // canonicalize already prevents path traversal, no need for string checks
-        if let Some(validated) = validate_prompts_path(&path) {
-            return validated;
-        }
-        eprintln!("Warning: PROMPTS_DIR path validation failed, trying fallbacks");
+    
+    if let Some(validated) = validate_prompts_path(&prompts_path) {
+        eprintln!("PostTool using prompts directory: {:?}", validated);
+        return validated;
     }
     
-    // Priority 2: Find from executable location
-    if let Some(path) = find_prompts_from_exe() {
-        return path;
-    }
-    
-    // Priority 3: Fallback to current working directory
-    eprintln!("Warning: Using fallback prompts directory in current working directory");
+    // Final fallback
+    eprintln!("Warning: prompts directory not found next to executable, using current directory");
     PathBuf::from("prompts")
 }
 
@@ -113,11 +91,11 @@ async fn format_analysis_prompt(
     transcript_context: Option<&str>
 ) -> Result<String> {
     
-    // Load language instruction from file
-    let language_instruction = load_prompt_file("language_instruction.txt").await?;
+    // Load output template from file
+    let output_template = load_prompt_file("output_template.txt").await?;
     
-    // Load JSON template from file
-    let json_template = load_prompt_file("json_template.txt").await?;
+    // Load edit validation instructions from file  
+    let edit_validation = load_prompt_file("edit_validation.txt").await?;
     
     let context_section = if let Some(context) = project_context {
         format!("\n\nPROJECT CONTEXT:\n{}\n", context)
@@ -140,18 +118,23 @@ async fn format_analysis_prompt(
     // Build prompt with pre-allocated capacity for better performance
     const TOKEN_LIMIT_WARNING: &str = "\n\nCRITICAL TOKEN LIMIT: Your response must NOT exceed 4500 tokens. \
          Keep analysis concise but thorough.\n\n";
-    const FINAL_INSTRUCTIONS: &str = "\n\nNEVER include text outside JSON. Output ONLY the JSON object.\n\
+    const FINAL_INSTRUCTIONS: &str = "\n\nIMPORTANT:\n\
+         - ANALYZE THE ACTUAL CODE PROVIDED\n\
+         - FILL THE TEMPLATE WITH REAL ANALYSIS DATA\n\
+         - DO NOT COPY THE TEMPLATE STRUCTURE\n\
+         - PROVIDE SPECIFIC FINDINGS ABOUT THE CODE\n\
+         - Replace ALL placeholder text with actual analysis\n\
          TOKEN LIMIT: Keep response under 4500 tokens.";
     const SEPARATOR: &str = "\n\n";
     
     let estimated_capacity = prompt.len() 
         + SEPARATOR.len()
-        + language_instruction.len() 
+        + output_template.len() 
+        + edit_validation.len()
         + transcript_section.len() 
         + context_section.len() 
         + diff_section.len() 
         + TOKEN_LIMIT_WARNING.len()
-        + json_template.len() 
         + FINAL_INSTRUCTIONS.len();
     
     let mut result = String::with_capacity(estimated_capacity);
@@ -160,8 +143,8 @@ async fn format_analysis_prompt(
     result.push_str(prompt);
     result.push_str("\n\n");
     
-    // Language instruction
-    result.push_str(&language_instruction);
+    // Edit validation instructions
+    result.push_str(&edit_validation);
     
     // Context sections
     if !transcript_section.is_empty() {
@@ -180,14 +163,11 @@ async fn format_analysis_prompt(
          Keep analysis concise but thorough.\n\n"
     );
     
-    // JSON template
-    result.push_str(&json_template);
+    // Output template
+    result.push_str(&output_template);
     
-    // Final instructions
-    result.push_str(
-        "\n\nNEVER include text outside JSON. Output ONLY the JSON object.\n\
-         TOKEN LIMIT: Keep response under 4500 tokens."
-    );
+    // Final instructions - universal format support
+    result.push_str(FINAL_INSTRUCTIONS);
     
     Ok(result)
 }
@@ -683,16 +663,15 @@ async fn main() -> Result<()> {
     let client = UniversalAIClient::new(config.clone())
         .context("Failed to create AI client")?;
     
-    // Analyze code using the configured provider
+    // Analyze code using the configured provider - returns raw response
     match client.analyze_code_posttool(&content, &formatted_prompt).await {
-        Ok(analysis) => {
-            // Create structured feedback - AI handles language now
-            let feedback = format_feedback(&analysis, file_path);
-            
+        Ok(ai_response) => {
+            // Pass the raw AI response directly as additional context
+            // The AI will format it according to output_template.txt
             let output = PostToolUseOutput {
                 hook_specific_output: PostToolUseHookOutput {
                     hook_event_name: "PostToolUse".to_string(),
-                    additional_context: feedback,
+                    additional_context: ai_response,
                 },
             };
             
@@ -716,51 +695,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Format analysis results into user feedback
-fn format_feedback(analysis: &GrokCodeAnalysis, _file_path: &str) -> String {
-    let mut feedback = vec![analysis.summary.clone()];
-    
-    // Group issues by severity
-    let mut critical_issues = vec![];
-    let mut major_issues = vec![];
-    let mut minor_issues = vec![];
-    
-    for issue in &analysis.issues {
-        // AI will provide messages in the user's language
-        let issue_text = if let Some(suggestion) = &issue.fix_suggestion {
-            format!("{} - {}\n   → {}", 
-                issue.category.to_uppercase(),
-                issue.message, 
-                suggestion)
-        } else {
-            format!("{} - {}", issue.category.to_uppercase(), issue.message)
-        };
-        
-        match issue.severity.as_str() {
-            "critical" | "blocker" => critical_issues.push(issue_text),
-            "major" => major_issues.push(issue_text),
-            _ => minor_issues.push(issue_text),
-        }
-    }
-    
-    // Build feedback message - let AI format in user's language
-    if !critical_issues.is_empty() || !major_issues.is_empty() || !minor_issues.is_empty() {
-        // Just return the issues without language-specific formatting
-        // AI will handle the language appropriately
-        
-        // List all issues with numbering
-        let mut issue_num = 1;
-        for issue in critical_issues.iter().chain(major_issues.iter()).chain(minor_issues.iter()) {
-            feedback.push(format!("{}. {}", issue_num, issue));
-            issue_num += 1;
-        }
-    } else {
-        // AI will provide success message in user's language
-        // Just keep it simple - AI handles the rest
-    }
-    
-    feedback.join("\n")
-}
+
 
 #[cfg(test)]
 mod tests {
@@ -999,7 +934,7 @@ mod tests {
         writeln!(file, r#"{{"role":"user","content":"Emoji 🎉🚀💻 message"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Cyrillic текст сообщение"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"CJK 中文 日本語 한국어"}}"#).unwrap();
-        writeln!(file, r#"{{"role":"user","content":"Zero-width ​‌‍ chars"}}"#).unwrap();
+        writeln!(file, "{{\"role\":\"user\",\"content\":\"Zero-width \u{200B}\u{200C}\u{200D} chars\"}}").unwrap();
         writeln!(file, r#"{{"role":"user","content":"RTL text مرحبا עברית"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Combined 👨‍👩‍👧‍👦 emoji"}}"#).unwrap();
         drop(file);

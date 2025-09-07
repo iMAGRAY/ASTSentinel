@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"src/fake_payment.js","content":"function processPayment(amount) { console.log(\"Processing payment:\", amount); return {success: true, transactionId: \"fake-123\"}; }"}}

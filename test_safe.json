@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"src/config.rs","content":"pub struct Config { pub api_key: String, pub timeout: u64 }"}}

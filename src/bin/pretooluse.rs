@@ -42,54 +42,38 @@ fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
     }
 }
 
-/// Find prompts directory from executable location
-fn find_prompts_from_exe() -> Option<PathBuf> {
+
+/// Get the prompts directory path - always next to executable
+fn get_prompts_dir() -> PathBuf {
+    // Always look for prompts directory next to executable
     let exe_path = match std::env::current_exe() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Warning: Cannot determine executable path: {}", e);
-            return None;
+            eprintln!("Error: Cannot determine executable path: {}", e);
+            eprintln!("Falling back to current directory + prompts");
+            return PathBuf::from("prompts");
         }
     };
     
-    let parent = exe_path.parent()?;
-    
-    // Development scenario: check if we're in Cargo's target directory
-    let parent_name = parent.file_name()?.to_str()?;
-    if parent_name == "debug" || parent_name == "release" {
-        // Navigate up: binary -> debug/release -> target -> project_root
-        let project_root = parent.parent()?.parent()?;
-        let prompts_path = project_root.join("prompts");
-        if let Some(validated) = validate_prompts_path(&prompts_path) {
-            return Some(validated);
+    let parent = match exe_path.parent() {
+        Some(parent) => parent,
+        None => {
+            eprintln!("Error: Cannot get parent directory of executable");
+            eprintln!("Falling back to current directory + prompts");
+            return PathBuf::from("prompts");
         }
-    }
+    };
     
     // Production scenario: prompts directory next to executable
     let prompts_path = parent.join("prompts");
-    validate_prompts_path(&prompts_path)
-}
-
-/// Get the prompts directory path from environment or use default
-fn get_prompts_dir() -> PathBuf {
-    // Priority 1: Environment variable (with validation via canonicalize)
-    if let Ok(prompts_dir) = std::env::var("PROMPTS_DIR") {
-        let path = PathBuf::from(prompts_dir);
-        
-        // canonicalize already prevents path traversal, no need for string checks
-        if let Some(validated) = validate_prompts_path(&path) {
-            return validated;
-        }
-        eprintln!("Warning: PROMPTS_DIR path validation failed, trying fallbacks");
+    
+    if let Some(validated) = validate_prompts_path(&prompts_path) {
+        eprintln!("Using prompts directory: {:?}", validated);
+        return validated;
     }
     
-    // Priority 2: Find from executable location
-    if let Some(path) = find_prompts_from_exe() {
-        return path;
-    }
-    
-    // Priority 3: Fallback to current working directory
-    eprintln!("Warning: Using fallback prompts directory in current working directory");
+    // Final fallback
+    eprintln!("Warning: prompts directory not found next to executable, using current directory");
     PathBuf::from("prompts")
 }
 
@@ -319,13 +303,19 @@ fn escape_json_string(s: &str) -> String {
 
 /// Format quality enforcement message for denied code
 fn format_quality_message(reason: &str) -> String {
+    // Replace literal \n with actual newlines from AI response
+    let cleaned_reason = reason.replace("\\n", "\n");
+    
     format!(
-        "IMPLEMENT THE CODE WITH QUALITY, NOT JUST TO COMPLETE THE TASK\n\
-        [poor and fake code will always be blocked.]\n\n\
-        identified issues in your submitted changes:\n{}\n\n\
-        IMPROVE YOUR WORK—do not run away from problems by creating minimal simplified implementations\n\
-        [attempts to do so will also be blocked]",
-        reason
+        "РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ
+[плохой и поддельный код всегда будет заблокирован]
+
+выявленные проблемы в ваших изменениях:
+{}
+
+УЛУЧШИТЕ СВОЮ РАБОТУ — не убегайте от проблем, создавая минимальные упрощённые реализации
+[попытки сделать это также будут заблокированы]",
+        cleaned_reason
     )
 }
 

@@ -1,0 +1,1 @@
+{"tool_name":"Write","tool_input":{"file_path":"src/real_payment.js","content":"async function processPayment(amount, paymentData) { const result = await paymentProvider.charge({ amount, card: paymentData.card, currency: \"USD\" }); return { success: result.status === \"completed\", transactionId: result.id, amount }; }"}}
