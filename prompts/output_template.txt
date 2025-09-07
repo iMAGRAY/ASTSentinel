@@ -118,6 +118,9 @@
 }
 ```
 
+IMPORTANT: The above JSON structure is your OUTPUT FORMAT. DO NOT include any examples or templates below in your response. Only output the filled JSON structure with actual analysis data.
+
+<!-- REFERENCE EXAMPLE (DO NOT OUTPUT THIS):
 VISUAL OUTPUT EXAMPLE:
 ```
 🎯 **АНАЛИЗ КОДА** | Качество: 750/1000 | Статус: Хорошее качество с возможностями улучшения
@@ -180,3 +183,4 @@ FORMATTING RULES:
 - Clear action items with "→" arrows
 - Line references when applicable
 - Structured sections for easy scanning
+-->

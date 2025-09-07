@@ -1,6 +1,5 @@
 /// Diff formatter for showing code changes in unified diff format
 /// This helps AI understand exactly what changes are being made
-
 use std::cmp::{min, max};
 
 /// Format code changes as unified diff for AI context

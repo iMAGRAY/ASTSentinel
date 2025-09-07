@@ -65,6 +65,7 @@ pub struct UniversalAIClient {
     config: Config,
 }
 
+#[allow(dead_code)]
 impl UniversalAIClient {
     pub fn new(config: Config) -> Result<Self> {
         let client = Client::builder()
@@ -135,7 +136,7 @@ impl UniversalAIClient {
                 },
                 {
                     "role": "user",
-                    "content": format!("Analyze this code for security risks:\n\n{}", code)
+                    "content": format!("Analyze this code for security risks:\n\n{code}")
                 }
             ],
             "max_completion_tokens": 10000,  // Increased to 10k tokens for comprehensive validation
@@ -150,8 +151,8 @@ impl UniversalAIClient {
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             // Don't add OpenAI-Project header for gpt-5-nano
             .json(&request_body)
@@ -193,7 +194,7 @@ impl UniversalAIClient {
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
             eprintln!("[DEBUG] GPT-5 response length: {} chars", response_text.len());
             if response_text.len() < 500 {
-                eprintln!("[DEBUG] GPT-5 response: {}", response_text);
+                eprintln!("[DEBUG] GPT-5 response: {response_text}");
             }
         }
         
@@ -264,7 +265,7 @@ impl UniversalAIClient {
                 },
                 {
                     "role": "user",
-                    "content": format!("Analyze this code for security risks:\n\n{}", code)
+                    "content": format!("Analyze this code for security risks:\n\n{code}")
                 }
             ],
             "response_format": {
@@ -280,8 +281,8 @@ impl UniversalAIClient {
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -371,7 +372,7 @@ impl UniversalAIClient {
                 },
                 {
                     "role": "user",
-                    "content": format!("Analyze this code for security risks:\n\n{}", code)
+                    "content": format!("Analyze this code for security risks:\n\n{code}")
                 }
             ],
             "response_format": {
@@ -387,8 +388,8 @@ impl UniversalAIClient {
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -430,6 +431,7 @@ impl UniversalAIClient {
     }
     
     /// Get the JSON schema for code analysis
+    #[allow(dead_code)]
     fn get_code_analysis_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
@@ -659,7 +661,7 @@ impl UniversalAIClient {
         
         let response = self.client
             .post(format!("{}/responses", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -699,40 +701,22 @@ impl UniversalAIClient {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
         
+        // Use proper GPT-5 Responses API format
+        let combined_input = format!("{}\n\nCode to analyze:\n{}", prompt, code);
+        
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
-            "input": [
-                {
-                    "role": "system",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": prompt
-                        }
-                    ]
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": format!("Analyze this code and provide detailed review:\n\n{}", code)
-                        }
-                    ]
-                }
-            ],
-            // Don't enforce any format - let AI follow the prompt
-            "text": {},
-            "max_output_tokens": 4500,
+            "input": combined_input,
+            "max_output_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::OpenAI),
             "reasoning": {
-                "effort": "high"
+                "effort": "medium"  // Stable reasoning effort for consistent behavior
             },
             "store": false
         });
         
         let response = self.client
             .post(format!("{}/responses", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -778,8 +762,8 @@ impl UniversalAIClient {
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -824,10 +808,10 @@ impl UniversalAIClient {
             "messages": [
                 {
                     "role": "user",
-                    "content": format!("{}\n\nAnalyze this code and provide detailed review:\n\n{}", prompt, code)
+                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
                 }
             ],
-            "max_tokens": 4500,
+            "max_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::Anthropic),
             "temperature": self.config.temperature,
             "system": prompt
         });
@@ -882,7 +866,7 @@ impl UniversalAIClient {
             ],
             "generationConfig": {
                 "temperature": self.config.temperature,
-                "maxOutputTokens": 4500,
+                "maxOutputTokens": self.config.get_max_output_tokens_for_provider(&AIProvider::Google),
             }
         });
         
@@ -945,13 +929,13 @@ impl UniversalAIClient {
                     "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
                 }
             ],
-            "max_tokens": 4500,
+            "max_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::XAI),
             "temperature": self.config.temperature
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -1170,8 +1154,8 @@ impl UniversalAIClient {
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -1277,8 +1261,8 @@ impl UniversalAIClient {
         });
         
         let response = self.client
-            .post(format!("{}/chat/completions", base_url))
-            .header("Authorization", format!("Bearer {}", api_key))
+            .post(format!("{base_url}/chat/completions"))
+            .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -1560,7 +1544,7 @@ impl UniversalAIClient {
             
             let response = self.client
                 .post(responses_url)
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .header("Content-Type", "application/json")
                 .header("User-Agent", "rust-validation-hooks/0.1.0")
                 .json(&request_body)

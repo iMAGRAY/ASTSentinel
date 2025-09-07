@@ -476,13 +476,13 @@ pub fn compress_structure(
         .collect();
     
     // More accurate token estimate with complexity data
-    let full_output = format!("{};{};{};{}", tree, metrics_str, quality_str, complexity_str);
-    let token_estimate = (full_output.len() + 2) / 3; // Better approximation
+    let full_output = format!("{tree};{metrics_str};{quality_str};{complexity_str}");
+    let token_estimate = full_output.len().div_ceil(3); // Better approximation
     
     CompressedStructure {
         format_version: 3, // Version 3 with complexity metrics
         tree,
-        metrics: format!("{};{};{}", metrics_str, quality_str, complexity_str),
+        metrics: format!("{metrics_str};{quality_str};{complexity_str}"),
         important_files,
         token_estimate,
     }

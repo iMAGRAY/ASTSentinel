@@ -1,5 +1,4 @@
 /// Code analysis modules for project inspection and metrics
-
 pub mod ast;
 pub mod metrics;
 pub mod project;

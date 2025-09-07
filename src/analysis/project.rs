@@ -470,7 +470,7 @@ fn load_ignore_patterns(root: &Path) -> Result<HashSet<String>> {
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Could not read .gitignore: {}", e);
+                eprintln!("Warning: Could not read .gitignore: {e}");
             }
         }
     }
@@ -497,7 +497,7 @@ fn should_ignore(path: &Path, root: &Path, patterns: &HashSet<String>) -> bool {
             // Directory pattern
             let dir_pattern = &pattern[..pattern.len()-1];
             if path_str.starts_with(dir_pattern) || 
-               path_str.contains(&format!("/{}", dir_pattern)) {
+               path_str.contains(&format!("/{dir_pattern}")) {
                 return true;
             }
         } else if pattern.contains('*') {
@@ -578,7 +578,7 @@ fn scan_directory_recursive(
     let entries = match fs::read_dir(current_path) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("Warning: Could not read directory {:?}: {}", current_path, e);
+            eprintln!("Warning: Could not read directory {current_path:?}: {e}");
             return Ok(());
         }
     };
@@ -587,7 +587,7 @@ fn scan_directory_recursive(
         let entry = match entry {
             Ok(entry) => entry,
             Err(e) => {
-                eprintln!("Warning: Could not read directory entry: {}", e);
+                eprintln!("Warning: Could not read directory entry: {e}");
                 continue;
             }
         };

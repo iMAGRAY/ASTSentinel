@@ -98,7 +98,7 @@ impl<'a> ComplexityVisitor<'a> {
     /// Validate parameter list type for current language
     fn is_valid_parameter_list_type(&self, param_type: &str) -> bool {
         match self.get_parameter_node_kinds() {
-            Ok(valid_types) => valid_types.iter().any(|&valid| valid == param_type),
+            Ok(valid_types) => valid_types.contains(&param_type),
             Err(_e) => {
                 // Log error for debugging - this typically happens for Rust which uses syn instead
                 #[cfg(debug_assertions)]
@@ -162,7 +162,7 @@ impl<'a> ComplexityVisitor<'a> {
                 let node_kind = child.kind();
                 
                 // Use language-specific parameter kinds for better accuracy
-                if valid_param_kinds.iter().any(|&kind| kind == node_kind) {
+                if valid_param_kinds.contains(&node_kind) {
                     count += 1;
                 }
                 
@@ -191,7 +191,7 @@ impl<'a> ComplexityVisitor<'a> {
     pub fn visit_node(&mut self, root: &Node) -> Result<()> {
         // Use iterative traversal with explicit stack to prevent stack overflow
         // Each stack entry contains (node, initial_depth) to track scope changes
-        let mut stack: Vec<(tree_sitter::Node, u32)> = vec![(root.clone(), self.current_depth)];
+        let mut stack: Vec<(tree_sitter::Node, u32)> = vec![(*root, self.current_depth)];
 
         while let Some((node, initial_depth)) = stack.pop() {
             // Process current node and track depth changes
@@ -285,7 +285,7 @@ impl<'a> ComplexityVisitor<'a> {
             _ => {
                 // Unrecognized node type - log for debugging in development
                 #[cfg(debug_assertions)]
-                eprintln!("Unrecognized Python node type: {}", node_type);
+                eprintln!("Unrecognized Python node type: {node_type}");
             }
         }
         Ok(())
@@ -335,7 +335,7 @@ impl<'a> ComplexityVisitor<'a> {
             _ => {
                 // Unrecognized node type - log for debugging in development
                 #[cfg(debug_assertions)]
-                eprintln!("Unrecognized JavaScript/TypeScript node type: {}", node_type);
+                eprintln!("Unrecognized JavaScript/TypeScript node type: {node_type}");
             }
         }
         Ok(())
@@ -359,7 +359,7 @@ impl<'a> ComplexityVisitor<'a> {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!("Unhandled Java node type: {}", node_type);
+                eprintln!("Unhandled Java node type: {node_type}");
             }
         }
         Ok(())

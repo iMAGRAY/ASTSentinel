@@ -4,7 +4,7 @@ use uuid;
 use std::io::{self, Read};
 use tokio;
 use serde_json;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 // Removed unused import: quick_xml::se::to_string
 use lru::LruCache;
 use lazy_static::lazy_static;

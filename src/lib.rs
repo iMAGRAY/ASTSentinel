@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Common utilities for Claude Code hooks
-
 /// Safely truncate a UTF-8 string to a maximum number of characters
 /// Handles zero-width characters properly for accurate length calculation
 pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
@@ -15,7 +14,7 @@ pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
         s.to_string()
     } else {
         let truncated: String = visible_chars.iter().take(max_chars.saturating_sub(1)).collect();
-        format!("{}…", truncated)
+        format!("{truncated}…")
     }
 }
 
@@ -305,6 +304,12 @@ pub struct Config {
     pub max_issues: usize,
     pub request_timeout_secs: u64,
     pub connect_timeout_secs: u64,
+    
+    // Provider-specific output token limits (based on documentation)
+    pub gpt5_max_output_tokens: u32,      // GPT-5: 128K output tokens
+    pub claude_max_output_tokens: u32,    // Claude: 4K typical, 8K max
+    pub gemini_max_output_tokens: u32,    // Gemini: Variable, 32K max
+    pub grok_max_output_tokens: u32,      // Grok: 8K typical
 }
 
 impl Config {
@@ -337,6 +342,12 @@ impl Config {
             max_issues: 10,
             request_timeout_secs: 60,
             connect_timeout_secs: 30,
+            
+            // Provider-specific token limits (based on LLM API documentation)
+            gpt5_max_output_tokens: 12000,    // Conservative limit for stability
+            claude_max_output_tokens: 4096,   // Claude's typical max_tokens
+            gemini_max_output_tokens: 8192,   // Gemini reasonable limit
+            grok_max_output_tokens: 8192,     // Grok conservative limit
         }
     }
     
@@ -395,6 +406,17 @@ impl Config {
             providers::AIProvider::XAI => &self.xai_base_url,
         }
     }
+    
+    /// Get the appropriate max output tokens for a given provider
+    /// This helps solve the token limit inconsistency problem
+    pub fn get_max_output_tokens_for_provider(&self, provider: &providers::AIProvider) -> u32 {
+        match provider {
+            providers::AIProvider::OpenAI => self.gpt5_max_output_tokens,
+            providers::AIProvider::Anthropic => self.claude_max_output_tokens,
+            providers::AIProvider::Google => self.gemini_max_output_tokens,
+            providers::AIProvider::XAI => self.grok_max_output_tokens,
+        }
+    }
 }
 
 impl Config {
@@ -404,7 +426,7 @@ impl Config {
             if let Some(exe_dir) = exe_path.parent() {
                 // Load .env (production) and optionally override with .env.local (development)
                 let env_file = exe_dir.join(".env");
-                eprintln!("Looking for .env at: {:?}", env_file);
+                eprintln!("Looking for .env at: {env_file:?}");
                 
                 if env_file.exists() {
                     eprintln!(".env file found, loading...");
@@ -415,7 +437,7 @@ impl Config {
                     std::env::remove_var("XAI_API_KEY");
                     
                     if let Err(e) = dotenv::from_path(&env_file) {
-                        eprintln!("Failed to load .env: {}", e);
+                        eprintln!("Failed to load .env: {e}");
                     } else {
                         eprintln!(".env loaded successfully (cleared system variables first)");
                     }
@@ -428,7 +450,7 @@ impl Config {
                 if env_local.exists() {
                     eprintln!("Found .env.local, loading overrides...");
                     if let Err(e) = dotenv::from_path(&env_local) {
-                        eprintln!("Failed to load .env.local: {}", e);
+                        eprintln!("Failed to load .env.local: {e}");
                     } else {
                         eprintln!(".env.local loaded successfully");
                     }
@@ -447,9 +469,9 @@ impl Config {
         let posttool_provider_str = std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
         
         let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>()
-            .with_context(|| format!("Invalid PRETOOL_PROVIDER: {}. Supported: openai, anthropic, google, xai", pretool_provider_str))?;
+            .with_context(|| format!("Invalid PRETOOL_PROVIDER: {pretool_provider_str}. Supported: openai, anthropic, google, xai"))?;
         let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>()
-            .with_context(|| format!("Invalid POSTTOOL_PROVIDER: {}. Supported: openai, anthropic, google, xai", posttool_provider_str))?;
+            .with_context(|| format!("Invalid POSTTOOL_PROVIDER: {posttool_provider_str}. Supported: openai, anthropic, google, xai"))?;
         
         // Parse and validate configurable values with proper bounds
         let max_tokens = std::env::var("MAX_TOKENS")
@@ -510,6 +532,28 @@ impl Config {
             max_issues,
             request_timeout_secs,
             connect_timeout_secs,
+            
+            // Provider-specific output token limits (based on documentation)
+            gpt5_max_output_tokens: std::env::var("GPT5_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "12000".to_string())
+                .parse::<u32>()
+                .unwrap_or(12000)
+                .clamp(1000, 128000),  // GPT-5: 128K output tokens max
+            claude_max_output_tokens: std::env::var("CLAUDE_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "4000".to_string())
+                .parse::<u32>()
+                .unwrap_or(4000)
+                .clamp(1000, 8000),    // Claude: 4K typical, 8K max
+            gemini_max_output_tokens: std::env::var("GEMINI_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "8000".to_string())
+                .parse::<u32>()
+                .unwrap_or(8000)
+                .clamp(1000, 32000),   // Gemini: Variable, 32K max
+            grok_max_output_tokens: std::env::var("GROK_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "8000".to_string())
+                .parse::<u32>()
+                .unwrap_or(8000)
+                .clamp(1000, 8000),    // Grok: 8K typical
         };
         
         // Validate configuration before returning
