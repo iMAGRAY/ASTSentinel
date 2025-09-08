@@ -1,0 +1,1 @@
+{"session_id":"test-session","transcript_path":"C:\\Users\\1\\.claude\\projects\\C--Users-1-Documents-GitHub-ValidationCodeHook\\6ab43d04-8a90-48cf-b5d2-fd12640d7366.jsonl","cwd":"C:\\Users\\1\\Documents\\GitHub\\ValidationCodeHook","hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"test.py","content":"import os\nos.system('rm -rf /')  # Dangerous!"}}

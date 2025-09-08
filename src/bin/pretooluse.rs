@@ -7,6 +7,12 @@ use tokio;
 use rust_validation_hooks::analysis::project::{
     format_project_structure_for_ai, scan_project_structure, ScanConfig,
 };
+use rust_validation_hooks::analysis::dependencies::{
+    analyze_project_dependencies, ProjectDependencies,
+};
+use rust_validation_hooks::analysis::ast::{
+    MultiLanguageAnalyzer, QualityScore, SupportedLanguage,
+};
 use rust_validation_hooks::*;
 // Use universal AI client
 use rust_validation_hooks::providers::ai::UniversalAIClient;
@@ -669,14 +675,100 @@ async fn perform_validation(
         Ok(structure) => {
             let project_context = format_project_structure_for_ai(&structure, 1500);
             prompt = format!("{}\n\nPROJECT STRUCTURE:\n{}", prompt, project_context);
-            eprintln!(
-                "PreToolUse: Added project structure context ({} files, {} dirs)",
+            
+            // Add detailed project metrics
+            let total_loc: usize = structure.files.iter()
+                .filter(|f| f.is_code_file)
+                .map(|f| f.size_bytes as usize / 50) // Rough estimate: 50 bytes per line
+                .sum();
+            
+            let metrics = format!(
+                "\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
                 structure.total_files,
-                structure.directories.len()
+                total_loc,
+                structure.files.iter().filter(|f| f.is_code_file).count()
+            );
+            prompt = format!("{}{}", prompt, metrics);
+            
+            eprintln!(
+                "PreToolUse: Added project structure context ({} files, {} dirs, ~{} LOC)",
+                structure.total_files,
+                structure.directories.len(),
+                total_loc
             );
         }
         Err(e) => {
             eprintln!("PreToolUse: Could not scan project structure: {}", e);
+        }
+    }
+
+    // Add dependencies analysis
+    let working_dir_path = std::path::Path::new(&working_dir);
+    match analyze_project_dependencies(working_dir_path).await {
+        Ok(dependencies) => {
+            let deps_summary = format!(
+                "\n\nPROJECT DEPENDENCIES:\nTotal: {} dependencies ({} dev, {} production)",
+                dependencies.total_count,
+                dependencies.dev_dependencies_count,
+                dependencies.total_count - dependencies.dev_dependencies_count
+            );
+            prompt = format!("{}{}", prompt, deps_summary);
+            
+            // Add details by package manager
+            let mut deps_by_manager: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
+            for dep in &dependencies.dependencies {
+                deps_by_manager.entry(dep.package_manager.clone()).or_default().push(dep);
+            }
+            
+            for (manager, deps) in deps_by_manager {
+                let manager_summary = format!("\n{}: {} dependencies", manager, deps.len());
+                prompt = format!("{}{}", prompt, manager_summary);
+            }
+            
+            eprintln!(
+                "PreToolUse: Added dependencies context ({} total, {} outdated)",
+                dependencies.total_count,
+                dependencies.outdated_count
+            );
+        }
+        Err(e) => {
+            eprintln!("PreToolUse: Could not analyze dependencies: {}", e);
+        }
+    }
+
+    // Add AST analysis if we have file content
+    if !content.is_empty() && !file_path.is_empty() {
+        // Determine language from file extension
+        let extension = std::path::Path::new(&file_path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+        
+        if let Some(language) = SupportedLanguage::from_extension(extension) {
+            eprintln!("PreToolUse: Performing AST analysis for {} file", language.to_string());
+            
+            match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {
+                Ok(complexity_metrics) => {
+                    let ast_summary = format!(
+                        "\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {}",
+                        complexity_metrics.cyclomatic_complexity,
+                        complexity_metrics.cognitive_complexity,
+                        complexity_metrics.nesting_depth,
+                        complexity_metrics.function_count,
+                        complexity_metrics.line_count
+                    );
+                    prompt = format!("{}{}", prompt, ast_summary);
+                    
+                    eprintln!(
+                        "PreToolUse: AST analysis complete (cyclomatic: {}, cognitive: {})",
+                        complexity_metrics.cyclomatic_complexity,
+                        complexity_metrics.cognitive_complexity
+                    );
+                }
+                Err(e) => {
+                    eprintln!("PreToolUse: AST analysis failed: {}", e);
+                }
+            }
         }
     }
 

@@ -1,0 +1,510 @@
+/// Automated Code Quality Scorer using AST analysis
+/// Provides concrete, deterministic scoring from 0-1000 based on AST patterns
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+use crate::analysis::ast::languages::SupportedLanguage;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityScore {
+    pub total_score: u32,          // 0-1000
+    pub functionality_score: u32,   // 0-300
+    pub reliability_score: u32,     // 0-200
+    pub maintainability_score: u32, // 0-200
+    pub performance_score: u32,     // 0-150
+    pub security_score: u32,        // 0-100
+    pub standards_score: u32,       // 0-50
+    pub concrete_issues: Vec<ConcreteIssue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConcreteIssue {
+    pub severity: IssueSeverity,
+    pub category: IssueCategory,
+    pub message: String,
+    pub file: String,
+    pub line: usize,
+    pub column: usize,
+    pub rule_id: String,
+    pub points_deducted: u32,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum IssueSeverity {
+    Critical,  // P1 - Must fix immediately
+    Major,     // P2 - Should fix soon
+    Minor,     // P3 - Nice to fix
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum IssueCategory {
+    // Functionality issues (300 points)
+    UnhandledError,           // -50 points each
+    MissingReturnValue,        // -40 points
+    InfiniteLoop,              // -60 points
+    DeadCode,                  // -20 points
+    UnreachableCode,           // -30 points
+    
+    // Reliability issues (200 points)
+    NullPointerRisk,           // -40 points
+    ResourceLeak,              // -50 points
+    RaceCondition,             // -50 points
+    MissingErrorHandling,      // -30 points
+    
+    // Maintainability issues (200 points)
+    HighComplexity,            // -5 points per complexity point over 10
+    DuplicateCode,             // -30 points per duplicate block
+    LongMethod,                // -20 points (>50 lines)
+    TooManyParameters,         // -15 points (>5 params)
+    DeepNesting,               // -10 points per level over 4
+    
+    // Performance issues (150 points)
+    InefficientAlgorithm,      // -40 points (O(n²) or worse)
+    UnboundedRecursion,        // -50 points
+    ExcessiveMemoryUse,        // -30 points
+    SynchronousBlocking,       // -20 points in async context
+    
+    // Security issues (100 points)
+    SqlInjection,              // -50 points
+    CommandInjection,          // -50 points
+    PathTraversal,             // -40 points
+    HardcodedCredentials,      // -50 points
+    InsecureRandom,            // -20 points
+    
+    // Standards issues (50 points)
+    NamingConvention,          // -5 points
+    MissingDocumentation,      // -10 points
+    UnusedImports,             // -5 points
+    UnusedVariables,           // -5 points
+}
+
+/// AST-based quality scorer
+pub struct AstQualityScorer {
+    rules: HashMap<String, Box<dyn AstRule>>,
+}
+
+/// Enhanced trait for AST-based quality rules with language context
+pub trait AstRule: Send + Sync {
+    fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue>;
+    fn rule_id(&self) -> &str;
+}
+
+impl AstQualityScorer {
+    pub fn new() -> Self {
+        let mut scorer = Self {
+            rules: HashMap::new(),
+        };
+        scorer.register_default_rules();
+        scorer
+    }
+    
+    fn register_default_rules(&mut self) {
+        // Register all default AST rules
+        self.register_rule(Box::new(UnhandledErrorRule));
+        self.register_rule(Box::new(DeadCodeRule));
+        self.register_rule(Box::new(ComplexityRule));
+        self.register_rule(Box::new(SecurityPatternRule));
+        self.register_rule(Box::new(ResourceLeakRule));
+    }
+    
+    pub fn register_rule(&mut self, rule: Box<dyn AstRule>) {
+        self.rules.insert(rule.rule_id().to_string(), rule);
+    }
+    
+    /// Analyze code and return quality score with concrete issues
+    pub fn analyze(&self, source: &str, language: SupportedLanguage) -> Result<QualityScore> {
+        let mut score = QualityScore {
+            total_score: 1000,
+            functionality_score: 300,
+            reliability_score: 200,
+            maintainability_score: 200,
+            performance_score: 150,
+            security_score: 100,
+            standards_score: 50,
+            concrete_issues: Vec::new(),
+        };
+        
+        // Parse AST
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&language.get_tree_sitter_language()?)?;
+        
+        let tree = parser.parse(source, None)
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse AST"))?;
+        
+        // Run all rules
+        for rule in self.rules.values() {
+            let issues = rule.check(&tree, source, language);
+            for issue in issues {
+                // Deduct points based on category
+                match issue.category {
+                    IssueCategory::UnhandledError => score.functionality_score = score.functionality_score.saturating_sub(50),
+                    IssueCategory::InfiniteLoop => score.functionality_score = score.functionality_score.saturating_sub(60),
+                    IssueCategory::DeadCode => score.functionality_score = score.functionality_score.saturating_sub(20),
+                    IssueCategory::NullPointerRisk => score.reliability_score = score.reliability_score.saturating_sub(40),
+                    IssueCategory::ResourceLeak => score.reliability_score = score.reliability_score.saturating_sub(50),
+                    IssueCategory::HighComplexity => score.maintainability_score = score.maintainability_score.saturating_sub(issue.points_deducted),
+                    IssueCategory::SqlInjection => score.security_score = score.security_score.saturating_sub(50),
+                    IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50),
+                    _ => {}
+                }
+                score.concrete_issues.push(issue);
+            }
+        }
+        
+        // Calculate total score
+        score.total_score = score.functionality_score
+            + score.reliability_score
+            + score.maintainability_score
+            + score.performance_score
+            + score.security_score
+            + score.standards_score;
+        
+        Ok(score)
+    }
+}
+
+/// Example rule: Detect unhandled errors
+struct UnhandledErrorRule;
+
+impl UnhandledErrorRule {
+    fn walk_ast_recursive(&self, cursor: &mut tree_sitter::TreeCursor, source: &str, issues: &mut Vec<ConcreteIssue>) {
+        let node = cursor.node();
+        
+        // Check for unwrap() on Result/Option
+        if node.kind() == "call_expression" {
+            if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                if text.contains(".unwrap()") && !text.contains("unwrap_or") {
+                    issues.push(ConcreteIssue {
+                        severity: IssueSeverity::Major,
+                        category: IssueCategory::UnhandledError,
+                        message: "Using .unwrap() without error handling".to_string(),
+                        file: String::new(),
+                        line: node.start_position().row + 1,
+                        column: node.start_position().column + 1,
+                        rule_id: self.rule_id().to_string(),
+                        points_deducted: 50,
+                    });
+                }
+            }
+        }
+        
+        // Recursively walk children
+        if cursor.goto_first_child() {
+            loop {
+                self.walk_ast_recursive(cursor, source, issues);
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+            cursor.goto_parent();
+        }
+    }
+}
+
+impl AstRule for UnhandledErrorRule {
+    fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        
+        // Only apply to Rust language (unwrap is Rust-specific)
+        if language != SupportedLanguage::Rust {
+            return issues;
+        }
+        
+        let mut cursor = ast.walk();
+        
+        // Walk AST looking for error patterns recursively
+        self.walk_ast_recursive(&mut cursor, source, &mut issues);
+        
+        issues
+    }
+    
+    fn rule_id(&self) -> &str {
+        "AST001"
+    }
+}
+
+/// Rule: Detect dead code
+struct DeadCodeRule;
+
+impl AstRule for DeadCodeRule {
+    fn check(&self, ast: &tree_sitter::Tree, _source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        let mut cursor = ast.walk();
+        
+        loop {
+            let node = cursor.node();
+            
+            // Check for code after return statements
+            if node.kind() == "return_statement" {
+                if let Some(next_sibling) = node.next_sibling() {
+                    if next_sibling.kind() != "}" && next_sibling.kind() != "comment" {
+                        issues.push(ConcreteIssue {
+                            severity: IssueSeverity::Major,
+                            category: IssueCategory::UnreachableCode,
+                            message: "Unreachable code after return statement".to_string(),
+                            file: String::new(),
+                            line: next_sibling.start_position().row + 1,
+                            column: next_sibling.start_position().column + 1,
+                            rule_id: self.rule_id().to_string(),
+                            points_deducted: 30,
+                        });
+                    }
+                }
+            }
+            
+            if !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    break;
+                }
+            }
+        }
+        
+        issues
+    }
+    
+    fn rule_id(&self) -> &str {
+        "AST002"
+    }
+}
+
+/// Rule: Check cyclomatic complexity
+struct ComplexityRule;
+
+impl AstRule for ComplexityRule {
+    fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        let mut cursor = ast.walk();
+        
+        loop {
+            let node = cursor.node();
+            
+            if node.kind() == "function_item" || node.kind() == "method_definition" {
+                let complexity = calculate_complexity(&node, source);
+                if complexity > 10 {
+                    issues.push(ConcreteIssue {
+                        severity: IssueSeverity::Minor,
+                        category: IssueCategory::HighComplexity,
+                        message: format!("High cyclomatic complexity: {}", complexity),
+                        file: String::new(),
+                        line: node.start_position().row + 1,
+                        column: node.start_position().column + 1,
+                        rule_id: self.rule_id().to_string(),
+                        points_deducted: (complexity - 10) * 5,
+                    });
+                }
+            }
+            
+            if !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    break;
+                }
+            }
+        }
+        
+        issues
+    }
+    
+    fn rule_id(&self) -> &str {
+        "AST003"
+    }
+}
+
+/// Rule: Detect security patterns
+struct SecurityPatternRule;
+
+impl SecurityPatternRule {
+    fn walk_security_recursive(&self, cursor: &mut tree_sitter::TreeCursor, source: &str, issues: &mut Vec<ConcreteIssue>) {
+        let node = cursor.node();
+        
+        // Check for hardcoded credentials in variable assignments (Python specific)
+        if node.kind() == "assignment" {
+            if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                let text_lower = text.to_lowercase();
+                if (text_lower.contains("password") || text_lower.contains("api_key") || 
+                    text_lower.contains("secret") || text_lower.contains("token")) && 
+                   text.contains("=") && 
+                   !text.contains("env") && !text.contains("getenv") && 
+                   !text.contains("config") && !text.contains("input") {
+                    issues.push(ConcreteIssue {
+                        severity: IssueSeverity::Critical,
+                        category: IssueCategory::HardcodedCredentials,
+                        message: "Hardcoded credentials in assignment".to_string(),
+                        file: String::new(),
+                        line: node.start_position().row + 1,
+                        column: node.start_position().column + 1,
+                        rule_id: self.rule_id().to_string(),
+                        points_deducted: 50,
+                    });
+                }
+            }
+        }
+        
+        // Check for SQL injection in string content (especially f-strings with interpolation)
+        if node.kind() == "string_content" {
+            if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                if (text.contains("SELECT") && text.contains("WHERE")) ||
+                   (text.contains("INSERT") && text.contains("VALUES")) ||
+                   (text.contains("UPDATE") && text.contains("SET")) ||
+                   (text.contains("DELETE") && text.contains("FROM")) {
+                    // Check if this is in a string with interpolation (f-string)
+                    if let Some(parent) = node.parent() {
+                        if parent.kind() == "string" {
+                            if let Ok(parent_text) = parent.utf8_text(source.as_bytes()) {
+                                if parent_text.starts_with("f\"") || parent_text.starts_with("f'") {
+                                    issues.push(ConcreteIssue {
+                                        severity: IssueSeverity::Critical,
+                                        category: IssueCategory::SqlInjection,
+                                        message: "SQL injection risk in f-string - use parameterized queries".to_string(),
+                                        file: String::new(),
+                                        line: node.start_position().row + 1,
+                                        column: node.start_position().column + 1,
+                                        rule_id: self.rule_id().to_string(),
+                                        points_deducted: 50,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Check string_content for hardcoded credentials
+        if node.kind() == "string_content" {
+            if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                // Look for credential patterns like "sk-123", long tokens, etc.
+                if (text.starts_with("sk-") && text.len() > 10) ||
+                   (text.contains("secret") && text.len() > 8) ||
+                   (text.contains("password") && text.len() > 8) ||
+                   (text.contains("token") && text.len() > 8) ||
+                   (text.len() > 20 && text.chars().all(|c| c.is_ascii_alphanumeric())) {
+                    issues.push(ConcreteIssue {
+                        severity: IssueSeverity::Critical,
+                        category: IssueCategory::HardcodedCredentials,
+                        message: "Hardcoded credential detected in string".to_string(),
+                        file: String::new(),
+                        line: node.start_position().row + 1,
+                        column: node.start_position().column + 1,
+                        rule_id: self.rule_id().to_string(),
+                        points_deducted: 50,
+                    });
+                }
+            }
+        }
+        
+        // Recursively walk children
+        if cursor.goto_first_child() {
+            loop {
+                self.walk_security_recursive(cursor, source, issues);
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+            cursor.goto_parent();
+        }
+    }
+}
+
+impl AstRule for SecurityPatternRule {
+    fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        
+        // Only apply to Python language (patterns are Python-specific)
+        if language != SupportedLanguage::Python {
+            eprintln!("DEBUG: SecurityPatternRule skipped - not Python language: {:?}", language);
+            return issues;
+        }
+        
+        let mut cursor = ast.walk();
+        self.walk_security_recursive(&mut cursor, source, &mut issues);
+        
+        issues
+    }
+    
+    fn rule_id(&self) -> &str {
+        "SEC001"
+    }
+}
+
+/// Rule: Detect resource leaks
+struct ResourceLeakRule;
+
+impl AstRule for ResourceLeakRule {
+    fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        let mut cursor = ast.walk();
+        
+        loop {
+            let node = cursor.node();
+            
+            // Check for file/connection opens without closes
+            if node.kind() == "call_expression" {
+                if let Ok(text) = node.utf8_text(source.as_bytes()) {
+                    if text.contains("File::open") || text.contains("TcpStream::connect") {
+                        // Check if there's a corresponding close/drop in the same scope
+                        let parent = node.parent();
+                        if let Some(parent) = parent {
+                            let parent_text = parent.utf8_text(source.as_bytes()).unwrap_or("");
+                            if !parent_text.contains("drop") && !parent_text.contains("close") {
+                                issues.push(ConcreteIssue {
+                                    severity: IssueSeverity::Major,
+                                    category: IssueCategory::ResourceLeak,
+                                    message: "Potential resource leak - ensure proper cleanup".to_string(),
+                                    file: String::new(),
+                                    line: node.start_position().row + 1,
+                                    column: node.start_position().column + 1,
+                                    rule_id: "RES001".to_string(),
+                                    points_deducted: 50,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    break;
+                }
+            }
+        }
+        
+        issues
+    }
+    
+    fn rule_id(&self) -> &str {
+        "RES001"
+    }
+}
+
+fn calculate_complexity(node: &tree_sitter::Node, source: &str) -> u32 {
+    let mut complexity = 1;
+    let mut cursor = node.walk();
+    
+    loop {
+        let current = cursor.node();
+        match current.kind() {
+            "if_expression" | "if_statement" => complexity += 1,
+            "match_expression" | "switch_statement" => complexity += 1,
+            "while_expression" | "while_statement" => complexity += 1,
+            "for_expression" | "for_statement" => complexity += 1,
+            "binary_expression" => {
+                if let Ok(text) = current.utf8_text(source.as_bytes()) {
+                    if text.contains("&&") || text.contains("||") {
+                        complexity += 1;
+                    }
+                }
+            }
+            _ => {}
+        }
+        
+        if !cursor.goto_next_sibling() {
+            if !cursor.goto_parent() {
+                break;
+            }
+        }
+    }
+    
+    complexity
+}

@@ -11,10 +11,20 @@ use rust_validation_hooks::providers::ai::UniversalAIClient;
 use rust_validation_hooks::analysis::project::{
     format_project_structure_for_ai_with_metrics, scan_project_with_cache,
 };
+// Use dependency analysis for better project understanding
+use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
 use std::path::PathBuf;
-// Use diff formatter for better AI context - full file context for complete visibility
+// Use diff formatter for better AI context - unified diff for clear change visibility
 use rust_validation_hooks::validation::diff_formatter::{
-    format_edit_full_context, format_full_file_with_changes, format_multi_edit_full_context,
+    format_code_diff, format_edit_as_unified_diff, format_edit_full_context, format_full_file_with_changes, format_multi_edit_full_context,
+};
+// Use AST-based quality scorer for deterministic code analysis
+use rust_validation_hooks::analysis::ast::{
+    AstQualityScorer, QualityScore, SupportedLanguage, IssueSeverity,
+};
+// Use duplicate detector for finding conflicting files
+use rust_validation_hooks::analysis::duplicate_detector::{
+    DuplicateDetector, DuplicateGroup, ConflictType,
 };
 
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
@@ -100,8 +110,24 @@ async fn format_analysis_prompt(
     diff_context: Option<&str>,
     transcript_context: Option<&str>,
 ) -> Result<String> {
+    format_analysis_prompt_with_ast(prompt, project_context, diff_context, transcript_context, None).await
+}
+
+/// Format the analysis prompt with instructions, project context, conversation, and AST analysis
+async fn format_analysis_prompt_with_ast(
+    prompt: &str,
+    project_context: Option<&str>,
+    diff_context: Option<&str>,
+    transcript_context: Option<&str>,
+    ast_context: Option<&str>,
+) -> Result<String> {
     // Load output template from file
     let output_template = load_prompt_file("output_template.txt").await?;
+    
+    // Load context7 documentation recommendation engine
+    let context7_docs = load_prompt_file("context7_docs.txt")
+        .await
+        .unwrap_or_else(|_| String::new());
     
     // Load language preference with fallback to RUSSIAN
     let language = load_prompt_file("language.txt")
@@ -128,12 +154,26 @@ async fn format_analysis_prompt(
         String::new()
     };
 
+    let context7_section = if !context7_docs.is_empty() {
+        format!("\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{}\n", context7_docs)
+    } else {
+        String::new()
+    };
+
+    let ast_section = if let Some(ast) = ast_context {
+        format!("\n{}\n", ast)
+    } else {
+        String::new()
+    };
+
     // Build prompt with pre-allocated capacity for better performance
     let estimated_capacity = prompt.len()
         + output_template.len()
         + transcript_section.len()
         + context_section.len()
         + diff_section.len()
+        + context7_section.len()
+        + ast_section.len()
         + CRITICAL_INSTRUCTION.len()
         + TOKEN_LIMIT.len()
         + TEMPLATE_HEADER.len()
@@ -157,6 +197,15 @@ async fn format_analysis_prompt(
     }
     if !diff_section.is_empty() {
         result.push_str(&diff_section);
+    }
+    
+    // Add AST analysis results BEFORE AI analysis for deterministic context
+    if !ast_section.is_empty() {
+        result.push_str(&ast_section);
+    }
+    
+    if !context7_section.is_empty() {
+        result.push_str(&context7_section);
     }
 
     // Critical formatting instruction
@@ -250,13 +299,28 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
                 .and_then(|v| v.as_str())
                 .context("Edit operation missing required 'new_string' field")?;
 
-            // Return FULL file with changes marked
-            Ok(format_edit_full_context(
-                display_path,
-                file_content.as_deref(),
-                old_string,
-                new_string,
-            ))
+            // Return unified diff for clear change visibility
+            // Since posttooluse runs AFTER edit, reconstruct diff from old_string -> new_string
+            let mut result = String::new();
+            result.push_str(&format!("--- a/{}\n", display_path));
+            result.push_str(&format!("+++ b/{}\n", display_path));
+            
+            let old_lines = old_string.lines().count().max(1);
+            let new_lines = new_string.lines().count().max(1);
+            
+            result.push_str(&format!("@@ -1,{} +1,{} @@\n", old_lines, new_lines));
+            
+            // Show removed lines
+            for line in old_string.lines() {
+                result.push_str(&format!("-{}\n", line));
+            }
+            
+            // Show added lines  
+            for line in new_string.lines() {
+                result.push_str(&format!("+{}\n", line));
+            }
+            
+            Ok(result)
         }
 
         "MultiEdit" => {
@@ -309,11 +373,12 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
                 .and_then(|v| v.as_str())
                 .context("Write operation missing required 'content' field")?;
 
-            // Return FULL file comparison (old vs new)
-            Ok(format_full_file_with_changes(
+            // Return unified diff for clear change visibility with +/- markers
+            Ok(format_code_diff(
                 display_path,
                 file_content.as_deref(),
                 Some(new_content),
+                3, // context lines
             ))
         }
 
@@ -494,6 +559,101 @@ async fn read_transcript_summary(
     Ok(format!("{}conversation:\n{}", current_task, conversation))
 }
 
+/// Perform AST-based quality analysis on code
+async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityScore> {
+    // Detect language from file extension
+    let extension = file_path.split('.').last().unwrap_or("");
+    let language = match SupportedLanguage::from_extension(extension) {
+        Some(lang) => lang,
+        None => {
+            eprintln!("AST Analysis: Unsupported file type: {}", extension);
+            return None;
+        }
+    };
+    
+    // Special handling for Rust - use syn crate
+    if language == SupportedLanguage::Rust {
+        // For now, skip Rust AST analysis (requires syn integration)
+        eprintln!("AST Analysis: Rust analysis via syn not yet integrated");
+        return None;
+    }
+    
+    // Create AST quality scorer
+    let scorer = AstQualityScorer::new();
+    
+    // Perform analysis
+    match scorer.analyze(content, language) {
+        Ok(score) => {
+            // Return score for JSON output (don't log to stderr)
+            Some(score)
+        }
+        Err(e) => {
+            eprintln!("AST Analysis Error: {}", e);
+            None
+        }
+    }
+}
+
+/// Format AST analysis results for AI context (without scores to avoid duplication)
+fn format_ast_results(score: &QualityScore) -> String {
+    let mut result = String::with_capacity(2000);
+    
+    // Only pass concrete issues to AI, not scores (to avoid duplication)
+    if !score.concrete_issues.is_empty() {
+        result.push_str("\n\nAST DETECTED ISSUES (Automated):\n");
+        
+        // Group by severity
+        let mut critical_issues = Vec::new();
+        let mut major_issues = Vec::new();
+        let mut minor_issues = Vec::new();
+        
+        for issue in &score.concrete_issues {
+            match issue.severity {
+                IssueSeverity::Critical => critical_issues.push(issue),
+                IssueSeverity::Major => major_issues.push(issue),
+                IssueSeverity::Minor => minor_issues.push(issue),
+            }
+        }
+        
+        if !critical_issues.is_empty() {
+            result.push_str("\n🔴 CRITICAL (P1 - Fix immediately):\n");
+            for issue in critical_issues {
+                result.push_str(&format!(
+                    "  Line {}: {} [{}] (-{} points)\n",
+                    issue.line, issue.message, issue.rule_id, issue.points_deducted
+                ));
+            }
+        }
+        
+        if !major_issues.is_empty() {
+            result.push_str("\n🟡 MAJOR (P2 - Fix soon):\n");
+            for issue in major_issues {
+                result.push_str(&format!(
+                    "  Line {}: {} [{}] (-{} points)\n",
+                    issue.line, issue.message, issue.rule_id, issue.points_deducted
+                ));
+            }
+        }
+        
+        if !minor_issues.is_empty() {
+            result.push_str("\n🟢 MINOR (P3 - Nice to fix):\n");
+            for issue in minor_issues {
+                result.push_str(&format!(
+                    "  Line {}: {} [{}] (-{} points)\n",
+                    issue.line, issue.message, issue.rule_id, issue.points_deducted
+                ));
+            }
+        }
+    } else {
+        // No issues detected - return empty string to not add unnecessary context
+        return String::new();
+    }
+    
+    result.push_str("\nNote: Use AST issues as baseline. Add context-aware insights.\n");
+    
+    result
+}
+
 /// Main function for the PostToolUse hook
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -506,6 +666,13 @@ async fn main() -> Result<()> {
     // Parse the input
     let hook_input: HookInput =
         serde_json::from_str(&buffer).context("Failed to parse input JSON")?;
+    
+    // DEBUG: Write the exact hook input to a file for inspection
+    if let Ok(mut debug_file) = tokio::fs::File::create("hook-input-debug.json").await {
+        use tokio::io::AsyncWriteExt;
+        let _ = debug_file.write_all(buffer.as_bytes()).await;
+        eprintln!("DEBUG: Full hook input written to hook-input-debug.json");
+    }
 
     // Only analyze Write, Edit, and MultiEdit operations
     if !matches!(
@@ -602,6 +769,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Perform AST-based quality analysis for deterministic scoring
+    eprintln!("DEBUG: Starting AST analysis for file: {}", file_path);
+    let ast_analysis = perform_ast_analysis(&content, file_path).await;
+    eprintln!("DEBUG: AST analysis result: {:?}", ast_analysis.is_some());
+
     // Load configuration from environment
     let config = Config::from_env().context("Failed to load configuration")?;
 
@@ -643,6 +815,41 @@ async fn main() -> Result<()> {
         }
     };
 
+    // Detect duplicate and conflicting files
+    let duplicate_report = {
+        let mut detector = DuplicateDetector::new();
+        match detector.scan_directory(std::path::Path::new(".")) {
+            Ok(_) => {
+                let duplicates = detector.find_duplicates();
+                if !duplicates.is_empty() {
+                    eprintln!("Found {} duplicate/conflict groups", duplicates.len());
+                    Some(detector.format_report(&duplicates))
+                } else {
+                    None
+                }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to scan for duplicates: {}", e);
+                None
+            }
+        }
+    };
+
+    // Analyze project dependencies for AI context
+    let dependencies_context = match analyze_project_dependencies(&std::path::Path::new(".")).await {
+        Ok(deps) => {
+            eprintln!("Dependencies analysis: {} total dependencies", deps.total_count);
+            if deps.outdated_count > 0 {
+                eprintln!("Found {} potentially outdated dependencies", deps.outdated_count);
+            }
+            Some(deps.format_for_ai())
+        }
+        Err(e) => {
+            eprintln!("Warning: Failed to analyze dependencies: {}", e);
+            None
+        }
+    };
+
     // Construct full path for display in diff context
     let display_path = if let Some(cwd) = &hook_input.cwd {
         if file_path.starts_with('/') || file_path.starts_with('\\') || file_path.contains(':') {
@@ -666,9 +873,9 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Read conversation transcript for context (20 messages, max 2000 chars)
+    // Read conversation transcript for context (10 messages, max 2000 chars)
     let transcript_context = if let Some(transcript_path) = &hook_input.transcript_path {
-        match read_transcript_summary(transcript_path, 20, 2000).await {
+        match read_transcript_summary(transcript_path, 10, 2000).await {
             Ok(summary) => {
                 eprintln!("DEBUG: Transcript summary read successfully:");
                 // Safe UTF-8 truncation using standard library
@@ -686,12 +893,40 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Format the prompt with context, diff and conversation
-    let formatted_prompt = format_analysis_prompt(
+    // Include AST analysis results in context if available
+    let ast_context = ast_analysis.as_ref().map(format_ast_results);
+    
+    // Combine project context with dependencies analysis and duplicate report
+    let combined_project_context = {
+        let mut context_parts = Vec::new();
+        
+        if let Some(project) = project_context.as_deref() {
+            context_parts.push(project.to_string());
+        }
+        
+        if let Some(deps) = dependencies_context.as_deref() {
+            context_parts.push(deps.to_string());
+        }
+        
+        // Add duplicate report as critical context if found
+        if let Some(duplicates) = duplicate_report.as_deref() {
+            context_parts.push(duplicates.to_string());
+        }
+        
+        if !context_parts.is_empty() {
+            Some(context_parts.join("\n"))
+        } else {
+            None
+        }
+    };
+
+    // Format the prompt with context, diff, conversation, and AST analysis
+    let formatted_prompt = format_analysis_prompt_with_ast(
         &prompt,
-        project_context.as_deref(),
+        combined_project_context.as_deref(),
         Some(&diff_context),
         transcript_context.as_deref(),
+        ast_context.as_deref(),
     )
     .await?;
 
@@ -712,12 +947,34 @@ async fn main() -> Result<()> {
         .await
     {
         Ok(ai_response) => {
-            // Pass the raw AI response directly as additional context
-            // The AI will format it according to output_template.txt
+            // Combine AST results with AI response for full visibility
+            let mut final_response = String::new();
+            
+            // Add AST results first if available
+            if let Some(ast_score) = &ast_analysis {
+                final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
+                
+                if !ast_score.concrete_issues.is_empty() {
+                    final_response.push_str("Concrete Issues Found:\n");
+                    for issue in &ast_score.concrete_issues {
+                        final_response.push_str(&format!(
+                            "• Line {}: {} (-{} pts)\n",
+                            issue.line, issue.message, issue.points_deducted
+                        ));
+                    }
+                } else {
+                    final_response.push_str("No concrete issues found by AST analysis.\n");
+                }
+                final_response.push_str("\n");
+            }
+            
+            // Add AI response
+            final_response.push_str(&ai_response);
+            
             let output = PostToolUseOutput {
                 hook_specific_output: PostToolUseHookOutput {
                     hook_event_name: "PostToolUse".to_string(),
-                    additional_context: ai_response,
+                    additional_context: final_response,
                 },
             };
 

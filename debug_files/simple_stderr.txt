@@ -1,0 +1,2 @@
+Method 1: println!
+{"test": "method2"}

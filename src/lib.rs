@@ -70,6 +70,8 @@ pub struct HookInput {
     pub tool_name: String,
     pub tool_input: HashMap<String, serde_json::Value>,
     #[serde(default)]
+    pub tool_response: Option<serde_json::Value>, // Tool response data (for post-tool hooks)
+    #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
     pub transcript_path: Option<String>, // Path to conversation JSON file
@@ -108,6 +110,21 @@ pub struct PostToolUseOutput {
 
 #[derive(Debug, Serialize)]
 pub struct PostToolUseHookOutput {
+    #[serde(rename = "hookEventName")]
+    pub hook_event_name: String,
+    #[serde(rename = "additionalContext")]
+    pub additional_context: String,
+}
+
+/// UserPromptSubmit hook output
+#[derive(Debug, Serialize)]
+pub struct UserPromptSubmitOutput {
+    #[serde(rename = "hookSpecificOutput")]
+    pub hook_specific_output: UserPromptSubmitHookOutput,
+}
+
+#[derive(Debug, Serialize)]
+pub struct UserPromptSubmitHookOutput {
     #[serde(rename = "hookEventName")]
     pub hook_event_name: String,
     #[serde(rename = "additionalContext")]

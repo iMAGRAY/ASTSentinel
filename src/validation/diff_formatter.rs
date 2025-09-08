@@ -201,8 +201,209 @@ fn compute_line_diff(old: &str, new: &str, context_lines: usize) -> String {
     result
 }
 
+/// Find the starting position of a line sequence in content lines
+fn find_line_sequence(content_lines: &[&str], target_lines: &[&str]) -> Option<usize> {
+    if target_lines.is_empty() {
+        return None;
+    }
+    
+    for (i, window) in content_lines.windows(target_lines.len()).enumerate() {
+        if window == target_lines {
+            return Some(i);
+        }
+    }
+    
+    None
+}
+
 /// Maximum file size for full context (100KB)
 const MAX_FILE_SIZE_FOR_FULL_CONTEXT: usize = 100_000;
+
+/// Format simple unified diff for Edit operations  
+pub fn format_edit_as_unified_diff(
+    file_path: &str,
+    file_content: Option<&str>,
+    old_string: &str,
+    new_string: &str,
+) -> String {
+    // Pre-allocate capacity for better performance
+    let estimated_size = old_string.len() + new_string.len() + 200;
+    let mut result = String::with_capacity(estimated_size);
+    
+    // Basic unified diff header
+    result.push_str(&format!("--- a/{}\n", file_path));
+    result.push_str(&format!("+++ b/{}\n", file_path));
+    
+    // Try to find context in the actual file content
+    if let Some(content) = file_content {
+        // Since posttooluse runs AFTER edit, new_string should be in the modified content
+        // We need to find where the change occurred by looking for lines that match new_string
+        
+        let content_lines: Vec<&str> = content.lines().collect();
+        let new_lines: Vec<&str> = new_string.lines().collect();
+        let old_lines: Vec<&str> = old_string.lines().collect();
+        
+        // Find the position where new_lines start in content_lines
+        if let Some(change_start_idx) = find_line_sequence(&content_lines, &new_lines) {
+            // Calculate context
+            let context_before = 3;
+            let context_after = 3;
+            let start_line = change_start_idx.saturating_sub(context_before);
+            let end_line = (change_start_idx + new_lines.len() + context_after).min(content_lines.len());
+            
+            // Generate proper unified diff hunk header
+            let old_start = start_line + 1;
+            let old_count = (end_line - start_line).saturating_sub(new_lines.len()) + old_lines.len();
+            let new_start = start_line + 1;
+            let new_count = end_line - start_line;
+            
+            result.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                old_start, old_count, new_start, new_count
+            ));
+            
+            // Show context before change
+            for i in start_line..change_start_idx {
+                if i < content_lines.len() {
+                    result.push_str(&format!(" {}\n", content_lines[i]));
+                }
+            }
+            
+            // Show the actual change
+            for line in old_lines.iter() {
+                result.push_str(&format!("-{}\n", line));
+            }
+            for line in new_lines.iter() {
+                result.push_str(&format!("+{}\n", line));
+            }
+            
+            // Show context after change  
+            let after_start = change_start_idx + new_lines.len();
+            for i in after_start..end_line {
+                if i < content_lines.len() {
+                    result.push_str(&format!(" {}\n", content_lines[i]));
+                }
+            }
+        } else {
+            // Fallback: couldn't find new_string, show simple diff
+            result.push_str(&format!("@@ -1,{} +1,{} @@\n", 
+                old_string.lines().count().max(1),
+                new_string.lines().count().max(1)
+            ));
+            
+            for line in old_string.lines() {
+                result.push_str(&format!("-{}\n", line));
+            }
+            for line in new_string.lines() {
+                result.push_str(&format!("+{}\n", line));
+            }
+        }
+    } else {
+        // No file content available, show simple diff
+        result.push_str(&format!("@@ -1,{} +1,{} @@\n", 
+            old_string.lines().count().max(1),
+            new_string.lines().count().max(1)
+        ));
+        
+        for line in old_string.lines() {
+            result.push_str(&format!("-{}\n", line));
+        }
+        for line in new_string.lines() {
+            result.push_str(&format!("+{}\n", line));
+        }
+    }
+    
+    result
+}
+
+/// Generate clean unified diff between two contents
+pub fn format_simple_unified_diff(
+    file_path: &str,
+    old_content: &str,
+    new_content: &str,
+) -> String {
+    use std::cmp::min;
+    
+    let mut result = String::new();
+    result.push_str(&format!("--- a/{}\n", file_path));
+    result.push_str(&format!("+++ b/{}\n", file_path));
+    
+    let old_lines: Vec<&str> = old_content.lines().collect();
+    let new_lines: Vec<&str> = new_content.lines().collect();
+    
+    // Find changes
+    let mut hunks = Vec::new();
+    let mut i = 0;
+    let max_len = std::cmp::max(old_lines.len(), new_lines.len());
+    
+    while i < max_len {
+        let old_line = old_lines.get(i);
+        let new_line = new_lines.get(i);
+        
+        if old_line != new_line {
+            // Found a difference - create hunk
+            let hunk_start = i;
+            let mut hunk_end = i + 1;
+            
+            // Extend hunk to include consecutive changes
+            while hunk_end < max_len {
+                let old_next = old_lines.get(hunk_end);
+                let new_next = new_lines.get(hunk_end);
+                if old_next == new_next {
+                    break;
+                }
+                hunk_end += 1;
+            }
+            
+            hunks.push((hunk_start, hunk_end));
+            i = hunk_end;
+        } else {
+            i += 1;
+        }
+    }
+    
+    // Generate hunks
+    for (hunk_start, hunk_end) in &hunks {
+        let context_before = 3;
+        let context_after = 3;
+        
+        let start_line = hunk_start.saturating_sub(context_before);
+        let end_line = min(max_len, hunk_end.saturating_add(context_after));
+        
+        let old_count = min(old_lines.len(), end_line) - start_line;
+        let new_count = min(new_lines.len(), end_line) - start_line;
+        
+        result.push_str(&format!("@@ -{},{} +{},{} @@\n", start_line + 1, old_count, start_line + 1, new_count));
+        
+        for line_idx in start_line..end_line {
+            let old_line = old_lines.get(line_idx);
+            let new_line = new_lines.get(line_idx);
+            
+            match (old_line, new_line) {
+                (Some(old), Some(new)) if old == new => {
+                    result.push_str(&format!(" {}\n", old));
+                }
+                (Some(old), Some(new)) => {
+                    result.push_str(&format!("-{}\n", old));
+                    result.push_str(&format!("+{}\n", new));
+                }
+                (Some(old), None) => {
+                    result.push_str(&format!("-{}\n", old));
+                }
+                (None, Some(new)) => {
+                    result.push_str(&format!("+{}\n", new));
+                }
+                (None, None) => {} // Shouldn't happen in this range
+            }
+        }
+    }
+    
+    if hunks.is_empty() {
+        result.push_str("@@ No changes @@\n");
+    }
+    
+    result
+}
 
 /// Format MultiEdit changes with full file context
 pub fn format_multi_edit_full_context(

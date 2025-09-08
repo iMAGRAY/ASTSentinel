@@ -17,6 +17,10 @@ path = "src/bin/posttooluse.rs"
 name = "memory_organizer"
 path = "src/bin/memory_organizer.rs"
 
+[[bin]]
+name = "test_unified_diff"
+path = "test_unified_diff.rs"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
