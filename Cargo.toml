@@ -13,9 +13,7 @@ path = "src/bin/pretooluse.rs"
 name = "posttooluse"
 path = "src/bin/posttooluse.rs"
 
-[[bin]]
-name = "memory_organizer"
-path = "src/bin/memory_organizer.rs"
+# Memory organizer binary removed as requested
 
 [[bin]]
 name = "test_unified_diff"
@@ -37,6 +35,7 @@ rayon = "1.8"
 sha2 = "0.10"
 crossbeam-channel = "0.5"
 syn = { version = "2.0", features = ["full", "parsing", "visit"] }
+quote = "1.0"
 memmap2 = "0.9"
 dashmap = "6.0"
 # tiktoken-rs removed - using simple token estimation instead
@@ -57,6 +56,11 @@ tree-sitter-c-sharp = "0.21"
 tree-sitter-go = "0.21"
 tree-sitter-php = "0.22"
 tree-sitter-ruby = "0.21"
+tree-sitter-gleam = { git = "https://github.com/gleam-lang/tree-sitter-gleam", optional = true }
+
+[features]
+default = []
+gleam-support = ["tree-sitter-gleam"]
 
 [dev-dependencies]
 tempfile = "3.8"

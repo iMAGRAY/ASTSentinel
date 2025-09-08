@@ -1,1 +1,0 @@
-{"tool_name":"Write","tool_input":{"file_path":"src/payment.js","content":"function pay() { return \"fake-123\"; }"}}

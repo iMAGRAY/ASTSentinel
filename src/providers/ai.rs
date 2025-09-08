@@ -10,6 +10,326 @@ use crate::{
     Config, GrokCodeAnalysis, GrokCodeIssue, GrokCodeMetrics, GrokCodeSuggestion,
     SecurityValidation,
 };
+use std::collections::HashMap;
+
+// AI-assisted code review structures for enhanced analysis with security constraints
+const MAX_REVIEW_TEXT_LENGTH: usize = 2000;
+const MAX_SUGGESTIONS_PER_REVIEW: usize = 20;
+const MAX_ISSUES_PER_REVIEW: usize = 50;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiCodeReview {
+    pub overall_score: f32, // 0.0 to 10.0
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub issues: Vec<AiReviewIssue>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub suggestions: Vec<AiCodeSuggestion>,
+    pub complexity_assessment: AiComplexityAssessment,
+    pub security_analysis: AiSecurityAnalysis,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub performance_notes: Vec<String>,
+    pub maintainability_score: f32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub test_coverage_recommendations: Vec<String>,
+    pub ai_confidence: f32, // 0.0 to 1.0
+}
+
+impl AiCodeReview {
+    pub fn validate_and_sanitize(&mut self) -> Result<(), String> {
+        // Clamp scores to valid ranges
+        self.overall_score = self.overall_score.clamp(0.0, 10.0);
+        self.maintainability_score = self.maintainability_score.clamp(0.0, 10.0);
+        self.ai_confidence = self.ai_confidence.clamp(0.0, 1.0);
+
+        // Limit collection sizes to prevent memory exhaustion
+        if self.issues.len() > MAX_ISSUES_PER_REVIEW {
+            self.issues.truncate(MAX_ISSUES_PER_REVIEW);
+        }
+
+        if self.suggestions.len() > MAX_SUGGESTIONS_PER_REVIEW {
+            self.suggestions.truncate(MAX_SUGGESTIONS_PER_REVIEW);
+        }
+
+        // Sanitize text fields
+        for issue in &mut self.issues {
+            issue.sanitize_text_fields()?;
+        }
+
+        for suggestion in &mut self.suggestions {
+            suggestion.sanitize_text_fields()?;
+        }
+
+        // Truncate performance notes if too long
+        self.performance_notes.truncate(10);
+        for note in &mut self.performance_notes {
+            if note.len() > MAX_REVIEW_TEXT_LENGTH {
+                note.truncate(MAX_REVIEW_TEXT_LENGTH);
+                note.push_str("... [truncated]");
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiReviewIssue {
+    pub severity: AiIssueSeverity,
+    pub category: AiIssueCategory,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub line_number: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub column_number: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested_fix: Option<String>,
+    pub confidence: f32, // 0.0 to 1.0
+    pub impact_assessment: AiImpactAssessment,
+}
+
+impl AiReviewIssue {
+    fn sanitize_text_fields(&mut self) -> Result<(), String> {
+        // Truncate and sanitize text fields
+        if self.title.len() > MAX_REVIEW_TEXT_LENGTH {
+            self.title.truncate(MAX_REVIEW_TEXT_LENGTH);
+            self.title.push_str("...");
+        }
+
+        if self.description.len() > MAX_REVIEW_TEXT_LENGTH {
+            self.description.truncate(MAX_REVIEW_TEXT_LENGTH);
+            self.description.push_str("...");
+        }
+
+        if let Some(ref mut fix) = self.suggested_fix {
+            if fix.len() > MAX_REVIEW_TEXT_LENGTH {
+                fix.truncate(MAX_REVIEW_TEXT_LENGTH);
+                fix.push_str("...");
+            }
+        }
+
+        // Clamp confidence
+        self.confidence = self.confidence.clamp(0.0, 1.0);
+
+        // Validate line/column numbers
+        if let Some(line) = self.line_number {
+            if line == 0 || line > 100_000 {
+                return Err("Invalid line number".to_string());
+            }
+        }
+
+        if let Some(col) = self.column_number {
+            if col > 1000 {
+                return Err("Invalid column number".to_string());
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AiIssueSeverity {
+    Info,
+    Warning,
+    Error,
+    Critical,
+    Blocker,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AiIssueCategory {
+    Syntax,
+    Logic,
+    Performance,
+    Security,
+    Maintainability,
+    Style,
+    Testing,
+    Documentation,
+    Architecture,
+    Dependencies,
+    Concurrency,
+    Memory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiCodeSuggestion {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub title: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
+    pub impact: AiImpactLevel,
+    pub effort: AiEffortLevel,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub category: String,
+    pub priority_score: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub implementation_notes: Option<String>,
+}
+
+impl AiCodeSuggestion {
+    fn sanitize_text_fields(&mut self) -> Result<(), String> {
+        // Truncate text fields
+        if self.title.len() > MAX_REVIEW_TEXT_LENGTH {
+            self.title.truncate(MAX_REVIEW_TEXT_LENGTH);
+        }
+
+        if self.description.len() > MAX_REVIEW_TEXT_LENGTH {
+            self.description.truncate(MAX_REVIEW_TEXT_LENGTH);
+        }
+
+        // Sanitize code examples
+        if let Some(ref mut before) = self.before {
+            if before.len() > MAX_REVIEW_TEXT_LENGTH * 2 {
+                before.truncate(MAX_REVIEW_TEXT_LENGTH * 2);
+            }
+        }
+
+        if let Some(ref mut after) = self.after {
+            if after.len() > MAX_REVIEW_TEXT_LENGTH * 2 {
+                after.truncate(MAX_REVIEW_TEXT_LENGTH * 2);
+            }
+        }
+
+        // Clamp priority score
+        self.priority_score = self.priority_score.clamp(0.0, 100.0);
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AiImpactLevel {
+    Negligible,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AiEffortLevel {
+    Trivial,   // < 1 hour
+    Low,       // 1-4 hours
+    Medium,    // 4-16 hours
+    High,      // 16-40 hours
+    Extensive, // > 40 hours
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiImpactAssessment {
+    pub technical_debt: f32,         // 0.0 to 10.0
+    pub maintainability_impact: f32, // -5.0 to 5.0
+    pub performance_impact: f32,     // -5.0 to 5.0
+    pub security_impact: f32,        // 0.0 to 10.0
+}
+
+impl AiImpactAssessment {
+    pub fn validate(&mut self) {
+        self.technical_debt = self.technical_debt.clamp(0.0, 10.0);
+        self.maintainability_impact = self.maintainability_impact.clamp(-5.0, 5.0);
+        self.performance_impact = self.performance_impact.clamp(-5.0, 5.0);
+        self.security_impact = self.security_impact.clamp(0.0, 10.0);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiComplexityAssessment {
+    pub cognitive_complexity: u32,
+    pub cyclomatic_complexity: u32,
+    pub maintainability_index: f32,
+    pub technical_debt_hours: f32,
+    pub refactoring_priority: AiRefactoringPriority,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub complexity_hotspots: Vec<AiComplexityHotspot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AiRefactoringPriority {
+    None,
+    Low,
+    Medium,
+    High,
+    Urgent,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiComplexityHotspot {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub function_name: String,
+    pub line_start: usize,
+    pub line_end: usize,
+    pub complexity_score: f32,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub recommended_action: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiSecurityAnalysis {
+    pub risk_level: AiSecurityRiskLevel,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub vulnerabilities: Vec<AiSecurityIssue>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub best_practices_violations: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub recommendations: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub owasp_categories: Vec<String>,
+    pub security_score: f32, // 0.0 to 10.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AiSecurityRiskLevel {
+    None,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiSecurityIssue {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub vulnerability_type: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cwe_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cvss_score: Option<f32>,
+    pub severity: AiSecurityRiskLevel,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub remediation: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub affected_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiBatchReviewResult {
+    pub total_files: usize,
+    pub successful_reviews: usize,
+    pub failed_reviews: usize,
+    pub reviews: HashMap<String, AiCodeReview>,
+    pub errors: HashMap<String, String>,
+    pub summary_statistics: AiReviewSummary,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AiReviewSummary {
+    pub average_overall_score: f32,
+    pub total_issues_found: usize,
+    pub issues_by_severity: HashMap<String, usize>,
+    pub most_common_categories: Vec<String>,
+    pub estimated_total_fix_hours: f32,
+    pub security_risk_distribution: HashMap<String, usize>,
+}
 
 /// Supported AI providers for validation
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

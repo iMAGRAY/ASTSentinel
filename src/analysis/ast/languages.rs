@@ -1,9 +1,9 @@
 /// Multi-language AST analysis using Tree-sitter and specialized parsers
 use anyhow::Result;
-use tree_sitter::{Language, Parser};
-use std::sync::{Arc, RwLock};
-use std::collections::HashMap;
 use lazy_static::lazy_static;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
+use tree_sitter::{Language, Parser};
 
 use crate::analysis::ast::visitor::ComplexityVisitor;
 use crate::analysis::metrics::ComplexityMetrics;
@@ -35,6 +35,14 @@ pub enum SupportedLanguage {
     Php,
     /// Ruby - Tree-sitter based
     Ruby,
+    /// Zig - Tree-sitter based (modern systems programming language)
+    Zig,
+    /// V Lang - Tree-sitter based (compiled programming language)
+    /// Docs: https://vlang.io/docs
+    V,
+    /// Gleam - Tree-sitter based (type-safe functional language)
+    /// Docs: https://gleam.run/book/
+    Gleam,
 }
 
 impl SupportedLanguage {
@@ -52,6 +60,9 @@ impl SupportedLanguage {
             "cpp" | "cc" | "cxx" | "hpp" | "hxx" => Some(Self::Cpp),
             "php" => Some(Self::Php),
             "rb" => Some(Self::Ruby),
+            "zig" => Some(Self::Zig),
+            "v" => Some(Self::V),
+            "gleam" => Some(Self::Gleam),
             _ => None,
         }
     }
@@ -69,6 +80,23 @@ impl SupportedLanguage {
             Self::Cpp => Ok(tree_sitter_cpp::language()),
             Self::Php => Ok(tree_sitter_php::language_php()),
             Self::Ruby => Ok(tree_sitter_ruby::language()),
+            Self::Zig => Err(anyhow::anyhow!(
+                "Zig tree-sitter support not yet implemented"
+            )),
+            Self::V => Err(anyhow::anyhow!(
+                "V Lang tree-sitter support requires implementation - no stable tree-sitter-v crate available. See https://vlang.io/docs for language info."
+            )),
+            Self::Gleam => {
+                #[cfg(feature = "gleam-support")]
+                {
+                    // tree_sitter_gleam::LANGUAGE is a LanguageFn, call it to get Language
+                    Ok(tree_sitter_gleam::LANGUAGE.call())
+                }
+                #[cfg(not(feature = "gleam-support"))]
+                Err(anyhow::anyhow!(
+                    "Gleam tree-sitter support not compiled in - enable 'gleam-support' feature. See https://gleam.run/book/ for language info."
+                ))
+            },
         }
     }
 }
@@ -87,6 +115,9 @@ impl std::fmt::Display for SupportedLanguage {
             Self::Cpp => write!(f, "C++"),
             Self::Php => write!(f, "PHP"),
             Self::Ruby => write!(f, "Ruby"),
+            Self::Zig => write!(f, "Zig"),
+            Self::V => write!(f, "V Lang"),
+            Self::Gleam => write!(f, "Gleam"),
         }
     }
 }
@@ -94,12 +125,12 @@ impl std::fmt::Display for SupportedLanguage {
 // Thread-safe language cache to avoid recreating Tree-sitter languages
 // Languages are expensive to create and can be safely shared between parsers
 lazy_static! {
-    static ref LANGUAGE_CACHE: Arc<RwLock<HashMap<SupportedLanguage, Language>>> = 
+    static ref LANGUAGE_CACHE: Arc<RwLock<HashMap<SupportedLanguage, Language>>> =
         Arc::new(RwLock::new(HashMap::new()));
 }
 
 /// Language cache manager for efficient Tree-sitter language reuse
-/// 
+///
 /// This cache stores Tree-sitter Language objects for reuse across multiple parser creations.
 /// Languages are expensive to create and can be safely shared between parsers.
 /// We use a thread-safe cache to avoid recreating languages in multi-threaded scenarios.
@@ -107,66 +138,71 @@ pub struct LanguageCache;
 
 impl LanguageCache {
     /// Get or create a Tree-sitter language for the given language type
-    /// 
+    ///
     /// This method first checks the cache for an existing language. If not found,
     /// it creates a new language and adds it to the cache for future use.
     /// Returns the Language object that can be used to configure a Parser.
     pub fn get_or_create_language(language: SupportedLanguage) -> Result<Language> {
         // Try to get existing language from cache (read lock scope)
         {
-            let cache = LANGUAGE_CACHE.read()
-                .map_err(|e| anyhow::anyhow!("Failed to acquire read lock on language cache: {}", e))?;
+            let cache = LANGUAGE_CACHE.read().map_err(|e| {
+                anyhow::anyhow!("Failed to acquire read lock on language cache: {}", e)
+            })?;
             if let Some(lang) = cache.get(&language) {
                 // Languages need to be cloned (Tree-sitter Language doesn't implement Copy)
                 return Ok(lang.clone());
             }
         }
-        
+
         // Language not in cache, create new one
         let tree_sitter_lang = language.get_tree_sitter_language()?;
-        
+
         // Add to cache (write lock scope)
         {
-            let mut cache = LANGUAGE_CACHE.write()
-                .map_err(|e| anyhow::anyhow!("Failed to acquire write lock on language cache: {}", e))?;
+            let mut cache = LANGUAGE_CACHE.write().map_err(|e| {
+                anyhow::anyhow!("Failed to acquire write lock on language cache: {}", e)
+            })?;
             // Double-check pattern to avoid race conditions
             if !cache.contains_key(&language) {
                 cache.insert(language, tree_sitter_lang.clone());
             }
         }
-        
+
         Ok(tree_sitter_lang)
     }
-    
+
     /// Create a configured parser for the given language
-    /// 
+    ///
     /// This is a convenience method that combines language caching with parser creation.
     /// It uses the cached language if available, otherwise creates and caches it.
     pub fn create_parser_with_language(language: SupportedLanguage) -> Result<Parser> {
         let tree_sitter_lang = Self::get_or_create_language(language)?;
         let mut parser = Parser::new();
-        parser.set_language(&tree_sitter_lang)
-            .map_err(|e| anyhow::anyhow!("Failed to set parser language for {}: {}", language, e))?;
+        parser.set_language(&tree_sitter_lang).map_err(|e| {
+            anyhow::anyhow!("Failed to set parser language for {}: {}", language, e)
+        })?;
         Ok(parser)
     }
-    
+
     /// Clear the language cache (useful for tests or memory management)
     pub fn clear_cache() -> Result<()> {
-        let mut cache = LANGUAGE_CACHE.write()
+        let mut cache = LANGUAGE_CACHE
+            .write()
             .map_err(|e| anyhow::anyhow!("Failed to acquire write lock: {}", e))?;
         cache.clear();
         Ok(())
     }
-    
+
     /// Get cache size for monitoring and debugging
     pub fn cache_size() -> Result<usize> {
-        let cache = LANGUAGE_CACHE.read()
+        let cache = LANGUAGE_CACHE
+            .read()
             .map_err(|e| anyhow::anyhow!("Failed to acquire read lock: {}", e))?;
         Ok(cache.len())
     }
-    
+
     /// Initialize cache with all supported languages
-    /// 
+    ///
     /// This pre-populates the cache to avoid initialization delays during analysis.
     /// Useful for applications that need predictable performance.
     pub fn initialize_all_languages() -> Result<()> {
@@ -182,12 +218,12 @@ impl LanguageCache {
             SupportedLanguage::Php,
             SupportedLanguage::Ruby,
         ];
-        
+
         for &lang in &languages {
             // This will create and cache each language
             Self::get_or_create_language(lang)?;
         }
-        
+
         Ok(())
     }
 }
@@ -202,9 +238,13 @@ impl MultiLanguageAnalyzer {
         source_code: &str,
         language: SupportedLanguage,
     ) -> Result<ComplexityMetrics> {
-        Self::analyze_with_tree_sitter_timeout(source_code, language, std::time::Duration::from_secs(5))
+        Self::analyze_with_tree_sitter_timeout(
+            source_code,
+            language,
+            std::time::Duration::from_secs(5),
+        )
     }
-    
+
     /// Analyze source code with Tree-sitter with configurable timeout
     /// This prevents hanging on extremely complex or malformed code
     pub fn analyze_with_tree_sitter_timeout(
@@ -214,7 +254,7 @@ impl MultiLanguageAnalyzer {
     ) -> Result<ComplexityMetrics> {
         use std::sync::mpsc;
         use std::thread;
-        
+
         // Input validation
         if source_code.is_empty() {
             return Err(anyhow::anyhow!("Source code cannot be empty"));
@@ -234,13 +274,13 @@ impl MultiLanguageAnalyzer {
                 "Rust analysis should use syn crate, not Tree-sitter"
             ));
         }
-        
+
         // Clone source code for thread safety
         let source_code_clone = source_code.to_string();
-        
+
         // Create channel for result communication
         let (tx, rx) = mpsc::channel();
-        
+
         // Spawn analysis thread
         let handle = thread::spawn(move || {
             // Perform the actual analysis in a separate thread
@@ -270,18 +310,18 @@ impl MultiLanguageAnalyzer {
 
                 Ok(visitor.build_metrics())
             })();
-            
+
             // Send result back to main thread
             let _ = tx.send(result);
         });
-        
+
         // Wait for result with timeout
         match rx.recv_timeout(timeout) {
             Ok(result) => {
                 // Make sure to join the thread to avoid resource leaks
                 let _ = handle.join();
                 result
-            },
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {
                 // Analysis took too long
                 // Note: The spawned thread will continue running but we return an error
@@ -290,7 +330,7 @@ impl MultiLanguageAnalyzer {
                     language,
                     timeout
                 ))
-            },
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 // Thread panicked or channel was dropped
                 Err(anyhow::anyhow!(
@@ -306,8 +346,9 @@ impl MultiLanguageAnalyzer {
         files: &[(String, SupportedLanguage)],
     ) -> Vec<Result<ComplexityMetrics>> {
         use rayon::prelude::*;
-        
-        files.par_iter()
+
+        files
+            .par_iter()
             .map(|(content, lang)| Self::analyze_with_tree_sitter(content, *lang))
             .collect()
     }
@@ -318,30 +359,32 @@ impl MultiLanguageAnalyzer {
     ) -> Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> {
         use rayon::prelude::*;
         use std::fs;
-        
-        file_paths.par_iter()
+
+        file_paths
+            .par_iter()
             .map(|path| {
                 let result = (|| -> Result<ComplexityMetrics> {
                     // Detect language from extension
-                    let extension = path.extension()
-                        .and_then(|ext| ext.to_str())
-                        .unwrap_or("");
-                    
-                    let language = SupportedLanguage::from_extension(extension)
-                        .ok_or_else(|| anyhow::anyhow!("Unsupported file extension: {}", extension))?;
-                    
+                    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+
+                    let language =
+                        SupportedLanguage::from_extension(extension).ok_or_else(|| {
+                            anyhow::anyhow!("Unsupported file extension: {}", extension)
+                        })?;
+
                     // Skip Rust files as they use syn crate
                     if language == SupportedLanguage::Rust {
                         return Err(anyhow::anyhow!("Rust files should use syn crate analysis"));
                     }
-                    
+
                     // Read file content
-                    let content = fs::read_to_string(path)
-                        .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path.display(), e))?;
-                    
+                    let content = fs::read_to_string(path).map_err(|e| {
+                        anyhow::anyhow!("Failed to read file {}: {}", path.display(), e)
+                    })?;
+
                     Self::analyze_with_tree_sitter(&content, language)
                 })();
-                
+
                 (path.clone(), result)
             })
             .collect()
@@ -354,50 +397,63 @@ impl MultiLanguageAnalyzer {
         project_root: &std::path::Path,
         max_depth: Option<usize>,
         exclude_patterns: &[&str],
-    ) -> Result<(Vec<(std::path::PathBuf, ComplexityMetrics)>, Vec<(std::path::PathBuf, anyhow::Error)>)> {
-        use rayon::prelude::*;
+    ) -> Result<(
+        Vec<(std::path::PathBuf, ComplexityMetrics)>,
+        Vec<(std::path::PathBuf, anyhow::Error)>,
+    )> {
         use crossbeam_channel::bounded;
+        use rayon::prelude::*;
         use std::thread;
-        
+
         // Collect all relevant files
         let mut files = Vec::new();
-        Self::collect_files_recursive(project_root, &mut files, max_depth.unwrap_or(10), 0, exclude_patterns)?;
-        
+        Self::collect_files_recursive(
+            project_root,
+            &mut files,
+            max_depth.unwrap_or(10),
+            0,
+            exclude_patterns,
+        )?;
+
         #[cfg(test)]
         {
-            eprintln!("DEBUG: Collected {} files from {}", files.len(), project_root.display());
+            eprintln!(
+                "DEBUG: Collected {} files from {}",
+                files.len(),
+                project_root.display()
+            );
             for file in &files {
                 eprintln!("  - {}", file.display());
             }
         }
-        
+
         // Early return if no files to process
         if files.is_empty() {
             return Ok((Vec::new(), Vec::new()));
         }
-        
+
         // Create bounded channels for better backpressure control
         // Bounded channels prevent memory exhaustion with large file counts
         let (results_tx, results_rx) = bounded::<(std::path::PathBuf, ComplexityMetrics)>(100);
         let (errors_tx, errors_rx) = bounded::<(std::path::PathBuf, anyhow::Error)>(100);
-        
+
         // Spawn collector thread with efficient channel handling
         let total_files = files.len();
         let collector_handle = thread::spawn(move || {
             let mut final_results = Vec::new();
             let mut final_errors = Vec::new();
             let mut processed_count = 0;
-            
+
             // Use crossbeam's select! macro for efficient multi-channel receiving
             // This eliminates busy-wait and provides optimal performance
             use crossbeam_channel::{select, RecvError};
-            
+
             loop {
                 // Exit when we've collected all expected results
                 if processed_count >= total_files {
                     break;
                 }
-                
+
                 // Use select! to efficiently wait on multiple channels
                 select! {
                     recv(results_rx) -> msg => {
@@ -445,7 +501,7 @@ impl MultiLanguageAnalyzer {
                                 final_errors.push(error);
                                 processed_count += 1;
                             }
-                            
+
                             // If still no progress and channels are disconnected, exit
                             if results_rx.try_recv().is_err() && errors_rx.try_recv().is_err() {
                                 break;
@@ -454,41 +510,46 @@ impl MultiLanguageAnalyzer {
                     }
                 }
             }
-            
+
             (final_results, final_errors)
         });
-        
+
         // Process files concurrently without mutex contention
         files.par_iter().for_each(|path| {
-            match Self::analyze_file_paths_concurrent(&[path.clone()]).into_iter().next() {
+            match Self::analyze_file_paths_concurrent(&[path.clone()])
+                .into_iter()
+                .next()
+            {
                 Some((_, Ok(metrics))) => {
                     if let Err(e) = results_tx.send((path.clone(), metrics)) {
                         eprintln!("Warning: Failed to send analysis result: {}", e);
                     }
-                },
+                }
                 Some((p, Err(e))) => {
                     #[cfg(test)]
                     eprintln!("DEBUG: Analysis error for {}: {}", p.display(), e);
-                    
+
                     if let Err(send_err) = errors_tx.send((p.clone(), e)) {
                         eprintln!("Warning: Failed to send analysis error: {}", send_err);
                     }
-                },
+                }
                 None => {
-                    let error = anyhow::anyhow!("No analysis result returned for {}", path.display());
+                    let error =
+                        anyhow::anyhow!("No analysis result returned for {}", path.display());
                     if let Err(send_err) = errors_tx.send((path.clone(), error)) {
                         eprintln!("Warning: Failed to send empty result error: {}", send_err);
                     }
                 }
             }
         });
-        
+
         // Drop senders to signal completion to collector
         drop(results_tx);
         drop(errors_tx);
-        
+
         // Wait for collector to finish and return results
-        collector_handle.join()
+        collector_handle
+            .join()
             .map_err(|_| anyhow::anyhow!("Failed to join collector thread"))
     }
 
@@ -498,21 +559,23 @@ impl MultiLanguageAnalyzer {
         max_depth: Option<usize>,
         exclude_patterns: &[&str],
     ) -> Result<Vec<(std::path::PathBuf, ComplexityMetrics)>> {
-        let (results, errors) = Self::analyze_project_concurrent(project_root, max_depth, exclude_patterns)?;
-        
+        let (results, errors) =
+            Self::analyze_project_concurrent(project_root, max_depth, exclude_patterns)?;
+
         if !errors.is_empty() {
-            let error_summary = errors.iter()
+            let error_summary = errors
+                .iter()
                 .map(|(path, err)| format!("{}: {}", path.display(), err))
                 .collect::<Vec<_>>()
                 .join("\n");
-            
+
             return Err(anyhow::anyhow!(
-                "Analysis failed for {} files:\n{}", 
-                errors.len(), 
+                "Analysis failed for {} files:\n{}",
+                errors.len(),
                 error_summary
             ));
         }
-        
+
         Ok(results)
     }
 
@@ -525,27 +588,36 @@ impl MultiLanguageAnalyzer {
         exclude_patterns: &[&str],
     ) -> Result<()> {
         use std::fs;
-        
+
         if current_depth > max_depth {
             return Ok(());
         }
-        
+
         let entries = fs::read_dir(dir)
             .map_err(|e| anyhow::anyhow!("Failed to read directory {}: {}", dir.display(), e))?;
-        
+
         for entry in entries {
-            let entry = entry
-                .map_err(|e| anyhow::anyhow!("Failed to read directory entry: {}", e))?;
+            let entry =
+                entry.map_err(|e| anyhow::anyhow!("Failed to read directory entry: {}", e))?;
             let path = entry.path();
-            
+
             // Check exclude patterns
             let path_str = path.to_string_lossy();
-            if exclude_patterns.iter().any(|pattern| path_str.contains(pattern)) {
+            if exclude_patterns
+                .iter()
+                .any(|pattern| path_str.contains(pattern))
+            {
                 continue;
             }
-            
+
             if path.is_dir() {
-                Self::collect_files_recursive(&path, files, max_depth, current_depth + 1, exclude_patterns)?;
+                Self::collect_files_recursive(
+                    &path,
+                    files,
+                    max_depth,
+                    current_depth + 1,
+                    exclude_patterns,
+                )?;
             } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 // Only collect files with supported extensions (except Rust)
                 if SupportedLanguage::from_extension(ext).is_some() && ext != "rs" {
@@ -553,7 +625,7 @@ impl MultiLanguageAnalyzer {
                 }
             }
         }
-        
+
         Ok(())
     }
 
@@ -568,37 +640,38 @@ impl MultiLanguageAnalyzer {
     {
         use rayon::prelude::*;
         use std::sync::Arc;
-        
+
         let callback = Arc::new(progress_callback);
         let total_files = files.len();
         let mut results = Vec::with_capacity(total_files);
-        
+
         // Process in batches to control memory usage
         for (batch_idx, batch) in files.chunks(batch_size).enumerate() {
-            let batch_results: Vec<Result<ComplexityMetrics>> = batch.par_iter()
-                .map(|(content, lang)| {
-                    Self::analyze_with_tree_sitter(content, *lang)
-                })
+            let batch_results: Vec<Result<ComplexityMetrics>> = batch
+                .par_iter()
+                .map(|(content, lang)| Self::analyze_with_tree_sitter(content, *lang))
                 .collect();
-            
+
             // Collect successful results only
             for (file_idx, result) in batch_results.into_iter().enumerate() {
                 match result {
                     Ok(metrics) => results.push(metrics),
                     Err(e) => {
-                        eprintln!("Warning: Failed to analyze file in batch {}, index {}: {}", 
-                                batch_idx, file_idx, e);
+                        eprintln!(
+                            "Warning: Failed to analyze file in batch {}, index {}: {}",
+                            batch_idx, file_idx, e
+                        );
                         // Push default metrics for failed analysis
                         results.push(ComplexityMetrics::default());
                     }
                 }
             }
-            
+
             // Report progress
             let processed = (batch_idx + 1) * batch_size.min(total_files - batch_idx * batch_size);
             callback(processed, total_files);
         }
-        
+
         Ok(results)
     }
 }
@@ -689,76 +762,91 @@ mod tests {
     fn test_language_cache() {
         // Clear cache to start fresh
         let _ = LanguageCache::clear_cache();
-        
+
         let python_code = "def test(): pass";
-        
+
         // First analysis should create and cache language
-        let result1 = MultiLanguageAnalyzer::analyze_with_tree_sitter(
-            python_code, SupportedLanguage::Python
-        );
+        let result1 =
+            MultiLanguageAnalyzer::analyze_with_tree_sitter(python_code, SupportedLanguage::Python);
         assert!(result1.is_ok());
-        
+
         // Check cache has at least one entry (Python)
         let cache_size = LanguageCache::cache_size().unwrap_or(0);
-        assert!(cache_size >= 1, "Cache should have at least Python language cached");
-        
-        // Second analysis should reuse cached language
-        let result2 = MultiLanguageAnalyzer::analyze_with_tree_sitter(
-            python_code, SupportedLanguage::Python
+        assert!(
+            cache_size >= 1,
+            "Cache should have at least Python language cached"
         );
+
+        // Second analysis should reuse cached language
+        let result2 =
+            MultiLanguageAnalyzer::analyze_with_tree_sitter(python_code, SupportedLanguage::Python);
         assert!(result2.is_ok());
-        
+
         // Cache size should be the same or have grown
         let cache_size_after = LanguageCache::cache_size().unwrap_or(0);
-        assert!(cache_size_after >= cache_size, "Cache should not shrink after reuse");
+        assert!(
+            cache_size_after >= cache_size,
+            "Cache should not shrink after reuse"
+        );
     }
-    
+
     #[test]
     fn test_language_cache_direct() {
         // Test direct language cache methods in isolation
         let _ = LanguageCache::clear_cache();
-        
+
         // Verify cache starts empty
         let initial_size = LanguageCache::cache_size().unwrap();
         assert_eq!(initial_size, 0, "Cache should start empty after clear");
-        
+
         // Test getting a language
         let lang = LanguageCache::get_or_create_language(SupportedLanguage::JavaScript);
         assert!(lang.is_ok(), "Should be able to create JavaScript language");
-        
+
         // Test cache size after adding one language
         let size = LanguageCache::cache_size();
         assert!(size.is_ok());
-        assert_eq!(size.unwrap(), 1, "Cache should have exactly one entry after adding JavaScript");
-        
+        assert_eq!(
+            size.unwrap(),
+            1,
+            "Cache should have exactly one entry after adding JavaScript"
+        );
+
         // Test getting the same language again (should use cache)
         let lang2 = LanguageCache::get_or_create_language(SupportedLanguage::JavaScript);
         assert!(lang2.is_ok(), "Should reuse cached JavaScript language");
-        
+
         // Cache size should still be 1
         let size2 = LanguageCache::cache_size().unwrap();
-        assert_eq!(size2, 1, "Cache size should remain 1 after reusing language");
-        
+        assert_eq!(
+            size2, 1,
+            "Cache size should remain 1 after reusing language"
+        );
+
         // Test creating parser with cached language
         let parser = LanguageCache::create_parser_with_language(SupportedLanguage::JavaScript);
         assert!(parser.is_ok(), "Should create parser with cached language");
-        
+
         // Add a different language to test cache growth
         let lang3 = LanguageCache::get_or_create_language(SupportedLanguage::Python);
         assert!(lang3.is_ok(), "Should be able to create Python language");
-        
+
         let final_size = LanguageCache::cache_size().unwrap();
-        assert!(final_size >= 2, "Cache should have at least 2 languages after adding Python (actual: {})", final_size);
+        assert!(
+            final_size >= 2,
+            "Cache should have at least 2 languages after adding Python (actual: {})",
+            final_size
+        );
     }
-    
+
     #[test]
     fn test_language_cache_initialization() {
         let _ = LanguageCache::clear_cache();
-        
+
         // Test initializing all languages
         let result = LanguageCache::initialize_all_languages();
         assert!(result.is_ok());
-        
+
         // Cache should contain all supported languages (except Rust)
         let cache_size = LanguageCache::cache_size().unwrap();
         assert_eq!(cache_size, 10); // All languages except Rust
@@ -768,18 +856,24 @@ mod tests {
     fn test_concurrent_analysis() {
         let files = vec![
             ("def func1(): pass".to_string(), SupportedLanguage::Python),
-            ("function func2() {}".to_string(), SupportedLanguage::JavaScript),
-            ("public void func3() {}".to_string(), SupportedLanguage::Java),
+            (
+                "function func2() {}".to_string(),
+                SupportedLanguage::JavaScript,
+            ),
+            (
+                "public void func3() {}".to_string(),
+                SupportedLanguage::Java,
+            ),
         ];
-        
+
         let results = MultiLanguageAnalyzer::analyze_files_concurrent(&files);
         assert_eq!(results.len(), 3);
-        
+
         for result in results {
             assert!(result.is_ok());
         }
     }
-    
+
     #[test]
     fn test_thread_safety() {
         let python_code = "def test(): pass";
@@ -788,7 +882,8 @@ mod tests {
                 let code = python_code.to_string();
                 std::thread::spawn(move || {
                     MultiLanguageAnalyzer::analyze_with_tree_sitter(
-                        &code, SupportedLanguage::Python
+                        &code,
+                        SupportedLanguage::Python,
                     )
                 })
             })
@@ -799,250 +894,279 @@ mod tests {
             assert!(result.is_ok());
         }
     }
-    
+
     /// Test concurrent analysis of multiple files with different languages
     #[test]
     fn test_analyze_files_concurrent_mixed() {
         let files = vec![
             ("def func1(): pass".to_string(), SupportedLanguage::Python),
-            ("function func2() { return 42; }".to_string(), SupportedLanguage::JavaScript),
-            ("public class Test { public void func3() {} }".to_string(), SupportedLanguage::Java),
+            (
+                "function func2() { return 42; }".to_string(),
+                SupportedLanguage::JavaScript,
+            ),
+            (
+                "public class Test { public void func3() {} }".to_string(),
+                SupportedLanguage::Java,
+            ),
             ("func func4() {}".to_string(), SupportedLanguage::Go),
         ];
-        
+
         let results = MultiLanguageAnalyzer::analyze_files_concurrent(&files);
         assert_eq!(results.len(), 4);
-        
+
         for result in results {
             assert!(result.is_ok(), "Analysis should succeed for valid code");
             let metrics = result.unwrap();
-            assert!(metrics.function_count >= 1, "Should detect at least one function");
+            assert!(
+                metrics.function_count >= 1,
+                "Should detect at least one function"
+            );
         }
     }
-    
+
     /// Test concurrent analysis with some invalid files
     #[test]
     fn test_analyze_files_concurrent_with_errors() {
         let files = vec![
             ("def valid(): pass".to_string(), SupportedLanguage::Python),
-            ("invalid { syntax".to_string(), SupportedLanguage::JavaScript),
+            (
+                "invalid { syntax".to_string(),
+                SupportedLanguage::JavaScript,
+            ),
             ("public class Valid {}".to_string(), SupportedLanguage::Java),
         ];
-        
+
         let results = MultiLanguageAnalyzer::analyze_files_concurrent(&files);
         assert_eq!(results.len(), 3);
-        
+
         // Should have mix of success and failure
         let successes = results.iter().filter(|r| r.is_ok()).count();
         let failures = results.iter().filter(|r| r.is_err()).count();
-        
+
         assert!(successes >= 2, "At least 2 files should succeed");
         assert!(failures <= 1, "At most 1 file should fail");
     }
-    
+
     /// Test file path analysis with temporary files
     #[test]
     fn test_analyze_file_paths_concurrent() {
-        use tempfile::TempDir;
         use std::fs;
-        
+        use tempfile::TempDir;
+
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create test files
         let py_file = temp_dir.path().join("test.py");
         fs::write(&py_file, "def hello():\n    return 'world'").unwrap();
-        
+
         let js_file = temp_dir.path().join("test.js");
         fs::write(&js_file, "function hello() { return 'world'; }").unwrap();
-        
+
         let paths = vec![py_file.clone(), js_file.clone()];
         let results = MultiLanguageAnalyzer::analyze_file_paths_concurrent(&paths);
-        
+
         assert_eq!(results.len(), 2);
-        
+
         for (path, result) in results {
             assert!(result.is_ok(), "Analysis should succeed for {:?}", path);
             let metrics = result.unwrap();
-            assert!(metrics.function_count >= 1, "Should detect at least 1 function in {:?}", path);
+            assert!(
+                metrics.function_count >= 1,
+                "Should detect at least 1 function in {:?}",
+                path
+            );
             assert!(metrics.line_count >= 1);
         }
     }
-    
+
     /// Test project directory analysis
     #[test]
     fn test_analyze_project_concurrent() {
-        use tempfile::TempDir;
         use std::fs;
-        
+        use tempfile::TempDir;
+
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
-        
+
         // Create nested directory structure
         fs::create_dir_all(project_root.join("src")).unwrap();
         fs::create_dir_all(project_root.join("tests")).unwrap();
-        
+
         // Create test files
         fs::write(project_root.join("src/main.py"), "def main(): pass").unwrap();
         fs::write(project_root.join("src/utils.js"), "function util() {}").unwrap();
-        fs::write(project_root.join("tests/test.py"), "def test_main(): assert True").unwrap();
-        
+        fs::write(
+            project_root.join("tests/test.py"),
+            "def test_main(): assert True",
+        )
+        .unwrap();
+
         // Exclude tests directory
         let exclude_patterns = vec!["tests"];
         let result = MultiLanguageAnalyzer::analyze_project_concurrent(
-            project_root, 
-            Some(5), 
-            &exclude_patterns
+            project_root,
+            Some(5),
+            &exclude_patterns,
         );
-        
+
         assert!(result.is_ok());
         let (results, errors) = result.unwrap();
-        
+
         // Should have 2 files (excluding tests directory)
         assert_eq!(results.len(), 2, "Should analyze 2 files (excluding tests)");
         assert!(errors.is_empty(), "Should have no errors for valid files");
-        
+
         // Verify all results have valid metrics
         for (path, metrics) in results {
-            assert!(metrics.function_count >= 1, "File {:?} should have functions", path);
+            assert!(
+                metrics.function_count >= 1,
+                "File {:?} should have functions",
+                path
+            );
         }
     }
-    
+
     /// Test strict project analysis that fails on any error
     #[test]
     fn test_analyze_project_concurrent_strict() {
-        use tempfile::TempDir;
         use std::fs;
-        
+        use tempfile::TempDir;
+
         let temp_dir = TempDir::new().unwrap();
         let project_root = temp_dir.path();
-        
+
         // Create test files with one invalid
         fs::create_dir_all(project_root.join("src")).unwrap();
         fs::write(project_root.join("src/valid.py"), "def func(): pass").unwrap();
         fs::write(project_root.join("src/invalid.js"), "function broken {").unwrap();
-        
-        let result = MultiLanguageAnalyzer::analyze_project_concurrent_strict(
-            project_root, 
-            None, 
-            &[]
-        );
-        
+
+        let result =
+            MultiLanguageAnalyzer::analyze_project_concurrent_strict(project_root, None, &[]);
+
         // Debug output to understand what's happening
         match &result {
             Ok(results) => {
                 println!("Unexpected success with {} results:", results.len());
                 for (path, metrics) in results {
-                    println!("  - {}: functions={}", path.display(), metrics.function_count);
+                    println!(
+                        "  - {}: functions={}",
+                        path.display(),
+                        metrics.function_count
+                    );
                 }
-            },
+            }
             Err(e) => println!("Got expected error: {}", e),
         }
-        
+
         // Should fail because of invalid.js
-        assert!(result.is_err(), "Strict analysis should fail with invalid files");
-        
+        assert!(
+            result.is_err(),
+            "Strict analysis should fail with invalid files"
+        );
+
         let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("Analysis failed"), "Error should indicate analysis failure");
+        assert!(
+            error_msg.contains("Analysis failed"),
+            "Error should indicate analysis failure"
+        );
     }
-    
+
     /// Test batch analysis with progress reporting
     #[test]
     fn test_analyze_batch_with_progress() {
         use std::sync::{Arc, Mutex};
-        
+
         let files = vec![
             ("def func1(): pass".to_string(), SupportedLanguage::Python),
-            ("function func2() {}".to_string(), SupportedLanguage::JavaScript),
-            ("public void func3() {}".to_string(), SupportedLanguage::Java),
+            (
+                "function func2() {}".to_string(),
+                SupportedLanguage::JavaScript,
+            ),
+            (
+                "public void func3() {}".to_string(),
+                SupportedLanguage::Java,
+            ),
             ("func func4() {}".to_string(), SupportedLanguage::Go),
         ];
-        
+
         // Track progress calls
         let progress_calls = Arc::new(Mutex::new(Vec::new()));
         let progress_calls_clone = Arc::clone(&progress_calls);
-        
+
         let progress_callback = move |processed: usize, total: usize| {
             if let Ok(mut calls) = progress_calls_clone.lock() {
                 calls.push((processed, total));
             }
         };
-        
+
         let batch_size = 2;
         let result = MultiLanguageAnalyzer::analyze_batch_with_progress(
-            &files, 
-            batch_size, 
-            progress_callback
+            &files,
+            batch_size,
+            progress_callback,
         );
-        
+
         assert!(result.is_ok());
         let results = result.unwrap();
         assert_eq!(results.len(), 4);
-        
+
         // Verify progress was reported
         let calls = progress_calls.lock().unwrap();
         assert!(!calls.is_empty(), "Progress callback should be called");
-        
+
         // Last call should be for all files
         if let Some((processed, total)) = calls.last() {
             assert_eq!(*total, 4);
             assert!(*processed <= 4);
         }
     }
-    
+
     /// Test empty project handling
     #[test]
     fn test_analyze_empty_project() {
         use tempfile::TempDir;
-        
+
         let temp_dir = TempDir::new().unwrap();
         let empty_project = temp_dir.path();
-        
-        let result = MultiLanguageAnalyzer::analyze_project_concurrent(
-            empty_project, 
-            None, 
-            &[]
-        );
-        
+
+        let result = MultiLanguageAnalyzer::analyze_project_concurrent(empty_project, None, &[]);
+
         assert!(result.is_ok());
         let (results, errors) = result.unwrap();
         assert!(results.is_empty(), "Empty project should return no results");
         assert!(errors.is_empty(), "Empty project should have no errors");
     }
-    
+
     /// Test invalid JavaScript detection
     #[test]
     fn test_invalid_javascript_detection() {
         let invalid_js = "function broken {";
         let result = MultiLanguageAnalyzer::analyze_with_tree_sitter(
-            invalid_js, 
-            SupportedLanguage::JavaScript
+            invalid_js,
+            SupportedLanguage::JavaScript,
         );
-        
+
         // This should return an error for invalid syntax
         println!("Result for invalid JS: {:?}", result);
-        
+
         // If this assertion fails, we need to fix error detection
         assert!(result.is_err(), "Invalid JavaScript should return an error");
     }
-    
+
     /// Test that parser works without caching (caching not implemented yet)
     #[test]
     fn test_parser_without_cache() {
         // Test that multiple calls work even without caching
         let python_code = "def test(): pass";
-        
-        let result1 = MultiLanguageAnalyzer::analyze_with_tree_sitter(
-            python_code, 
-            SupportedLanguage::Python
-        );
+
+        let result1 =
+            MultiLanguageAnalyzer::analyze_with_tree_sitter(python_code, SupportedLanguage::Python);
         assert!(result1.is_ok());
-        
-        let result2 = MultiLanguageAnalyzer::analyze_with_tree_sitter(
-            python_code, 
-            SupportedLanguage::Python
-        );
+
+        let result2 =
+            MultiLanguageAnalyzer::analyze_with_tree_sitter(python_code, SupportedLanguage::Python);
         assert!(result2.is_ok());
-        
+
         // Results should be consistent
         let metrics1 = result1.unwrap();
         let metrics2 = result2.unwrap();

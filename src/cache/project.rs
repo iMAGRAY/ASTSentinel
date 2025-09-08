@@ -105,7 +105,8 @@ impl ProjectCache {
         Ok(())
     }
 
-    /// Check if specific file needs update with content hash verification
+    /// Check if specific file needs update with enhanced AST-based hash verification
+    /// Uses AST structure hash for more precise change detection
     pub fn needs_update(&self, file_path: &str) -> bool {
         use sha2::{Digest, Sha256};
         use std::io::Read;
@@ -121,8 +122,16 @@ impl ProjectCache {
 
                 if let Ok(modified) = metadata.modified() {
                     if modified != cached_hash.modified_time {
-                        // If we have content hash, verify it
+                        // Enhanced: AST-based content hash verification
                         if let Some(ref old_hash) = cached_hash.hash {
+                            // For source code files, use AST structure hash
+                            if self.is_source_file(file_path) {
+                                if let Ok(new_ast_hash) = self.calculate_ast_hash(path) {
+                                    return &new_ast_hash != old_hash;
+                                }
+                            }
+
+                            // Fallback to content hash for non-source files
                             if let Ok(mut file) = fs::File::open(path) {
                                 let mut hasher = Sha256::new();
                                 let mut buffer = [0; 8192];
@@ -143,6 +152,116 @@ impl ProjectCache {
         }
 
         true // If we can't determine, assume it needs update
+    }
+
+    /// Check if file is a source code file that can benefit from AST hashing
+    fn is_source_file(&self, file_path: &str) -> bool {
+        use crate::analysis::ast::languages::SupportedLanguage;
+
+        if let Some(extension) = Path::new(file_path).extension().and_then(|e| e.to_str()) {
+            SupportedLanguage::from_extension(extension).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Calculate AST structure hash for more accurate change detection
+    /// Only considers structural changes, ignoring formatting and comments
+    fn calculate_ast_hash(&self, file_path: &Path) -> Result<String> {
+        use crate::analysis::ast::languages::MultiLanguageAnalyzer;
+        use crate::analysis::ast::languages::SupportedLanguage;
+        use sha2::{Digest, Sha256};
+
+        let content = fs::read_to_string(file_path)?;
+
+        // Determine language from extension
+        let extension = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+        if let Some(language) = SupportedLanguage::from_extension(extension) {
+            // For supported languages, use AST-based hashing
+            match language {
+                SupportedLanguage::Rust => {
+                    // Use syn for Rust AST parsing
+                    if let Ok(syntax) = syn::parse_file(&content) {
+                        let ast_structure = self.extract_rust_ast_structure(&syntax);
+                        let mut hasher = Sha256::new();
+                        hasher.update(ast_structure.as_bytes());
+                        return Ok(format!("{:x}", hasher.finalize()));
+                    }
+                }
+                _ => {
+                    // For Tree-sitter supported languages, use structural analysis
+                    if let Ok(metrics) =
+                        MultiLanguageAnalyzer::analyze_with_tree_sitter(&content, language)
+                    {
+                        let structure_signature = format!(
+                            "{}:{}:{}:{}:{}",
+                            metrics.function_count,
+                            metrics.cyclomatic_complexity,
+                            metrics.nesting_depth,
+                            metrics.parameter_count,
+                            metrics.return_points
+                        );
+                        let mut hasher = Sha256::new();
+                        hasher.update(structure_signature.as_bytes());
+                        return Ok(format!("{:x}", hasher.finalize()));
+                    }
+                }
+            }
+        }
+
+        // Fallback to content hash with comment/whitespace normalization
+        let normalized = self.normalize_content(&content);
+        let mut hasher = Sha256::new();
+        hasher.update(normalized.as_bytes());
+        Ok(format!("{:x}", hasher.finalize()))
+    }
+
+    /// Extract structural information from Rust AST
+    fn extract_rust_ast_structure(&self, syntax: &syn::File) -> String {
+        use syn::visit::Visit;
+
+        struct StructureVisitor {
+            structure: Vec<String>,
+        }
+
+        impl<'ast> Visit<'ast> for StructureVisitor {
+            fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+                self.structure.push(format!("fn:{}", node.sig.ident));
+                syn::visit::visit_item_fn(self, node);
+            }
+
+            fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
+                self.structure.push(format!("struct:{}", node.ident));
+                syn::visit::visit_item_struct(self, node);
+            }
+
+            fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+                if let Some((_, path, _)) = &node.trait_ {
+                    self.structure
+                        .push(format!("impl_trait:{}", quote::quote!(#path)));
+                } else {
+                    self.structure.push("impl".to_string());
+                }
+                syn::visit::visit_item_impl(self, node);
+            }
+        }
+
+        let mut visitor = StructureVisitor {
+            structure: Vec::new(),
+        };
+        visitor.visit_file(syntax);
+        visitor.structure.join(":")
+    }
+
+    /// Normalize content by removing comments and excessive whitespace
+    fn normalize_content(&self, content: &str) -> String {
+        content
+            .lines()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty() && !line.starts_with("//") && !line.starts_with("#"))
+            .collect::<Vec<_>>()
+            .join("\n")
     }
 
     /// Get files that have changed since cache was created
@@ -208,6 +327,27 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
             multi_start: "=begin",
             multi_end: "=end",
             doc_single: None,
+            doc_multi_start: None,
+        }),
+        "zig" => Some(CommentConfig {
+            single: "//",
+            multi_start: "", // Zig doesn't have multi-line comments
+            multi_end: "",
+            doc_single: Some("///"),
+            doc_multi_start: None,
+        }),
+        "v" => Some(CommentConfig {
+            single: "//",
+            multi_start: "/*",
+            multi_end: "*/",
+            doc_single: None,
+            doc_multi_start: None,
+        }),
+        "gleam" => Some(CommentConfig {
+            single: "//",
+            multi_start: "", // Gleam uses only single-line comments
+            multi_end: "",
+            doc_single: Some("///"),
             doc_multi_start: None,
         }),
         "html" | "xml" => Some(CommentConfig {

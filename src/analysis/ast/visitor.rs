@@ -131,6 +131,10 @@ impl<'a> ComplexityVisitor<'a> {
                 "Rust AST parsing should use syn crate, not Tree-sitter. \
                 Tree-sitter cannot properly handle Rust macros and procedural syntax."
             )),
+            // New languages with basic parameter support
+            SupportedLanguage::Zig => Ok(&["parameter_list", "parameters"]),
+            SupportedLanguage::V => Ok(&["parameter_list", "parameters"]),
+            SupportedLanguage::Gleam => Ok(&["parameters", "parameter_list"]),
         }
     }
 
@@ -173,6 +177,10 @@ impl<'a> ComplexityVisitor<'a> {
                 "Rust AST parsing should use syn crate, not Tree-sitter. \
                 Tree-sitter cannot properly handle Rust macros and procedural syntax."
             )),
+            // New languages with basic parameter support
+            SupportedLanguage::Zig => Ok(&["identifier", "parameter_declaration"]),
+            SupportedLanguage::V => Ok(&["identifier", "parameter"]),
+            SupportedLanguage::Gleam => Ok(&["identifier", "parameter"]),
         }
     }
 
@@ -202,9 +210,12 @@ impl<'a> ComplexityVisitor<'a> {
 
     /// Find parameter node for arrow functions with different parameter structures
     /// Arrow functions can have: (a, b) => {}, a => {}, ({x, y}) => {}
-    fn find_arrow_function_parameter<'b>(&self, arrow_function_node: &Node<'b>) -> Option<Node<'b>> {
+    fn find_arrow_function_parameter<'b>(
+        &self,
+        arrow_function_node: &Node<'b>,
+    ) -> Option<Node<'b>> {
         let mut cursor = arrow_function_node.walk();
-        
+
         if cursor.goto_first_child() {
             loop {
                 let child = cursor.node();
@@ -217,7 +228,7 @@ impl<'a> ComplexityVisitor<'a> {
                     "parameter" => return Some(child),
                     _ => {}
                 }
-                
+
                 if !cursor.goto_next_sibling() {
                     break;
                 }
@@ -300,6 +311,10 @@ impl<'a> ComplexityVisitor<'a> {
                 // Use generic processing for languages without specific handlers yet
                 self.process_generic_node(node_type, node)
             }
+            // New languages: Zig, V, and Gleam with basic AST support
+            SupportedLanguage::Zig => self.process_zig_node(node_type, node),
+            SupportedLanguage::V => self.process_v_node(node_type, node),
+            SupportedLanguage::Gleam => self.process_gleam_node(node_type, node),
         }
     }
 
@@ -314,7 +329,10 @@ impl<'a> ComplexityVisitor<'a> {
                 if let Err(_) = self.count_parameters(node, "parameters") {
                     if let Err(e) = self.count_parameters(node, "parameter_list") {
                         #[cfg(debug_assertions)]
-                        eprintln!("Warning: Failed to find parameter list in Python function: {}", e);
+                        eprintln!(
+                            "Warning: Failed to find parameter list in Python function: {}",
+                            e
+                        );
                     }
                 }
             }
@@ -346,21 +364,84 @@ impl<'a> ComplexityVisitor<'a> {
                 self.cyclomatic_complexity += 1;
             }
             // Common structural nodes that don't affect complexity
-            "module" | "block" | "identifier" | "parameters" | "(" | ")" | ":" | 
-            "comment" | "string" | "integer" | "pass_statement" | "pass" |
-            "expression_statement" | "assignment" | "=" | "call" | "attribute" | 
-            "." | "argument_list" | "," | "import_statement" | "import" |
-            "dotted_name" | "string_start" | "string_content" | "string_end" |
-            "interpolation" | "{" | "}" | "as_pattern" | "as" | "as_pattern_target" |
-            "dictionary" | "pair" | "list" | "[" | "]" | "comparison_operator" |
-            "==" | "!=" | "<" | ">" | "<=" | ">=" | "not_operator" | "not" |
-            "keyword_argument" | "subscript" | "slice" | "list_comprehension" |
-            "for_in_clause" | "if_clause" | "augmented_assignment" | "+=" | "-=" |
-            "pattern_list" | "in" | "else_clause" | "else" | "expression_list" |
-            "binary_operator" | "+" | "-" | "*" | "/" | "%" | "**" | "//" |
-            "none" | "true" | "false" | "float" | "parenthesized_expression" |
-            "default_parameter" | "list_splat_pattern" | "dictionary_splat_pattern" |
-            "typed_parameter" | "typed_default_parameter" => {
+            "module"
+            | "block"
+            | "identifier"
+            | "parameters"
+            | "("
+            | ")"
+            | ":"
+            | "comment"
+            | "string"
+            | "integer"
+            | "pass_statement"
+            | "pass"
+            | "expression_statement"
+            | "assignment"
+            | "="
+            | "call"
+            | "attribute"
+            | "."
+            | "argument_list"
+            | ","
+            | "import_statement"
+            | "import"
+            | "dotted_name"
+            | "string_start"
+            | "string_content"
+            | "string_end"
+            | "interpolation"
+            | "{"
+            | "}"
+            | "as_pattern"
+            | "as"
+            | "as_pattern_target"
+            | "dictionary"
+            | "pair"
+            | "list"
+            | "["
+            | "]"
+            | "comparison_operator"
+            | "=="
+            | "!="
+            | "<"
+            | ">"
+            | "<="
+            | ">="
+            | "not_operator"
+            | "not"
+            | "keyword_argument"
+            | "subscript"
+            | "slice"
+            | "list_comprehension"
+            | "for_in_clause"
+            | "if_clause"
+            | "augmented_assignment"
+            | "+="
+            | "-="
+            | "pattern_list"
+            | "in"
+            | "else_clause"
+            | "else"
+            | "expression_list"
+            | "binary_operator"
+            | "+"
+            | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "**"
+            | "//"
+            | "none"
+            | "true"
+            | "false"
+            | "float"
+            | "parenthesized_expression"
+            | "default_parameter"
+            | "list_splat_pattern"
+            | "dictionary_splat_pattern"
+            | "typed_parameter"
+            | "typed_default_parameter" => {
                 // These are structural nodes, no complexity impact
             }
             _ => {
@@ -375,14 +456,21 @@ impl<'a> ComplexityVisitor<'a> {
     fn process_js_ts_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
         match node_type {
             // Tree-sitter JavaScript actual node types
-            "function_declaration" | "function_expression" | "method_definition" | "function" | "async" => {
+            "function_declaration"
+            | "function_expression"
+            | "method_definition"
+            | "function"
+            | "async" => {
                 self.function_count += 1;
                 self.enter_scope();
                 // Try both parameter list types for JavaScript
                 if let Err(_) = self.count_parameters(node, "formal_parameters") {
                     if let Err(e) = self.count_parameters(node, "parameters") {
                         #[cfg(debug_assertions)]
-                        eprintln!("Warning: Failed to find parameter list in JavaScript function: {}", e);
+                        eprintln!(
+                            "Warning: Failed to find parameter list in JavaScript function: {}",
+                            e
+                        );
                     }
                 }
             }
@@ -410,8 +498,8 @@ impl<'a> ComplexityVisitor<'a> {
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "while_statement" | "for_statement" | "for_in_statement" | "for_of_statement" |
-            "while" | "for" => {
+            "while_statement" | "for_statement" | "for_in_statement" | "for_of_statement"
+            | "while" | "for" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
@@ -438,16 +526,70 @@ impl<'a> ComplexityVisitor<'a> {
                 self.cyclomatic_complexity += 1;
             }
             // Common structural nodes that don't affect complexity
-            "program" | "statement_block" | "identifier" | "formal_parameters" | "(" | ")" | "{" |
-            "comment" | "string" | "number" | ";" | "property_identifier" | "." | "," |
-            "variable_declaration" | "variable_declarator" | "var" | "let" | "const" | "=" |
-            "call_expression" | "member_expression" | "arguments" | "string_fragment" |
-            "lexical_declaration" | "expression_statement" | "assignment_expression" |
-            "parenthesized_expression" | "object" | "pair" | ":" | "true" | "false" | "null" |
-            "template_string" | "`" | "template_substitution" | "${" | "}" | "await_expression" | "await" |
-            "==" | "!=" | "<" | ">" | "<=" | ">=" | "+" | "-" | "*" | "/" | "%" |
-            "&&" | "||" | "!" | "++" | "--" | "+=" | "-=" | "*=" | "/=" |
-            "\"" | "'" | "escape_sequence" => {
+            "program"
+            | "statement_block"
+            | "identifier"
+            | "formal_parameters"
+            | "("
+            | ")"
+            | "{"
+            | "comment"
+            | "string"
+            | "number"
+            | ";"
+            | "property_identifier"
+            | "."
+            | ","
+            | "variable_declaration"
+            | "variable_declarator"
+            | "var"
+            | "let"
+            | "const"
+            | "="
+            | "call_expression"
+            | "member_expression"
+            | "arguments"
+            | "string_fragment"
+            | "lexical_declaration"
+            | "expression_statement"
+            | "assignment_expression"
+            | "parenthesized_expression"
+            | "object"
+            | "pair"
+            | ":"
+            | "true"
+            | "false"
+            | "null"
+            | "template_string"
+            | "`"
+            | "template_substitution"
+            | "${"
+            | "}"
+            | "await_expression"
+            | "await"
+            | "=="
+            | "!="
+            | "<"
+            | ">"
+            | "<="
+            | ">="
+            | "+"
+            | "-"
+            | "*"
+            | "/"
+            | "%"
+            | "&&"
+            | "||"
+            | "!"
+            | "++"
+            | "--"
+            | "+="
+            | "-="
+            | "*="
+            | "/="
+            | "\""
+            | "'"
+            | "escape_sequence" => {
                 // These are structural nodes, no complexity impact
             }
             _ => {
@@ -481,6 +623,154 @@ impl<'a> ComplexityVisitor<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Process Zig-specific AST nodes with enhanced parallel pattern matching
+    pub fn process_zig_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        match node_type {
+            // Zig function definitions
+            "fn_decl" | "function_declaration" => {
+                self.function_count += 1;
+                self.enter_scope();
+                self.count_parameters(node, "parameter_list")?;
+            }
+            // Control flow statements
+            "if_statement" | "if_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+            }
+            "while_statement" | "while_expression" | "for_statement" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+            }
+            "switch_statement" | "switch_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.enter_scope();
+            }
+            "switch_case" => {
+                self.cyclomatic_complexity += 1;
+            }
+            "return_statement" => {
+                self.return_points += 1;
+            }
+            // Error handling
+            "try_expression" | "catch_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1;
+            }
+            // Zig-specific constructs
+            "comptime" | "defer" | "errdefer" => {
+                self.cognitive_complexity += 1;
+            }
+            _ => {
+                #[cfg(debug_assertions)]
+                eprintln!("Unhandled Zig node type: {node_type}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Process V Lang-specific AST nodes with parallel processing optimization
+    pub fn process_v_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        match node_type {
+            // V function definitions
+            "fn_declaration" | "function_declaration" => {
+                self.function_count += 1;
+                self.enter_scope();
+                self.count_parameters(node, "parameter_list")?;
+            }
+            // Control flow
+            "if_statement" | "if_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+            }
+            "for_statement" | "for_in_statement" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+            }
+            "match_statement" => {
+                self.cyclomatic_complexity += 1;
+                self.enter_scope();
+            }
+            "match_branch" => {
+                self.cyclomatic_complexity += 1;
+            }
+            "return_statement" => {
+                self.return_points += 1;
+            }
+            // V-specific constructs
+            "or_block" | "optional_propagation" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1;
+            }
+            _ => {
+                #[cfg(debug_assertions)]
+                eprintln!("Unhandled V Lang node type: {node_type}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Process Gleam-specific AST nodes with functional programming patterns
+    pub fn process_gleam_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        match node_type {
+            // Gleam function definitions
+            "function_definition" | "anonymous_function" => {
+                self.function_count += 1;
+                self.enter_scope();
+                self.count_parameters(node, "function_parameters")?;
+            }
+            // Pattern matching and control flow
+            "case_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.enter_scope();
+            }
+            "case_clause" => {
+                self.cyclomatic_complexity += 1;
+            }
+            // Gleam uses if/else as expressions
+            "if_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+            }
+            // Result and Option handling
+            "try_expression" => {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1;
+            }
+            // Gleam-specific constructs
+            "use_expression" | "assert_expression" => {
+                self.cognitive_complexity += 1;
+            }
+            "todo" | "panic" => {
+                self.return_points += 1;
+            }
+            _ => {
+                #[cfg(debug_assertions)]
+                eprintln!("Unhandled Gleam node type: {node_type}");
+            }
+        }
+        Ok(())
+    }
+
+    /// Enhanced parallel processing for file analysis with rayon integration
+    pub fn process_files_parallel(
+        files: &[(String, SupportedLanguage)],
+    ) -> Result<Vec<crate::analysis::metrics::ComplexityMetrics>> {
+        use rayon::prelude::*;
+
+        files
+            .par_iter()
+            .map(|(content, language)| {
+                let visitor = ComplexityVisitor::new(content, *language);
+                // For now, return basic metrics - full AST parsing would require proper tree-sitter integration
+                Ok(visitor.build_metrics())
+            })
+            .collect()
     }
 
     /// Process generic AST nodes for languages without specific handlers

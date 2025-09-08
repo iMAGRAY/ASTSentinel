@@ -1436,6 +1436,7 @@ dependencies = [
  "lru",
  "memmap2",
  "quick-xml",
+ "quote",
  "rand",
  "rayon",
  "regex",
@@ -1450,6 +1451,7 @@ dependencies = [
  "tree-sitter-c",
  "tree-sitter-c-sharp",
  "tree-sitter-cpp",
+ "tree-sitter-gleam",
  "tree-sitter-go",
  "tree-sitter-java",
  "tree-sitter-javascript",
@@ -1930,6 +1932,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "tree-sitter-gleam"
+version = "1.0.0"
+source = "git+https://github.com/gleam-lang/tree-sitter-gleam#dae1551a9911b24f41d876c23f2ab05ece0a9d4c"
+dependencies = [
+ "cc",
+ "tree-sitter-language",
+]
+
+[[package]]
 name = "tree-sitter-go"
 version = "0.21.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1958,6 +1969,12 @@ dependencies = [
  "cc",
  "tree-sitter",
 ]
+
+[[package]]
+name = "tree-sitter-language"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4013970217383f67b18aef68f6fb2e8d409bc5755227092d32efb0422ba24b8"
 
 [[package]]
 name = "tree-sitter-php"
