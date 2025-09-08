@@ -16,7 +16,7 @@ use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
 use std::path::PathBuf;
 // Use diff formatter for better AI context - unified diff for clear change visibility
 use rust_validation_hooks::validation::diff_formatter::{
-    format_code_diff, format_edit_as_unified_diff, format_edit_full_context, format_full_file_with_changes, format_multi_edit_full_context,
+    format_code_diff, format_multi_edit_full_context,
 };
 // Use AST-based quality scorer for deterministic code analysis
 use rust_validation_hooks::analysis::ast::{
@@ -24,8 +24,10 @@ use rust_validation_hooks::analysis::ast::{
 };
 // Use duplicate detector for finding conflicting files
 use rust_validation_hooks::analysis::duplicate_detector::{
-    DuplicateDetector, DuplicateGroup, ConflictType,
+    DuplicateDetector,
 };
+// Use code formatting service for automatic code formatting
+use rust_validation_hooks::formatting::FormattingService;
 
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
 
@@ -104,6 +106,8 @@ const TEMPLATE_FOOTER: &str = "\n=== END FORMAT ===\n";
 const FINAL_INSTRUCTION_PREFIX: &str = "\n\nOUTPUT EXACTLY AS TEMPLATE. ANY FORMAT ALLOWED IF TEMPLATE SHOWS IT.\nRESPOND IN ";
 
 /// Format the analysis prompt with instructions, project context and conversation
+/// Currently unused but kept for future API compatibility
+#[allow(dead_code)]
 async fn format_analysis_prompt(
     prompt: &str,
     project_context: Option<&str>,
@@ -774,6 +778,42 @@ async fn main() -> Result<()> {
     let ast_analysis = perform_ast_analysis(&content, file_path).await;
     eprintln!("DEBUG: AST analysis result: {:?}", ast_analysis.is_some());
 
+    // Perform code formatting after AST analysis and ACTUALLY APPLY IT TO THE FILE
+    let formatting_result = match validate_file_path(file_path) {
+        Ok(validated_path) => {
+            match FormattingService::new() {
+                Ok(formatting_service) => {
+                    // Format and write file atomically if changes are needed
+                    match formatting_service.format_and_write_file(&validated_path) {
+                        Ok(format_result) => {
+                            // Log success without exposing file contents
+                            if format_result.changed {
+                                eprintln!("Code formatting applied successfully - file updated");
+                            } else {
+                                eprintln!("No formatting changes needed");
+                            }
+                            Some(format_result)
+                        }
+                        Err(_) => {
+                            // Don't expose formatting errors - they may contain sensitive paths/content
+                            eprintln!("Code formatting skipped due to formatter limitations");
+                            None
+                        }
+                    }
+                }
+                Err(_) => {
+                    eprintln!("Formatting service initialization failed");
+                    None
+                }
+            }
+        }
+        Err(_) => {
+            // Path validation failed - skip formatting for security
+            eprintln!("Formatting skipped - invalid file path");
+            None
+        }
+    };
+
     // Load configuration from environment
     let config = Config::from_env().context("Failed to load configuration")?;
 
@@ -966,6 +1006,19 @@ async fn main() -> Result<()> {
                     final_response.push_str("No concrete issues found by AST analysis.\n");
                 }
                 final_response.push_str("\n");
+            }
+            
+            // Add formatting results if available
+            if let Some(format_result) = &formatting_result {
+                if format_result.changed {
+                    final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
+                } else if !format_result.messages.is_empty() {
+                    final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
+                    for message in &format_result.messages {
+                        final_response.push_str(&format!("{} ", message));
+                    }
+                    final_response.push_str("\n\n");
+                }
             }
             
             // Add AI response

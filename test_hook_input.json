@@ -1,0 +1,8 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "test_formatting_demo.rs",
+    "content": "// Тестовый файл для демонстрации автоформатирования\nuse std::collections::HashMap;\n\nfn main(){\nlet mut map=HashMap::new();\nmap.insert(\"key\",\"value\");\nprintln!(\"Hello, world!\");\nlet x=42;\nif x>0{println!(\"positive\");}\n}\n\nstruct User{\nname:String,\nage:u32,\n}\n\nimpl User{\nfn new(name:String,age:u32)->Self{\nSelf{name,age}\n}\n}"
+  },
+  "cwd": "C:\\Users\\1\\Documents\\GitHub\\ValidationCodeHook"
+}

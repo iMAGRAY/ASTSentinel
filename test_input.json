@@ -1,0 +1,8 @@
+{
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "test_formatting_demo.rs",
+    "content": "fn main(){let x=42;println!(\"test\");}"
+  },
+  "cwd": "C:\\Users\\1\\Documents\\GitHub\\ValidationCodeHook"
+}

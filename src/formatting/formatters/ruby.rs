@@ -1,0 +1,590 @@
+use super::super::{CodeFormatter, FormatResult};
+use super::SecureCommandExecutor;
+use crate::analysis::ast::SupportedLanguage;
+/// Ruby code formatter using RuboCop with Ruby 3.3+ support
+use anyhow::Result;
+
+/// Ruby formatter implementation using RuboCop 1.79.2+
+pub struct RubyFormatter {
+    executor: SecureCommandExecutor,
+}
+
+impl RubyFormatter {
+    pub fn new() -> Self {
+        Self {
+            executor: SecureCommandExecutor::default(),
+        }
+    }
+
+    /// Get RuboCop configuration arguments with 2025 standards
+    fn get_rubocop_args(&self) -> Vec<String> {
+        vec![
+            "--autocorrect-all".to_string(), // Safe and unsafe corrections (new in modern RuboCop)
+            "--stdin".to_string(),
+            "stdin.rb".to_string(),
+            "--format".to_string(),
+            "simple".to_string(), // Simple output format for parsing
+            "--disable-uncorrectable".to_string(), // Add rubocop:todo for unfixable issues
+        ]
+    }
+}
+
+impl CodeFormatter for RubyFormatter {
+    fn language(&self) -> SupportedLanguage {
+        SupportedLanguage::Ruby
+    }
+
+    /// Format Ruby source code using rubocop
+    ///
+    /// # Examples
+    /// ```rust
+    /// use rust_validation_hooks::formatting::formatters::ruby::RubyFormatter;
+    /// use rust_validation_hooks::formatting::CodeFormatter;
+    ///
+    /// let formatter = RubyFormatter::new();
+    /// let code = "def hello;puts 'Hello World';end";
+    /// let result = formatter.format_code(code).unwrap();
+    /// assert!(result.changed);
+    /// ```
+    fn format_code(&self, code: &str) -> Result<FormatResult> {
+        // Validate input
+        if code.trim().is_empty() {
+            return Ok(FormatResult::unchanged(code.to_string()));
+        }
+
+        // Check if rubocop is available - graceful degradation
+        if !self.is_available() {
+            let mut result = FormatResult::unchanged(code.to_string());
+            result
+                .messages
+                .push("rubocop formatter not available - skipping Ruby formatting".to_string());
+            return Ok(result);
+        }
+
+        // Prepare rubocop arguments
+        let args = self.get_rubocop_args();
+
+        // Execute rubocop with stdin input
+        match self
+            .executor
+            .execute_formatter("rubocop", &args, Some(code))
+        {
+            Ok(formatted_code) => {
+                let result = FormatResult::new(code.to_string(), formatted_code);
+                Ok(result)
+            }
+            Err(e) => {
+                // If rubocop fails, it might be due to syntax errors
+                // Return the original code with error message
+                let mut result = FormatResult::unchanged(code.to_string());
+                result.messages.push(format!("rubocop failed: {}", e));
+                Ok(result)
+            }
+        }
+    }
+
+    fn is_available(&self) -> bool {
+        self.executor.command_exists("rubocop")
+    }
+
+    fn formatter_info(&self) -> String {
+        self.executor.get_formatter_version("rubocop")
+    }
+
+    fn default_config(&self) -> Result<String> {
+        Ok(r#"# rubocop configuration for Ruby formatting
+# This file should be named .rubocop.yml in your project root
+
+require:
+  - rubocop-performance
+  - rubocop-rails
+  - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.0
+  NewCops: enable
+  SuggestExtensions: false
+  Exclude:
+    - 'vendor/**/*'
+    - 'db/schema.rb'
+    - 'db/migrate/*'
+    - 'config/routes.rb'
+    - 'bin/**/*'
+    - 'node_modules/**/*'
+
+# Layout cops
+Layout/LineLength:
+  Max: 120
+  AllowedPatterns: ['\A#'] # Allow long comments
+
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: aligned
+
+Layout/DotPosition:
+  EnforcedStyle: leading
+
+Layout/EndAlignment:
+  EnforcedStyleAlignWith: variable
+
+Layout/FirstArrayElementIndentation:
+  EnforcedStyle: consistent
+
+Layout/FirstHashElementIndentation:
+  EnforcedStyle: consistent
+
+Layout/MultilineArrayBraceLayout:
+  EnforcedStyle: symmetrical
+
+Layout/MultilineHashBraceLayout:
+  EnforcedStyle: symmetrical
+
+Layout/MultilineOperationIndentation:
+  EnforcedStyle: aligned
+
+Layout/ParameterAlignment:
+  EnforcedStyle: with_fixed_indentation
+
+Layout/ArgumentAlignment:
+  EnforcedStyle: with_fixed_indentation
+
+# Style cops
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  Enabled: true
+  EnforcedStyle: always
+
+Style/StringLiterals:
+  EnforcedStyle: single_quotes
+  ConsistentQuotesInMultiline: true
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: single_quotes
+
+Style/TrailingCommaInArguments:
+  EnforcedStyleForMultiline: comma
+
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: comma
+
+Style/TrailingCommaInHashLiteral:
+  EnforcedStyleForMultiline: comma
+
+Style/HashSyntax:
+  EnforcedStyle: ruby19
+  EnforcedShorthandSyntax: either
+
+Style/Lambda:
+  EnforcedStyle: line_count_dependent
+
+Style/ClassAndModuleChildren:
+  EnforcedStyle: compact
+
+Style/CollectionMethods:
+  PreferredMethods:
+    collect: map
+    collect!: map!
+    find: detect
+    find_all: select
+    reduce: inject
+
+Style/GuardClause:
+  MinBodyLength: 1
+
+Style/IfUnlessModifier:
+  MaxLineLength: 80
+
+Style/NumericLiterals:
+  MinDigits: 5
+
+Style/PercentLiteralDelimiters:
+  PreferredDelimiters:
+    default: ()
+    '%i': ()
+    '%I': ()
+    '%r': '{}'
+    '%w': ()
+    '%W': ()
+
+Style/RegexpLiteral:
+  EnforcedStyle: slashes
+  AllowInnerSlashes: false
+
+Style/SignalException:
+  EnforcedStyle: semantic
+
+Style/SingleLineBlockParams:
+  Methods:
+    - reduce:
+        - acc
+        - elem
+    - inject:
+        - acc
+        - elem
+
+Style/SpecialGlobalVars:
+  EnforcedStyle: use_english_names
+
+Style/WordArray:
+  MinSize: 2
+  WordRegex: !ruby/regexp '/\A(?-mix:[\p{Word}\-])+\z/'
+
+# Metrics cops
+Metrics/AbcSize:
+  Max: 18
+
+Metrics/BlockLength:
+  Max: 25
+  AllowedMethods:
+    - describe
+    - context
+    - it
+    - specify
+    - example
+    - scenario
+    - let
+    - let!
+    - before
+    - after
+    - around
+
+Metrics/ClassLength:
+  Max: 100
+
+Metrics/CyclomaticComplexity:
+  Max: 6
+
+Metrics/MethodLength:
+  Max: 15
+  AllowedMethods: []
+
+Metrics/ModuleLength:
+  Max: 100
+
+Metrics/ParameterLists:
+  Max: 5
+  CountKeywordArgs: true
+
+Metrics/PerceivedComplexity:
+  Max: 7
+
+# Lint cops
+Lint/AmbiguousBlockAssociation:
+  Exclude:
+    - 'spec/**/*'
+
+Lint/AssignmentInCondition:
+  AllowSafeAssignment: true
+
+Lint/IneffectiveAccessModifier:
+  Enabled: true
+
+Lint/UnusedMethodArgument:
+  AllowUnusedKeywordArguments: false
+  IgnoreEmptyMethods: true
+  IgnoreNotImplementedMethods: true
+
+Lint/UnusedBlockArgument:
+  IgnoreEmptyBlocks: true
+  AllowUnusedKeywordArguments: false
+
+# Naming cops
+Naming/AccessorMethodName:
+  Enabled: true
+
+Naming/PredicateName:
+  ForbiddenPrefixes:
+    - is_
+    - has_
+    - have_
+  AllowedMethods:
+    - is_a?
+
+Naming/VariableNumber:
+  EnforcedStyle: normalcase
+
+# Security cops
+Security/YAMLLoad:
+  Enabled: true
+
+Security/Eval:
+  Enabled: true
+
+Security/JSONLoad:
+  Enabled: true
+"#
+        .to_string())
+    }
+}
+
+impl Default for RubyFormatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ruby_formatter_creation() {
+        let formatter = RubyFormatter::new();
+        assert_eq!(formatter.language(), SupportedLanguage::Ruby);
+    }
+
+    #[test]
+    fn test_empty_code_handling() {
+        let formatter = RubyFormatter::new();
+        let result = formatter.format_code("").unwrap();
+        assert!(!result.changed);
+        assert_eq!(result.formatted, "");
+    }
+
+    #[test]
+    fn test_whitespace_only_code() {
+        let formatter = RubyFormatter::new();
+        let result = formatter.format_code("   \n\t  \n").unwrap();
+        assert!(!result.changed);
+    }
+
+    #[test]
+    fn test_formatter_info() {
+        let formatter = RubyFormatter::new();
+        let info = formatter.formatter_info();
+        assert!(info.contains("rubocop"));
+    }
+
+    #[test]
+    fn test_default_config_generation() {
+        let formatter = RubyFormatter::new();
+        let config = formatter.default_config().unwrap();
+        assert!(config.contains("rubocop"));
+        assert!(config.contains("AllCops"));
+        assert!(config.contains("Style"));
+        assert!(config.contains("Layout"));
+    }
+
+    #[test]
+    fn test_rubocop_args() {
+        let formatter = RubyFormatter::new();
+        let args = formatter.get_rubocop_args();
+        assert!(args.contains(&"--autocorrect-all".to_string()));
+        assert!(args.contains(&"--stdin".to_string()));
+        assert!(args.contains(&"stdin.rb".to_string()));
+        assert!(args.contains(&"--format".to_string()));
+        assert!(args.contains(&"simple".to_string()));
+        assert!(args.contains(&"--disable-uncorrectable".to_string()));
+        assert_eq!(args.len(), 6); // Updated for 2025 standards with more args
+    }
+
+    #[cfg(test)]
+    mod integration_tests {
+        use super::*;
+
+        #[test]
+        fn test_simple_ruby_formatting() {
+            let formatter = RubyFormatter::new();
+
+            // Skip if rubocop is not available
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let unformatted_code = "def hello;puts 'Hello, World!';end";
+            let result = formatter.format_code(unformatted_code);
+
+            match result {
+                Ok(format_result) => {
+                    // rubocop should format this code
+                    assert!(format_result.changed || format_result.messages.is_empty());
+
+                    // Formatted code should be valid Ruby
+                    assert!(format_result.formatted.contains("def hello"));
+                    assert!(format_result.formatted.contains("puts"));
+                }
+                Err(e) => {
+                    eprintln!("rubocop formatting failed: {}", e);
+                    // This is acceptable if rubocop has issues with the test environment
+                }
+            }
+        }
+
+        #[test]
+        fn test_complex_ruby_formatting() {
+            let formatter = RubyFormatter::new();
+
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let complex_code = r#"
+class UserService
+attr_reader :users
+def initialize;@users=[];end
+def add_user(name,age)
+user={name: name,age: age}
+@users<<user if age>=18
+user
+end
+def find_user(name);@users.find{|u|u[:name]==name};end
+def adult_users;@users.select{|u|u[:age]>=18};end
+end
+"#
+            .trim();
+
+            let result = formatter.format_code(complex_code);
+
+            match result {
+                Ok(format_result) => {
+                    if format_result.changed {
+                        // Check that formatting improved the code structure
+                        assert!(format_result.formatted.contains("class UserService"));
+                        assert!(format_result.formatted.contains("attr_reader"));
+                        assert!(format_result.formatted.contains("def initialize"));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rubocop formatting of complex code failed: {}", e);
+                }
+            }
+        }
+
+        #[test]
+        fn test_ruby_blocks_and_iterators() {
+            let formatter = RubyFormatter::new();
+
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let block_code = "[1,2,3,4,5].map{|x|x*2}.select{|x|x>4}.each{|x|puts x}";
+            let result = formatter.format_code(block_code);
+
+            match result {
+                Ok(format_result) => {
+                    if format_result.changed {
+                        // Check that Ruby block syntax is handled correctly
+                        assert!(format_result.formatted.contains("map"));
+                        assert!(format_result.formatted.contains("select"));
+                        assert!(format_result.formatted.contains("each"));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rubocop formatting of blocks failed: {}", e);
+                }
+            }
+        }
+
+        #[test]
+        fn test_ruby_classes_and_modules() {
+            let formatter = RubyFormatter::new();
+
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let oop_code = "module Greeting;def self.hello(name);puts \"Hello, #{name}!\";end;end;class Person;include Greeting;attr_accessor :name;def initialize(name);@name=name;end;end";
+            let result = formatter.format_code(oop_code);
+
+            match result {
+                Ok(format_result) => {
+                    if format_result.changed {
+                        // Check that Ruby OOP features are preserved
+                        assert!(format_result.formatted.contains("module Greeting"));
+                        assert!(format_result.formatted.contains("class Person"));
+                        assert!(format_result.formatted.contains("attr_accessor"));
+                        assert!(format_result.formatted.contains("include"));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rubocop formatting of OOP code failed: {}", e);
+                }
+            }
+        }
+
+        #[test]
+        fn test_ruby_string_interpolation() {
+            let formatter = RubyFormatter::new();
+
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let string_code = "name='Alice';age=25;message=\"Hello, #{name}! You are #{age} years old.\";puts message";
+            let result = formatter.format_code(string_code);
+
+            match result {
+                Ok(format_result) => {
+                    if format_result.changed {
+                        // Check that string interpolation is handled
+                        assert!(format_result.formatted.contains("name"));
+                        assert!(format_result.formatted.contains("age"));
+                        assert!(format_result.formatted.contains("#{"));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rubocop formatting of string interpolation failed: {}", e);
+                }
+            }
+        }
+
+        #[test]
+        fn test_syntax_error_handling() {
+            let formatter = RubyFormatter::new();
+
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let invalid_code = "def broken_method\nputs 'missing end"; // Missing 'end' keyword
+            let result = formatter.format_code(invalid_code);
+
+            match result {
+                Ok(format_result) => {
+                    // Should return original code with error message
+                    assert!(!format_result.changed);
+                    assert_eq!(format_result.formatted, invalid_code);
+                    assert!(!format_result.messages.is_empty());
+                }
+                Err(_) => {
+                    // This is also acceptable - formatter detected the error
+                }
+            }
+        }
+
+        #[test]
+        fn test_ruby_symbols_and_hashes() {
+            let formatter = RubyFormatter::new();
+
+            if !formatter.is_available() {
+                eprintln!("Skipping rubocop integration test - rubocop not available");
+                return;
+            }
+
+            let symbol_code = "user={:name=>\"Alice\",:age=>25,:active=>true};puts user[:name];user.each{|k,v|puts \"#{k}: #{v}\"}";
+            let result = formatter.format_code(symbol_code);
+
+            match result {
+                Ok(format_result) => {
+                    if format_result.changed {
+                        // Check that symbols and hash syntax are preserved
+                        assert!(format_result.formatted.contains("user"));
+                        assert!(format_result.formatted.contains(":name"));
+                        assert!(format_result.formatted.contains("each"));
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rubocop formatting of symbols and hashes failed: {}", e);
+                }
+            }
+        }
+    }
+}

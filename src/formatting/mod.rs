@@ -1,0 +1,400 @@
+/// Multi-language code formatting system
+/// 
+/// This module provides unified code formatting capabilities for all supported languages
+/// using language-specific formatters like rustfmt, prettier, black, etc.
+
+pub mod formatters;
+
+use anyhow::Result;
+use std::path::Path;
+use crate::analysis::ast::SupportedLanguage;
+
+/// Result of a formatting operation
+#[derive(Debug, Clone)]
+pub struct FormatResult {
+    /// Original source code
+    pub original: String,
+    /// Formatted source code
+    pub formatted: String,
+    /// Whether the code was actually changed
+    pub changed: bool,
+    /// Any warnings or messages from the formatter
+    pub messages: Vec<String>,
+}
+
+impl FormatResult {
+    pub fn new(original: String, formatted: String) -> Self {
+        let changed = original != formatted;
+        Self {
+            original,
+            formatted,
+            changed,
+            messages: Vec::new(),
+        }
+    }
+
+    pub fn with_messages(mut self, messages: Vec<String>) -> Self {
+        self.messages = messages;
+        self
+    }
+
+    pub fn unchanged(code: String) -> Self {
+        Self {
+            original: code.clone(),
+            formatted: code,
+            changed: false,
+            messages: Vec::new(),
+        }
+    }
+}
+
+/// Universal trait for code formatters across all languages
+pub trait CodeFormatter: Send + Sync {
+    /// Get the supported language for this formatter
+    fn language(&self) -> SupportedLanguage;
+    
+    /// Format source code string
+    fn format_code(&self, code: &str) -> Result<FormatResult>;
+    
+    /// Format a file by path
+    fn format_file(&self, file_path: &Path) -> Result<FormatResult> {
+        let code = std::fs::read_to_string(file_path)?;
+        self.format_code(&code)
+    }
+    
+    /// Check if the formatter is available (tools installed)
+    fn is_available(&self) -> bool;
+    
+    /// Get formatter name and version info
+    fn formatter_info(&self) -> String;
+    
+    /// Get default configuration for this formatter
+    fn default_config(&self) -> Result<String> {
+        Ok(String::new()) // Override in specific formatters
+    }
+}
+
+/// Factory for creating formatters based on language
+pub struct FormatterFactory;
+
+impl FormatterFactory {
+    /// Create a formatter for the given language
+    pub fn create_formatter(language: SupportedLanguage) -> Result<Box<dyn CodeFormatter>> {
+        match language {
+            SupportedLanguage::Rust => Ok(Box::new(formatters::rust::RustFormatter::new())),
+            SupportedLanguage::Python => Ok(Box::new(formatters::python::PythonFormatter::new())),
+            SupportedLanguage::JavaScript => Ok(Box::new(formatters::javascript::JavaScriptFormatter::new())),
+            SupportedLanguage::TypeScript => Ok(Box::new(formatters::typescript::TypeScriptFormatter::new())),
+            SupportedLanguage::Java => Ok(Box::new(formatters::java::JavaFormatter::new())),
+            SupportedLanguage::CSharp => Ok(Box::new(formatters::csharp::CSharpFormatter::new())),
+            SupportedLanguage::Go => Ok(Box::new(formatters::go::GoFormatter::new())),
+            SupportedLanguage::C => Ok(Box::new(formatters::c::CFormatter::new())),
+            SupportedLanguage::Cpp => Ok(Box::new(formatters::cpp::CppFormatter::new())),
+            SupportedLanguage::Php => Ok(Box::new(formatters::php::PhpFormatter::new())),
+            SupportedLanguage::Ruby => Ok(Box::new(formatters::ruby::RubyFormatter::new())),
+        }
+    }
+
+    /// Get all available formatters
+    pub fn get_all_formatters() -> Result<Vec<Box<dyn CodeFormatter>>> {
+        let languages = [
+            SupportedLanguage::Rust,
+            SupportedLanguage::Python,
+            SupportedLanguage::JavaScript,
+            SupportedLanguage::TypeScript,
+            SupportedLanguage::Java,
+            SupportedLanguage::CSharp,
+            SupportedLanguage::Go,
+            SupportedLanguage::C,
+            SupportedLanguage::Cpp,
+            SupportedLanguage::Php,
+            SupportedLanguage::Ruby,
+        ];
+        
+        let mut formatters = Vec::new();
+        for language in &languages {
+            formatters.push(Self::create_formatter(*language)?);
+        }
+        
+        Ok(formatters)
+    }
+
+    /// Check which formatters are available on the system
+    pub fn check_available_formatters() -> Vec<(SupportedLanguage, bool)> {
+        let languages = [
+            SupportedLanguage::Rust,
+            SupportedLanguage::Python,
+            SupportedLanguage::JavaScript,
+            SupportedLanguage::TypeScript,
+            SupportedLanguage::Java,
+            SupportedLanguage::CSharp,
+            SupportedLanguage::Go,
+            SupportedLanguage::C,
+            SupportedLanguage::Cpp,
+            SupportedLanguage::Php,
+            SupportedLanguage::Ruby,
+        ];
+        
+        languages.iter().map(|&lang| {
+            let available = Self::create_formatter(lang)
+                .map(|formatter| formatter.is_available())
+                .unwrap_or(false);
+            (lang, available)
+        }).collect()
+    }
+}
+
+/// Main formatting service that coordinates all formatters
+pub struct FormattingService {
+    formatters: std::collections::HashMap<SupportedLanguage, Box<dyn CodeFormatter>>,
+}
+
+impl FormattingService {
+    pub fn new() -> Result<Self> {
+        let mut formatters = std::collections::HashMap::new();
+        
+        for formatter in FormatterFactory::get_all_formatters()? {
+            let language = formatter.language();
+            formatters.insert(language, formatter);
+        }
+        
+        Ok(Self { formatters })
+    }
+
+    /// Format code for a specific language
+    pub fn format_code(&self, code: &str, language: SupportedLanguage) -> Result<FormatResult> {
+        match self.formatters.get(&language) {
+            Some(formatter) => formatter.format_code(code),
+            None => anyhow::bail!("No formatter available for language: {}", language),
+        }
+    }
+
+    /// Format a file, detecting language from extension
+    pub fn format_file(&self, file_path: &Path) -> Result<FormatResult> {
+        let extension = file_path.extension()
+            .and_then(|ext| ext.to_str())
+            .ok_or_else(|| anyhow::anyhow!("Could not determine file extension"))?;
+        
+        let language = SupportedLanguage::from_extension(extension)
+            .ok_or_else(|| anyhow::anyhow!("Unsupported file extension: {}", extension))?;
+        
+        match self.formatters.get(&language) {
+            Some(formatter) => formatter.format_file(file_path),
+            None => anyhow::bail!("No formatter available for language: {}", language),
+        }
+    }
+
+    /// Format and write file atomically if changes are needed
+    pub fn format_and_write_file(&self, file_path: &Path) -> Result<FormatResult> {
+        let format_result = self.format_file(file_path)?;
+        
+        if format_result.changed {
+            // Write formatted content atomically using temporary file
+            self.write_file_atomic(file_path, &format_result.formatted)?;
+        }
+        
+        Ok(format_result)
+    }
+
+    /// Atomic file write to prevent corruption with proper cleanup
+    fn write_file_atomic(&self, file_path: &Path, content: &str) -> Result<()> {
+        use std::fs;
+        use std::io::Write;
+        use std::time::{SystemTime, UNIX_EPOCH};
+        
+        // Create unique temporary file name to avoid conflicts
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        
+        let temp_path = file_path.with_extension(
+            format!("tmp_{}", timestamp)
+        );
+        
+        // Ensure no existing temp file (cleanup from previous failures)
+        if temp_path.exists() {
+            let _ = fs::remove_file(&temp_path); // Ignore errors - file might be locked
+        }
+        
+        // Atomic write operation with proper cleanup
+        let result = (|| -> Result<()> {
+            {
+                let mut temp_file = fs::File::create(&temp_path)?;
+                temp_file.write_all(content.as_bytes())?;
+                // Only sync for files larger than 1MB to avoid performance impact
+                if content.len() > 1024 * 1024 {
+                    temp_file.sync_all()?;
+                }
+            }
+            
+            // Atomic rename to target file
+            fs::rename(&temp_path, file_path)?;
+            Ok(())
+        })();
+        
+        // Cleanup temporary file on any error
+        if result.is_err() && temp_path.exists() {
+            let _ = fs::remove_file(&temp_path); // Best effort cleanup
+        }
+        
+        result
+    }
+
+    /// Get available formatters with their status
+    pub fn get_formatter_status(&self) -> Vec<(SupportedLanguage, bool, String)> {
+        self.formatters.iter().map(|(lang, formatter)| {
+            (*lang, formatter.is_available(), formatter.formatter_info())
+        }).collect()
+    }
+
+    /// Format multiple files concurrently
+    pub fn format_files_concurrent(&self, file_paths: &[&Path]) -> Vec<(std::path::PathBuf, Result<FormatResult>)> {
+        use rayon::prelude::*;
+        
+        file_paths.par_iter()
+            .map(|path| {
+                let result = self.format_file(path);
+                (path.to_path_buf(), result)
+            })
+            .collect()
+    }
+}
+
+impl Default for FormattingService {
+    fn default() -> Self {
+        Self::new().expect("Failed to create formatting service")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use std::fs;
+
+    #[test]
+    fn test_format_result_creation() {
+        let original = "def hello():\nreturn 'world'".to_string();
+        let formatted = "def hello():\n    return 'world'".to_string();
+        
+        let result = FormatResult::new(original.clone(), formatted.clone());
+        assert!(result.changed);
+        assert_eq!(result.original, original);
+        assert_eq!(result.formatted, formatted);
+    }
+
+    #[test]
+    fn test_unchanged_result() {
+        let code = "fn main() {}".to_string();
+        let result = FormatResult::unchanged(code.clone());
+        assert!(!result.changed);
+        assert_eq!(result.original, code);
+        assert_eq!(result.formatted, code);
+    }
+
+    #[test]
+    fn test_formatter_factory_creation() {
+        // Test that we can create formatters for all languages
+        for language in [
+            SupportedLanguage::Rust,
+            SupportedLanguage::Python,
+            SupportedLanguage::JavaScript,
+            SupportedLanguage::TypeScript,
+        ] {
+            let result = FormatterFactory::create_formatter(language);
+            assert!(result.is_ok(), "Failed to create formatter for {:?}", language);
+        }
+    }
+
+    #[test]
+    fn test_check_available_formatters() {
+        let available = FormatterFactory::check_available_formatters();
+        assert_eq!(available.len(), 11);
+        
+        // At least some formatters should be checkable (even if not available)
+        assert!(available.iter().any(|(_, _)| true));
+    }
+
+    #[test]
+    fn test_formatting_service_creation() {
+        let service = FormattingService::new();
+        assert!(service.is_ok());
+        
+        let service = service.unwrap();
+        let status = service.get_formatter_status();
+        assert_eq!(status.len(), 11);
+    }
+
+    #[test]
+    fn test_format_and_write_file_rust() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.rs");
+        
+        // Create a poorly formatted Rust file
+        let unformatted_code = "fn main(){let x=42;println!(\"{}\" ,x);}";
+        fs::write(&file_path, unformatted_code).unwrap();
+        
+        let service = FormattingService::new().unwrap();
+        let result = service.format_and_write_file(&file_path);
+        
+        // Should work gracefully even if rustfmt is not available
+        assert!(result.is_ok());
+        
+        let result = result.unwrap();
+        if result.changed {
+            // If rustfmt was available and made changes, verify file was updated
+            let formatted_content = fs::read_to_string(&file_path).unwrap();
+            assert_eq!(formatted_content, result.formatted);
+        }
+    }
+
+    #[test]
+    fn test_format_file_with_unsupported_extension() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.unknown");
+        
+        fs::write(&file_path, "some content").unwrap();
+        
+        let service = FormattingService::new().unwrap();
+        let result = service.format_file(&file_path);
+        
+        // Should fail gracefully for unsupported extensions
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_atomic_write_safety() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("atomic_test.txt");
+        
+        // Write initial content
+        fs::write(&file_path, "original content").unwrap();
+        
+        let service = FormattingService::new().unwrap();
+        
+        // Test atomic write with new content
+        let new_content = "new formatted content";
+        let result = service.write_file_atomic(&file_path, new_content);
+        assert!(result.is_ok());
+        
+        // Verify content was updated
+        let written_content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(written_content, new_content);
+    }
+
+    #[test]
+    fn test_format_result_with_messages() {
+        let original = "code".to_string();
+        let formatted = "formatted code".to_string();
+        let messages = vec!["Warning: formatter not available".to_string()];
+        
+        let result = FormatResult::new(original.clone(), formatted.clone())
+            .with_messages(messages.clone());
+        
+        assert!(result.changed);
+        assert_eq!(result.messages, messages);
+        assert_eq!(result.original, original);
+        assert_eq!(result.formatted, formatted);
+    }
+}

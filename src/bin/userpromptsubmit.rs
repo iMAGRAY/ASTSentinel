@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde_json;
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use tokio;
 use std::path::Path;
 
@@ -11,7 +11,7 @@ use rust_validation_hooks::analysis::project::{
 };
 // Use AST analysis for comprehensive error detection
 use rust_validation_hooks::analysis::ast::{
-    MultiLanguageAnalyzer, AstQualityScorer, QualityScore, SupportedLanguage, IssueSeverity,
+    MultiLanguageAnalyzer, AstQualityScorer, SupportedLanguage, IssueSeverity,
 };
 // Use duplicate detector for conflict awareness
 use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
@@ -88,7 +88,8 @@ async fn analyze_project_for_ai_context(hook_input: &HookInput) -> Result<String
             context_parts.push(project_info);
         }
         Err(e) => {
-            // Failed to scan project
+            // Project scan failed, continue without project structure info
+            eprintln!("Warning: Could not analyze project structure: {}", e);
         }
     }
 
@@ -99,7 +100,8 @@ async fn analyze_project_for_ai_context(hook_input: &HookInput) -> Result<String
             context_parts.push(format!("\n# DEPENDENCIES\n{}", deps.format_for_ai()));
         }
         Err(e) => {
-            // Dependencies analysis failed
+            // Dependencies analysis failed, continue without dependency info
+            eprintln!("Warning: Could not analyze project dependencies: {}", e);
         }
     }
 
@@ -121,7 +123,8 @@ async fn analyze_project_for_ai_context(hook_input: &HookInput) -> Result<String
             }
         }
         Err(e) => {
-            // Duplicate detection failed
+            // Duplicate detection failed, continue without conflict detection
+            eprintln!("Warning: Could not detect duplicate files: {}", e);
         }
     }
 
@@ -152,7 +155,8 @@ async fn perform_project_wide_ast_analysis(working_dir: &str) -> String {
     if let Ok(entries) = std::fs::read_dir(working_dir) {
         for entry in entries.flatten() {
             if let Err(e) = analyze_directory_recursive(&entry.path(), &mut results, &mut total_issues, &mut total_files_analyzed, &mut critical_issues, 0).await {
-                // Error analyzing file
+                // Error analyzing directory/file, continue with other files
+                eprintln!("Warning: Failed to analyze path {}: {}", entry.path().display(), e);
             }
         }
     }
@@ -226,11 +230,11 @@ async fn analyze_directory_recursive(
                     }
 
                     match MultiLanguageAnalyzer::analyze_with_tree_sitter(&content, language) {
-                        Ok(complexity_metrics) => {
+                        Ok(_complexity_metrics) => {
                             *total_files += 1;
                             
                             // Use AST quality scorer for detailed analysis
-                            let mut scorer = AstQualityScorer::new();
+                            let scorer = AstQualityScorer::new();
                             if let Ok(quality_score) = scorer.analyze(&content, language) {
                                 let issues_count = quality_score.concrete_issues.len();
                                 *total_issues += issues_count;

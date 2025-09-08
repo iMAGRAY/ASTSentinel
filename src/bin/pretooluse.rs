@@ -7,12 +7,8 @@ use tokio;
 use rust_validation_hooks::analysis::project::{
     format_project_structure_for_ai, scan_project_structure, ScanConfig,
 };
-use rust_validation_hooks::analysis::dependencies::{
-    analyze_project_dependencies, ProjectDependencies,
-};
-use rust_validation_hooks::analysis::ast::{
-    MultiLanguageAnalyzer, QualityScore, SupportedLanguage,
-};
+use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
+use rust_validation_hooks::analysis::ast::{MultiLanguageAnalyzer, SupportedLanguage};
 use rust_validation_hooks::*;
 // Use universal AI client
 use rust_validation_hooks::providers::ai::UniversalAIClient;

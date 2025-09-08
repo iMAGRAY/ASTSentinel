@@ -200,6 +200,32 @@ impl<'a> ComplexityVisitor<'a> {
         Ok(count)
     }
 
+    /// Find parameter node for arrow functions with different parameter structures
+    /// Arrow functions can have: (a, b) => {}, a => {}, ({x, y}) => {}
+    fn find_arrow_function_parameter<'b>(&self, arrow_function_node: &Node<'b>) -> Option<Node<'b>> {
+        let mut cursor = arrow_function_node.walk();
+        
+        if cursor.goto_first_child() {
+            loop {
+                let child = cursor.node();
+                match child.kind() {
+                    // Direct identifier parameter: x => {}
+                    "identifier" => return Some(child),
+                    // Formal parameter list: (a, b) => {}
+                    "formal_parameters" => return Some(child),
+                    // Parameters without parentheses
+                    "parameter" => return Some(child),
+                    _ => {}
+                }
+                
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+        }
+        None
+    }
+
     /// Build complexity metrics from current state
     pub fn build_metrics(&self) -> ComplexityMetrics {
         ComplexityMetrics {
@@ -279,40 +305,66 @@ impl<'a> ComplexityVisitor<'a> {
 
     fn process_python_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
         match node_type {
-            "function_definition" | "async_function_definition" => {
+            // Tree-sitter Python actual node types
+            "function_definition" | "async_function_definition" | "def" => {
                 self.function_count += 1;
                 self.enter_scope();
-                self.count_parameters(node, "parameters")?;
+                // Try both parameter list types for Python AST compatibility
+                // Tree-sitter Python may use "parameters" or "parameter_list" depending on version
+                if let Err(_) = self.count_parameters(node, "parameters") {
+                    if let Err(e) = self.count_parameters(node, "parameter_list") {
+                        #[cfg(debug_assertions)]
+                        eprintln!("Warning: Failed to find parameter list in Python function: {}", e);
+                    }
+                }
             }
-            "class_definition" => {
+            "class_definition" | "class" => {
                 self.enter_scope();
             }
-            "if_statement" | "elif_clause" => {
+            "if_statement" | "elif_clause" | "if" | "elif" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "while_statement" | "for_statement" => {
+            "while_statement" | "for_statement" | "while" | "for" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "try_statement" => {
+            "try_statement" | "try" => {
                 self.cyclomatic_complexity += 1;
                 self.enter_scope();
             }
-            "except_clause" => {
+            "except_clause" | "except" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1;
             }
-            "return_statement" => {
+            "return_statement" | "return" => {
                 self.return_points += 1;
             }
-            "and" | "or" => {
+            "and" | "or" | "boolean_operator" => {
                 self.cyclomatic_complexity += 1;
             }
+            // Common structural nodes that don't affect complexity
+            "module" | "block" | "identifier" | "parameters" | "(" | ")" | ":" | 
+            "comment" | "string" | "integer" | "pass_statement" | "pass" |
+            "expression_statement" | "assignment" | "=" | "call" | "attribute" | 
+            "." | "argument_list" | "," | "import_statement" | "import" |
+            "dotted_name" | "string_start" | "string_content" | "string_end" |
+            "interpolation" | "{" | "}" | "as_pattern" | "as" | "as_pattern_target" |
+            "dictionary" | "pair" | "list" | "[" | "]" | "comparison_operator" |
+            "==" | "!=" | "<" | ">" | "<=" | ">=" | "not_operator" | "not" |
+            "keyword_argument" | "subscript" | "slice" | "list_comprehension" |
+            "for_in_clause" | "if_clause" | "augmented_assignment" | "+=" | "-=" |
+            "pattern_list" | "in" | "else_clause" | "else" | "expression_list" |
+            "binary_operator" | "+" | "-" | "*" | "/" | "%" | "**" | "//" |
+            "none" | "true" | "false" | "float" | "parenthesized_expression" |
+            "default_parameter" | "list_splat_pattern" | "dictionary_splat_pattern" |
+            "typed_parameter" | "typed_default_parameter" => {
+                // These are structural nodes, no complexity impact
+            }
             _ => {
-                // Unrecognized node type - log for debugging in development
+                // Only log truly unrecognized node types
                 #[cfg(debug_assertions)]
                 eprintln!("Unrecognized Python node type: {node_type}");
             }
@@ -322,50 +374,84 @@ impl<'a> ComplexityVisitor<'a> {
 
     fn process_js_ts_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
         match node_type {
-            "function_declaration"
-            | "function_expression"
-            | "arrow_function"
-            | "method_definition" => {
+            // Tree-sitter JavaScript actual node types
+            "function_declaration" | "function_expression" | "method_definition" | "function" | "async" => {
                 self.function_count += 1;
                 self.enter_scope();
-                self.count_parameters(node, "formal_parameters")?;
+                // Try both parameter list types for JavaScript
+                if let Err(_) = self.count_parameters(node, "formal_parameters") {
+                    if let Err(e) = self.count_parameters(node, "parameters") {
+                        #[cfg(debug_assertions)]
+                        eprintln!("Warning: Failed to find parameter list in JavaScript function: {}", e);
+                    }
+                }
             }
-            "class_declaration" => {
+            "arrow_function" => {
+                self.function_count += 1;
+                self.enter_scope();
+                // Arrow functions have different parameter structures
+                // They can have single identifier as parameter or formal_parameters
+                if let Err(_) = self.count_parameters(node, "formal_parameters") {
+                    if let Err(_) = self.count_parameters(node, "parameters") {
+                        // For arrow functions, check if there's a direct identifier parameter
+                        if let Some(param_node) = self.find_arrow_function_parameter(node) {
+                            if param_node.kind() == "identifier" {
+                                self.parameter_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            "class_declaration" | "class" | "class_body" => {
                 self.enter_scope();
             }
-            "if_statement" => {
+            "if_statement" | "if" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "while_statement" | "for_statement" | "for_in_statement" | "for_of_statement" => {
+            "while_statement" | "for_statement" | "for_in_statement" | "for_of_statement" |
+            "while" | "for" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "switch_statement" => {
+            "switch_statement" | "switch" => {
                 self.cyclomatic_complexity += 1;
                 self.enter_scope();
             }
-            "case_clause" => {
+            "case_clause" | "case" => {
                 self.cyclomatic_complexity += 1;
             }
-            "try_statement" => {
+            "try_statement" | "try" => {
                 self.enter_scope();
             }
-            "catch_clause" => {
+            "catch_clause" | "catch" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1;
             }
-            "return_statement" => {
+            "return_statement" | "return" => {
                 self.return_points += 1;
             }
-            "logical_expression" => {
-                // && or || operators
+            "logical_expression" | "binary_expression" => {
+                // && or || operators, +, -, *, / etc
                 self.cyclomatic_complexity += 1;
             }
+            // Common structural nodes that don't affect complexity
+            "program" | "statement_block" | "identifier" | "formal_parameters" | "(" | ")" | "{" |
+            "comment" | "string" | "number" | ";" | "property_identifier" | "." | "," |
+            "variable_declaration" | "variable_declarator" | "var" | "let" | "const" | "=" |
+            "call_expression" | "member_expression" | "arguments" | "string_fragment" |
+            "lexical_declaration" | "expression_statement" | "assignment_expression" |
+            "parenthesized_expression" | "object" | "pair" | ":" | "true" | "false" | "null" |
+            "template_string" | "`" | "template_substitution" | "${" | "}" | "await_expression" | "await" |
+            "==" | "!=" | "<" | ">" | "<=" | ">=" | "+" | "-" | "*" | "/" | "%" |
+            "&&" | "||" | "!" | "++" | "--" | "+=" | "-=" | "*=" | "/=" |
+            "\"" | "'" | "escape_sequence" => {
+                // These are structural nodes, no complexity impact
+            }
             _ => {
-                // Unrecognized node type - log for debugging in development
+                // Only log truly unrecognized node types
                 #[cfg(debug_assertions)]
                 eprintln!("Unrecognized JavaScript/TypeScript node type: {node_type}");
             }

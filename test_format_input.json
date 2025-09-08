@@ -1,0 +1,9 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "test_async_rust.rs",
+    "old_string": "}Test line to trigger PostToolUse hook",
+    "new_string": "}"
+  },
+  "cwd": "C:\\Users\\1\\Documents\\GitHub\\ValidationCodeHook"
+}

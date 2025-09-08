@@ -228,7 +228,7 @@ impl AstRule for UnhandledErrorRule {
 struct DeadCodeRule;
 
 impl AstRule for DeadCodeRule {
-    fn check(&self, ast: &tree_sitter::Tree, _source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+    fn check(&self, ast: &tree_sitter::Tree, _source: &str, _language: SupportedLanguage) -> Vec<ConcreteIssue> {
         let mut issues = Vec::new();
         let mut cursor = ast.walk();
         
@@ -276,28 +276,53 @@ impl AstRule for ComplexityRule {
         let mut issues = Vec::new();
         let mut cursor = ast.walk();
         
-        loop {
+        // Language-specific thresholds for complexity
+        let complexity_threshold = match language {
+            SupportedLanguage::Python => 8,  // Python should be simpler
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => 10,
+            SupportedLanguage::Java | SupportedLanguage::CSharp => 12,  // Allow more complexity in strongly-typed languages
+            SupportedLanguage::Go => 8,  // Go encourages simplicity
+            SupportedLanguage::C | SupportedLanguage::Cpp => 15,  // System languages may need more complexity
+            _ => 10,  // Default threshold
+        };
+        
+        'outer: loop {
             let node = cursor.node();
             
-            if node.kind() == "function_item" || node.kind() == "method_definition" {
+            // Language-specific function detection
+            let is_function = match language {
+                SupportedLanguage::Python => node.kind() == "function_definition",
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => 
+                    node.kind() == "function_declaration" || node.kind() == "arrow_function",
+                SupportedLanguage::Java => node.kind() == "method_declaration",
+                SupportedLanguage::Go => node.kind() == "function_declaration" || node.kind() == "method_declaration",
+                _ => node.kind() == "function_item" || node.kind() == "method_definition",
+            };
+            
+            if is_function {
                 let complexity = calculate_complexity(&node, source);
-                if complexity > 10 {
+                if complexity > complexity_threshold {
                     issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::HighComplexity,
-                        message: format!("High cyclomatic complexity: {}", complexity),
+                        message: format!("High cyclomatic complexity: {} (threshold: {})", complexity, complexity_threshold),
                         file: String::new(),
                         line: node.start_position().row + 1,
                         column: node.start_position().column + 1,
                         rule_id: self.rule_id().to_string(),
-                        points_deducted: (complexity - 10) * 5,
+                        points_deducted: (complexity.saturating_sub(complexity_threshold)) * 5,
                     });
                 }
             }
             
-            if !cursor.goto_next_sibling() {
+            // Proper AST traversal: visit children first, then siblings, then go up
+            if cursor.goto_first_child() {
+                continue;
+            }
+            
+            while !cursor.goto_next_sibling() {
                 if !cursor.goto_parent() {
-                    break;
+                    break 'outer;
                 }
             }
         }
@@ -431,7 +456,7 @@ impl AstRule for SecurityPatternRule {
 struct ResourceLeakRule;
 
 impl AstRule for ResourceLeakRule {
-    fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
+    fn check(&self, ast: &tree_sitter::Tree, source: &str, _language: SupportedLanguage) -> Vec<ConcreteIssue> {
         let mut issues = Vec::new();
         let mut cursor = ast.walk();
         

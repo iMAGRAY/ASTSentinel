@@ -19,7 +19,7 @@ path = "src/bin/memory_organizer.rs"
 
 [[bin]]
 name = "test_unified_diff"
-path = "test_unified_diff.rs"
+path = "test_data/rust/test_unified_diff.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -35,6 +35,7 @@ regex = "1.10"
 lazy_static = "1.4"
 rayon = "1.8"
 sha2 = "0.10"
+crossbeam-channel = "0.5"
 syn = { version = "2.0", features = ["full", "parsing", "visit"] }
 memmap2 = "0.9"
 dashmap = "6.0"

@@ -51,6 +51,9 @@ pub mod providers;
 /// Caching modules for performance optimization
 pub mod cache;
 
+/// Code formatting modules for multi-language formatting
+pub mod formatting;
+
 /// Centralized validation constants for memory optimization
 pub mod validation_constants;
 
@@ -60,9 +63,9 @@ pub use analysis::{
     format_project_structure_for_ai, scan_project_structure, ComplexityMetrics, ProjectStructure,
     ScanConfig,
 };
-// Test file validation removed - AI handles all validation now
 pub use cache::ProjectCache;
 pub use providers::{AIProvider, UniversalAIClient};
+pub use formatting::{CodeFormatter, FormatResult, FormattingService};
 
 /// Claude Code Hook input data structure - actual fields from Claude Code
 #[derive(Debug, Deserialize)]

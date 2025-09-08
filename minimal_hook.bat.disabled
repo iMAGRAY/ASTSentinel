@@ -1,2 +1,0 @@
-@echo off
-echo {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"ЗАРАБОТАЛ"}}
