@@ -38,7 +38,7 @@ pub struct ProjectMetrics {
     pub average_cognitive_complexity: f32,
     pub max_cyclomatic_complexity: u32,
     pub max_cognitive_complexity: u32,
-    pub high_complexity_files: usize,  // Files with complexity score > 7
+    pub high_complexity_files: usize, // Files with complexity score > 7
     pub complexity_distribution: ComplexityDistribution,
 }
 
@@ -63,9 +63,9 @@ pub struct LanguageStats {
 /// Distribution of complexity across the project
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ComplexityDistribution {
-    pub low_complexity: usize,    // 0-3 complexity score
-    pub medium_complexity: usize, // 4-7 complexity score
-    pub high_complexity: usize,   // 8-10 complexity score
+    pub low_complexity: usize,     // 0-3 complexity score
+    pub medium_complexity: usize,  // 4-7 complexity score
+    pub high_complexity: usize,    // 8-10 complexity score
     pub extreme_complexity: usize, // >10 complexity score
 }
 
@@ -73,10 +73,10 @@ pub struct ComplexityDistribution {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompressedStructure {
     pub format_version: u8,
-    pub tree: String,           // Compressed tree representation
-    pub metrics: String,         // Compressed metrics
+    pub tree: String,                 // Compressed tree representation
+    pub metrics: String,              // Compressed metrics
     pub important_files: Vec<String>, // Top priority files
-    pub token_estimate: usize,   // Estimated token count
+    pub token_estimate: usize,        // Estimated token count
 }
 
 impl ProjectCache {
@@ -85,40 +85,40 @@ impl ProjectCache {
         if !cache_path.exists() {
             return Ok(None);
         }
-        
+
         let contents = fs::read_to_string(cache_path)?;
         let cache: ProjectCache = serde_json::from_str(&contents)?;
-        
+
         // Check if cache is still valid (default: 5 minutes)
         let now = chrono::Local::now().timestamp();
         if now - cache.cache_timestamp > 300 {
             return Ok(None);
         }
-        
+
         Ok(Some(cache))
     }
-    
+
     /// Save cache to disk
     pub fn save(&self, cache_path: &Path) -> Result<()> {
         let contents = serde_json::to_string_pretty(self)?;
         fs::write(cache_path, contents)?;
         Ok(())
     }
-    
+
     /// Check if specific file needs update with content hash verification
     pub fn needs_update(&self, file_path: &str) -> bool {
+        use sha2::{Digest, Sha256};
         use std::io::Read;
-        use sha2::{Sha256, Digest};
-        
+
         let path = Path::new(file_path);
-        
+
         if let Some(cached_hash) = self.file_hashes.get(file_path) {
             if let Ok(metadata) = fs::metadata(path) {
                 // Quick check: size and modification time
                 if metadata.len() != cached_hash.size {
                     return true;
                 }
-                
+
                 if let Ok(modified) = metadata.modified() {
                     if modified != cached_hash.modified_time {
                         // If we have content hash, verify it
@@ -127,7 +127,9 @@ impl ProjectCache {
                                 let mut hasher = Sha256::new();
                                 let mut buffer = [0; 8192];
                                 while let Ok(bytes_read) = file.read(&mut buffer) {
-                                    if bytes_read == 0 { break; }
+                                    if bytes_read == 0 {
+                                        break;
+                                    }
                                     hasher.update(&buffer[..bytes_read]);
                                 }
                                 let new_hash = format!("{:x}", hasher.finalize());
@@ -139,14 +141,14 @@ impl ProjectCache {
                 }
             }
         }
-        
+
         true // If we can't determine, assume it needs update
     }
-    
+
     /// Get files that have changed since cache was created
     pub fn get_changed_files(&self, root_path: &Path) -> Vec<PathBuf> {
         let mut changed = Vec::new();
-        
+
         for (file_path, hash) in &self.file_hashes {
             let full_path = root_path.join(file_path);
             if let Ok(metadata) = fs::metadata(&full_path) {
@@ -157,7 +159,7 @@ impl ProjectCache {
                 }
             }
         }
-        
+
         changed
     }
 }
@@ -168,11 +170,9 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
     let mut loc = 0;
     let mut comments = 0;
     let mut blanks = 0;
-    
-    let extension = file_path.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("");
-    
+
+    let extension = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+
     // Language-specific comment patterns
     let comment_config = match extension {
         "rs" => Some(CommentConfig {
@@ -219,18 +219,18 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
         }),
         _ => None,
     };
-    
+
     if let Some(config) = comment_config {
         let mut in_multi_comment = false;
-        
+
         for line in content.lines() {
             let trimmed = line.trim();
-            
+
             if trimmed.is_empty() {
                 blanks += 1;
                 continue;
             }
-            
+
             // Handle multi-line comments
             if in_multi_comment {
                 comments += 1;
@@ -239,20 +239,20 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
                 }
                 continue;
             }
-            
+
             // Check for multi-line comment start
             if !config.multi_start.is_empty() && trimmed.contains(config.multi_start) {
                 in_multi_comment = !trimmed.contains(config.multi_end);
                 comments += 1;
                 continue;
             }
-            
+
             // Check for single-line comments
             if !config.single.is_empty() && trimmed.starts_with(config.single) {
                 comments += 1;
                 continue;
             }
-            
+
             // Check for doc comments
             if let Some(doc_single) = config.doc_single {
                 if trimmed.starts_with(doc_single) {
@@ -260,7 +260,7 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
                     continue;
                 }
             }
-            
+
             // Otherwise it's code
             loc += 1;
         }
@@ -275,7 +275,7 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
             }
         }
     }
-    
+
     Ok((loc, comments, blanks))
 }
 
@@ -292,7 +292,7 @@ struct CommentConfig {
 /// Calculate importance score for a file
 pub fn calculate_file_importance(file: &crate::analysis::project::ProjectFile) -> f32 {
     let mut score: f32 = 0.0;
-    
+
     // Check if it's a test file first (highest priority)
     if file.relative_path.contains("test") || file.relative_path.contains("spec") {
         score = 0.7;
@@ -302,40 +302,42 @@ pub fn calculate_file_importance(file: &crate::analysis::project::ProjectFile) -
             // Core application files
             "rs" | "go" | "java" | "cpp" => 1.0,
             "js" | "ts" | "py" | "rb" => 0.9,
-            
+
             // Configuration and setup
             "toml" | "yaml" | "json" if file.relative_path.contains("config") => 0.8,
             "toml" if file.relative_path == "Cargo.toml" => 1.0,
             "json" if file.relative_path == "package.json" => 1.0,
-            
+
             // Documentation
             "md" if file.relative_path == "README.md" => 0.8,
             "md" => 0.5,
-            
+
             // Default for other files
             _ => 0.3,
         };
     }
-    
+
     // Boost for main/index files
-    if file.relative_path.contains("main.") || 
-       file.relative_path.contains("index.") ||
-       file.relative_path.contains("app.") {
+    if file.relative_path.contains("main.")
+        || file.relative_path.contains("index.")
+        || file.relative_path.contains("app.")
+    {
         score += 0.3;
     }
-    
+
     // Boost for src directory files
     if file.relative_path.starts_with("src/") {
         score += 0.2;
     }
-    
+
     // Penalize generated or vendor files
-    if file.relative_path.contains("vendor/") ||
-       file.relative_path.contains("generated/") ||
-       file.relative_path.contains(".min.") {
+    if file.relative_path.contains("vendor/")
+        || file.relative_path.contains("generated/")
+        || file.relative_path.contains(".min.")
+    {
         score *= 0.3;
     }
-    
+
     score.min(1.0) // Cap at 1.0
 }
 
@@ -356,24 +358,28 @@ pub fn compress_structure(
         ("examples", "ex"),
         ("fixtures", "fx"),
         ("components", "c"),
-    ].iter().cloned().collect();
-    
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
     // Build compressed tree using abbreviations
     let mut tree_parts = Vec::new();
-    
+
     // Group files by directory and abbreviate extensions
     let mut dir_files: HashMap<String, Vec<String>> = HashMap::new();
     for file in &structure.files {
         let parts: Vec<&str> = file.relative_path.split('/').collect();
         if parts.len() > 1 {
-            let dir = parts[..parts.len()-1].iter()
+            let dir = parts[..parts.len() - 1]
+                .iter()
                 .map(|d| abbreviations.get(d as &&str).unwrap_or(d))
                 .cloned()
                 .collect::<Vec<_>>()
                 .join("/");
-            
+
             // Abbreviate common file extensions
-            let filename = parts[parts.len()-1];
+            let filename = parts[parts.len() - 1];
             let short_name = if filename.ends_with(".js") {
                 filename.trim_end_matches(".js").to_string() + ":j"
             } else if filename.ends_with(".rs") {
@@ -387,17 +393,23 @@ pub fn compress_structure(
             } else {
                 filename.to_string()
             };
-            
-            dir_files.entry(dir).or_insert_with(Vec::new).push(short_name);
+
+            dir_files
+                .entry(dir)
+                .or_insert_with(Vec::new)
+                .push(short_name);
         } else {
-            dir_files.entry(String::new()).or_insert_with(Vec::new).push(file.relative_path.clone());
+            dir_files
+                .entry(String::new())
+                .or_insert_with(Vec::new)
+                .push(file.relative_path.clone());
         }
     }
-    
+
     // Build compressed representation with sorted directories
     let mut sorted_dirs: Vec<_> = dir_files.iter().collect();
     sorted_dirs.sort_by_key(|(dir, _)| dir.as_str());
-    
+
     for (dir, files) in sorted_dirs {
         if dir.is_empty() {
             tree_parts.push(files.join(","));
@@ -405,9 +417,9 @@ pub fn compress_structure(
             tree_parts.push(format!("{}[{}]", dir, files.join(",")));
         }
     }
-    
+
     let tree = tree_parts.join(";");
-    
+
     // Ultra-compress metrics using abbreviations
     let lang_abbrev: HashMap<&str, &str> = [
         ("rs", "r"),
@@ -418,19 +430,26 @@ pub fn compress_structure(
         ("cpp", "c+"),
         ("go", "g"),
         ("rb", "rb"),
-    ].iter().cloned().collect();
-    
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
     let metrics_str = format!(
         "L{},{}",
         metrics.total_lines_of_code,
-        metrics.code_by_language.iter()
+        metrics
+            .code_by_language
+            .iter()
             .map(|(lang, stats)| {
-                let short = lang_abbrev.get(lang.as_str())
+                let short = lang_abbrev
+                    .get(lang.as_str())
                     .map(|s| *s)
                     .unwrap_or(lang.as_str());
-                format!("{}:{}/{}/{:.1}/{:.1}", 
-                    short, 
-                    stats.lines_of_code, 
+                format!(
+                    "{}:{}/{}/{:.1}/{:.1}",
+                    short,
+                    stats.lines_of_code,
                     stats.file_count,
                     stats.average_cyclomatic,
                     stats.average_cognitive
@@ -439,7 +458,7 @@ pub fn compress_structure(
             .collect::<Vec<_>>()
             .join(",")
     );
-    
+
     // Enhanced quality metrics with complexity distribution
     let quality_str = format!(
         "Q{:.0}/{:.0}/{:.0}",
@@ -447,7 +466,7 @@ pub fn compress_structure(
         metrics.test_coverage_estimate * 100.0,
         metrics.documentation_ratio * 100.0
     );
-    
+
     // Complexity metrics in ultra-compressed format
     let complexity_str = format!(
         "C{:.1}/{:.1}/{}/{}/{}+{}+{}+{}",
@@ -460,25 +479,28 @@ pub fn compress_structure(
         metrics.complexity_distribution.high_complexity,
         metrics.complexity_distribution.extreme_complexity
     );
-    
+
     // Get top 5 important files (abbreviated)
-    let mut important: Vec<_> = metrics.file_importance_scores.iter()
+    let mut important: Vec<_> = metrics
+        .file_importance_scores
+        .iter()
         .map(|(path, score)| (path.clone(), *score))
         .collect();
     important.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-    
-    let important_files: Vec<String> = important.iter()
+
+    let important_files: Vec<String> = important
+        .iter()
         .take(5)
         .map(|(path, _)| {
             // Abbreviate path
             path.split('/').last().unwrap_or(path).to_string()
         })
         .collect();
-    
+
     // More accurate token estimate with complexity data
     let full_output = format!("{tree};{metrics_str};{quality_str};{complexity_str}");
     let token_estimate = full_output.len().div_ceil(3); // Better approximation
-    
+
     CompressedStructure {
         format_version: 3, // Version 3 with complexity metrics
         tree,
@@ -494,21 +516,18 @@ pub fn build_incremental_update(
     changed_files: Vec<PathBuf>,
 ) -> Result<String> {
     let mut updates = Vec::new();
-    
+
     for file_path in changed_files {
         if let Ok(metadata) = fs::metadata(&file_path) {
-            let relative = file_path.strip_prefix(&cache.structure.root_path)
+            let relative = file_path
+                .strip_prefix(&cache.structure.root_path)
                 .unwrap_or(&file_path)
                 .to_string_lossy()
                 .replace('\\', "/");
-            
-            updates.push(format!(
-                "MOD:{}:{}b",
-                relative,
-                metadata.len()
-            ));
+
+            updates.push(format!("MOD:{}:{}b", relative, metadata.len()));
         }
     }
-    
+
     Ok(format!("INCREMENTAL[{}]", updates.join(",")))
 }

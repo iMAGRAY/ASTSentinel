@@ -2,7 +2,4 @@
 pub mod ai;
 
 // Re-export AI provider types and client
-pub use ai::{
-    UniversalAIClient,
-    AIProvider,
-};
+pub use ai::{AIProvider, UniversalAIClient};

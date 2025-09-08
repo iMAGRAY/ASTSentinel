@@ -9,11 +9,14 @@ pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
     // Count visible characters, excluding zero-width characters
     let visible_chars: Vec<char> = s.chars().filter(|&c| !is_zero_width_char(c)).collect();
     let visible_count = visible_chars.len();
-    
+
     if visible_count <= max_chars {
         s.to_string()
     } else {
-        let truncated: String = visible_chars.iter().take(max_chars.saturating_sub(1)).collect();
+        let truncated: String = visible_chars
+            .iter()
+            .take(max_chars.saturating_sub(1))
+            .collect();
         format!("{truncated}…")
     }
 }
@@ -21,19 +24,18 @@ pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
 /// Sanitize input string by removing potentially malicious zero-width characters
 /// Used to prevent obfuscation attacks in user input
 pub fn sanitize_zero_width_chars(input: &str) -> String {
-    input.chars()
-        .filter(|&c| !is_zero_width_char(c))
-        .collect()
+    input.chars().filter(|&c| !is_zero_width_char(c)).collect()
 }
 
 /// Check if character is a zero-width character that could be used for obfuscation
 fn is_zero_width_char(c: char) -> bool {
-    matches!(c, 
+    matches!(
+        c,
         '\u{200B}' |  // Zero Width Space
         '\u{200C}' |  // Zero Width Non-Joiner  
         '\u{200D}' |  // Zero Width Joiner
         '\u{2060}' |  // Word Joiner
-        '\u{FEFF}'    // Zero Width No-Break Space
+        '\u{FEFF}' // Zero Width No-Break Space
     )
 }
 
@@ -53,11 +55,14 @@ pub mod cache;
 pub mod validation_constants;
 
 // Re-export commonly used types for convenience
-pub use analysis::{ComplexityMetrics, ProjectStructure, scan_project_structure, format_project_structure_for_ai, ScanConfig};
-pub use analysis::ast::{SupportedLanguage, MultiLanguageAnalyzer, ComplexityVisitor};
+pub use analysis::ast::{ComplexityVisitor, MultiLanguageAnalyzer, SupportedLanguage};
+pub use analysis::{
+    format_project_structure_for_ai, scan_project_structure, ComplexityMetrics, ProjectStructure,
+    ScanConfig,
+};
 // Test file validation removed - AI handles all validation now
-pub use providers::{UniversalAIClient, AIProvider};
 pub use cache::ProjectCache;
+pub use providers::{AIProvider, UniversalAIClient};
 
 /// Claude Code Hook input data structure - actual fields from Claude Code
 #[derive(Debug, Deserialize)]
@@ -67,9 +72,9 @@ pub struct HookInput {
     #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
-    pub transcript_path: Option<String>,  // Path to conversation JSON file
+    pub transcript_path: Option<String>, // Path to conversation JSON file
     #[serde(default)]
-    pub cwd: Option<String>,  // Current working directory
+    pub cwd: Option<String>, // Current working directory
     #[serde(default)]
     pub hook_event_name: Option<String>,
 }
@@ -87,7 +92,10 @@ pub struct PreToolUseHookOutput {
     pub hook_event_name: String,
     #[serde(rename = "permissionDecision")]
     pub permission_decision: String,
-    #[serde(rename = "permissionDecisionReason", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "permissionDecisionReason",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub permission_decision_reason: Option<String>,
 }
 
@@ -269,11 +277,10 @@ pub struct GrokCodeSuggestion {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GrokCodeMetrics {
-    pub complexity: Option<String>, // "low", "medium", "high"
-    pub readability: Option<String>, // "excellent", "good", "fair", "poor"
+    pub complexity: Option<String>,    // "low", "medium", "high"
+    pub readability: Option<String>,   // "excellent", "good", "fair", "poor"
     pub test_coverage: Option<String>, // "none", "partial", "good", "excellent"
 }
-
 
 /// Environment configuration with validation and type safety
 #[derive(Clone)]
@@ -283,33 +290,33 @@ pub struct Config {
     pub anthropic_api_key: String,
     pub google_api_key: String,
     pub xai_api_key: String,
-    
+
     // Base URLs for different providers (can be overridden)
     pub openai_base_url: String,
     pub anthropic_base_url: String,
     pub google_base_url: String,
     pub xai_base_url: String,
-    
+
     // Provider selection for each hook (type-safe)
     pub pretool_provider: providers::AIProvider,
     pub posttool_provider: providers::AIProvider,
-    
+
     // Model specifications
     pub pretool_model: String,
     pub posttool_model: String,
-    
+
     // Common settings with defaults
     pub max_tokens: u32,
     pub temperature: f32,
     pub max_issues: usize,
     pub request_timeout_secs: u64,
     pub connect_timeout_secs: u64,
-    
+
     // Provider-specific output token limits (based on documentation)
-    pub gpt5_max_output_tokens: u32,      // GPT-5: 128K output tokens
-    pub claude_max_output_tokens: u32,    // Claude: 4K typical, 8K max
-    pub gemini_max_output_tokens: u32,    // Gemini: Variable, 32K max
-    pub grok_max_output_tokens: u32,      // Grok: 8K typical
+    pub gpt5_max_output_tokens: u32,   // GPT-5: 128K output tokens
+    pub claude_max_output_tokens: u32, // Claude: 4K typical, 8K max
+    pub gemini_max_output_tokens: u32, // Gemini: Variable, 32K max
+    pub grok_max_output_tokens: u32,   // Grok: 8K typical
 }
 
 impl Config {
@@ -325,68 +332,84 @@ impl Config {
             anthropic_api_key: String::new(),
             google_api_key: String::new(),
             xai_api_key: String::new(),
-            
+
             openai_base_url: providers::AIProvider::OpenAI.default_base_url().to_string(),
-            anthropic_base_url: providers::AIProvider::Anthropic.default_base_url().to_string(),
+            anthropic_base_url: providers::AIProvider::Anthropic
+                .default_base_url()
+                .to_string(),
             google_base_url: providers::AIProvider::Google.default_base_url().to_string(),
             xai_base_url: providers::AIProvider::XAI.default_base_url().to_string(),
-            
+
             pretool_provider,
             posttool_provider,
             pretool_model,
             posttool_model,
-            
+
             // Sensible defaults
             max_tokens: 4000,
             temperature: 0.1,
             max_issues: 10,
             request_timeout_secs: 60,
             connect_timeout_secs: 30,
-            
+
             // Provider-specific token limits (based on LLM API documentation)
-            gpt5_max_output_tokens: 12000,    // Conservative limit for stability
-            claude_max_output_tokens: 4096,   // Claude's typical max_tokens
-            gemini_max_output_tokens: 8192,   // Gemini reasonable limit
-            grok_max_output_tokens: 8192,     // Grok conservative limit
+            gpt5_max_output_tokens: 12000, // Conservative limit for stability
+            claude_max_output_tokens: 4096, // Claude's typical max_tokens
+            gemini_max_output_tokens: 8192, // Gemini reasonable limit
+            grok_max_output_tokens: 8192,  // Grok conservative limit
         }
     }
-    
+
     /// Validate configuration and return errors if invalid
     pub fn validate(&self) -> Result<()> {
         // Validate API keys for required providers
-        if self.get_api_key_for_provider(&self.pretool_provider).is_empty() {
-            return Err(anyhow::anyhow!("API key missing for pretool provider: {}", self.pretool_provider));
+        if self
+            .get_api_key_for_provider(&self.pretool_provider)
+            .is_empty()
+        {
+            return Err(anyhow::anyhow!(
+                "API key missing for pretool provider: {}",
+                self.pretool_provider
+            ));
         }
-        
-        if self.get_api_key_for_provider(&self.posttool_provider).is_empty() {
-            return Err(anyhow::anyhow!("API key missing for posttool provider: {}", self.posttool_provider));
+
+        if self
+            .get_api_key_for_provider(&self.posttool_provider)
+            .is_empty()
+        {
+            return Err(anyhow::anyhow!(
+                "API key missing for posttool provider: {}",
+                self.posttool_provider
+            ));
         }
-        
+
         // Validate models are not empty
         if self.pretool_model.trim().is_empty() {
             return Err(anyhow::anyhow!("Pretool model cannot be empty"));
         }
-        
+
         if self.posttool_model.trim().is_empty() {
             return Err(anyhow::anyhow!("Posttool model cannot be empty"));
         }
-        
+
         // Validate reasonable ranges
         if self.max_tokens == 0 || self.max_tokens > 100_000 {
             return Err(anyhow::anyhow!("max_tokens must be between 1 and 100,000"));
         }
-        
+
         if self.temperature < 0.0 || self.temperature > 2.0 {
             return Err(anyhow::anyhow!("temperature must be between 0.0 and 2.0"));
         }
-        
+
         if self.request_timeout_secs == 0 || self.request_timeout_secs > 600 {
-            return Err(anyhow::anyhow!("request_timeout_secs must be between 1 and 600"));
+            return Err(anyhow::anyhow!(
+                "request_timeout_secs must be between 1 and 600"
+            ));
         }
-        
+
         Ok(())
     }
-    
+
     /// Get the appropriate API key for a given provider
     pub fn get_api_key_for_provider(&self, provider: &providers::AIProvider) -> &str {
         match provider {
@@ -396,7 +419,7 @@ impl Config {
             providers::AIProvider::XAI => &self.xai_api_key,
         }
     }
-    
+
     /// Get the appropriate base URL for a given provider
     pub fn get_base_url_for_provider(&self, provider: &providers::AIProvider) -> &str {
         match provider {
@@ -406,7 +429,7 @@ impl Config {
             providers::AIProvider::XAI => &self.xai_base_url,
         }
     }
-    
+
     /// Get the appropriate max output tokens for a given provider
     /// This helps solve the token limit inconsistency problem
     pub fn get_max_output_tokens_for_provider(&self, provider: &providers::AIProvider) -> u32 {
@@ -427,7 +450,7 @@ impl Config {
                 // Load .env (production) and optionally override with .env.local (development)
                 let env_file = exe_dir.join(".env");
                 eprintln!("Looking for .env at: {env_file:?}");
-                
+
                 if env_file.exists() {
                     eprintln!(".env file found, loading...");
                     // Clear existing API keys to ensure .env takes priority
@@ -435,7 +458,7 @@ impl Config {
                     std::env::remove_var("ANTHROPIC_API_KEY");
                     std::env::remove_var("GOOGLE_API_KEY");
                     std::env::remove_var("XAI_API_KEY");
-                    
+
                     if let Err(e) = dotenv::from_path(&env_file) {
                         eprintln!("Failed to load .env: {e}");
                     } else {
@@ -444,7 +467,7 @@ impl Config {
                 } else {
                     eprintln!(".env file not found");
                 }
-                
+
                 // Additionally check for .env.local to override settings in development
                 let env_local = exe_dir.join(".env.local");
                 if env_local.exists() {
@@ -457,70 +480,75 @@ impl Config {
                 }
             }
         }
-        
+
         // Load all API keys from environment
         let openai_api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
         let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
         let google_api_key = std::env::var("GOOGLE_API_KEY").unwrap_or_default();
         let xai_api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
-        
+
         // Parse provider selections with validation
-        let pretool_provider_str = std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
-        let posttool_provider_str = std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
-        
+        let pretool_provider_str =
+            std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let posttool_provider_str =
+            std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+
         let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>()
             .with_context(|| format!("Invalid PRETOOL_PROVIDER: {pretool_provider_str}. Supported: openai, anthropic, google, xai"))?;
         let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>()
             .with_context(|| format!("Invalid POSTTOOL_PROVIDER: {posttool_provider_str}. Supported: openai, anthropic, google, xai"))?;
-        
+
         // Parse and validate configurable values with proper bounds
         let max_tokens = std::env::var("MAX_TOKENS")
             .unwrap_or_else(|_| "4000".to_string())
             .parse::<u32>()
             .unwrap_or(4000)
             .clamp(100, 100_000);
-        
+
         let temperature = std::env::var("TEMPERATURE")
             .unwrap_or_else(|_| "0.1".to_string())
             .parse::<f32>()
             .unwrap_or(0.1)
             .clamp(0.0, 2.0);
-        
+
         let max_issues = std::env::var("MAX_ISSUES")
             .unwrap_or_else(|_| "10".to_string())
             .parse::<usize>()
             .unwrap_or(10)
             .clamp(1, 50);
-        
+
         let request_timeout_secs = std::env::var("REQUEST_TIMEOUT_SECS")
             .unwrap_or_else(|_| "60".to_string())
             .parse::<u64>()
             .unwrap_or(60)
             .clamp(10, 600);
-        
+
         let connect_timeout_secs = std::env::var("CONNECT_TIMEOUT_SECS")
             .unwrap_or_else(|_| "30".to_string())
             .parse::<u64>()
             .unwrap_or(30)
             .clamp(5, 120);
-        
+
         // Create configuration with all providers supported
         let config = Config {
             openai_api_key,
             anthropic_api_key,
             google_api_key,
             xai_api_key,
-            
+
             // Load custom base URLs or use defaults
             openai_base_url: std::env::var("OPENAI_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::OpenAI.default_base_url().to_string()),
-            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL")
-                .unwrap_or_else(|_| providers::AIProvider::Anthropic.default_base_url().to_string()),
+            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| {
+                providers::AIProvider::Anthropic
+                    .default_base_url()
+                    .to_string()
+            }),
             google_base_url: std::env::var("GOOGLE_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::Google.default_base_url().to_string()),
             xai_base_url: std::env::var("XAI_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::XAI.default_base_url().to_string()),
-            
+
             pretool_provider,
             posttool_provider,
             pretool_model: std::env::var("PRETOOL_MODEL")
@@ -532,33 +560,35 @@ impl Config {
             max_issues,
             request_timeout_secs,
             connect_timeout_secs,
-            
+
             // Provider-specific output token limits (based on documentation)
             gpt5_max_output_tokens: std::env::var("GPT5_MAX_OUTPUT_TOKENS")
                 .unwrap_or_else(|_| "12000".to_string())
                 .parse::<u32>()
                 .unwrap_or(12000)
-                .clamp(1000, 128000),  // GPT-5: 128K output tokens max
+                .clamp(1000, 128000), // GPT-5: 128K output tokens max
             claude_max_output_tokens: std::env::var("CLAUDE_MAX_OUTPUT_TOKENS")
                 .unwrap_or_else(|_| "4000".to_string())
                 .parse::<u32>()
                 .unwrap_or(4000)
-                .clamp(1000, 8000),    // Claude: 4K typical, 8K max
+                .clamp(1000, 8000), // Claude: 4K typical, 8K max
             gemini_max_output_tokens: std::env::var("GEMINI_MAX_OUTPUT_TOKENS")
                 .unwrap_or_else(|_| "8000".to_string())
                 .parse::<u32>()
                 .unwrap_or(8000)
-                .clamp(1000, 32000),   // Gemini: Variable, 32K max
+                .clamp(1000, 32000), // Gemini: Variable, 32K max
             grok_max_output_tokens: std::env::var("GROK_MAX_OUTPUT_TOKENS")
                 .unwrap_or_else(|_| "8000".to_string())
                 .parse::<u32>()
                 .unwrap_or(8000)
-                .clamp(1000, 8000),    // Grok: 8K typical
+                .clamp(1000, 8000), // Grok: 8K typical
         };
-        
+
         // Validate configuration before returning
-        config.validate().with_context(|| "Configuration validation failed")?;
-        
+        config
+            .validate()
+            .with_context(|| "Configuration validation failed")?;
+
         Ok(config)
     }
 }
@@ -566,59 +596,52 @@ impl Config {
 /// File extension validation
 pub fn should_validate_file(file_path: &str) -> bool {
     let code_extensions = [
-        ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs",
-        ".py", ".pyw", ".pyc", ".pyo",
-        ".java", ".class", ".jar",
-        ".cpp", ".c", ".cc", ".cxx", ".h", ".hpp",
-        ".cs", ".vb",
-        ".php", ".php3", ".php4", ".php5", ".phtml",
-        ".rb", ".rbw",
-        ".go",
-        ".rs",
-        ".kt", ".kts",
-        ".swift",
-        ".sql",
-        ".sh", ".bash", ".zsh", ".fish",
-        ".ps1", ".psm1",
-        ".html", ".htm", ".xhtml"
+        ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".py", ".pyw", ".pyc", ".pyo", ".java",
+        ".class", ".jar", ".cpp", ".c", ".cc", ".cxx", ".h", ".hpp", ".cs", ".vb", ".php", ".php3",
+        ".php4", ".php5", ".phtml", ".rb", ".rbw", ".go", ".rs", ".kt", ".kts", ".swift", ".sql",
+        ".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".html", ".htm", ".xhtml",
     ];
-    
-    code_extensions.iter().any(|ext| file_path.to_lowercase().ends_with(ext))
+
+    code_extensions
+        .iter()
+        .any(|ext| file_path.to_lowercase().ends_with(ext))
 }
 
 /// Extract content from tool input based on tool type
-pub fn extract_content_from_tool_input(tool_name: &str, tool_input: &HashMap<String, serde_json::Value>) -> String {
+pub fn extract_content_from_tool_input(
+    tool_name: &str,
+    tool_input: &HashMap<String, serde_json::Value>,
+) -> String {
     match tool_name {
-        "Write" => {
-            tool_input.get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        },
-        "Edit" => {
-            tool_input.get("new_string")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        },
-        "MultiEdit" => {
-            tool_input.get("edits")
-                .and_then(|v| v.as_array())
-                .map(|edits| {
-                    edits.iter()
-                        .filter_map(|edit| edit.get("new_string")?.as_str())
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default()
-        },
+        "Write" => tool_input
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "Edit" => tool_input
+            .get("new_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "MultiEdit" => tool_input
+            .get("edits")
+            .and_then(|v| v.as_array())
+            .map(|edits| {
+                edits
+                    .iter()
+                    .filter_map(|edit| edit.get("new_string")?.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default(),
         _ => String::new(),
     }
 }
 
 /// Get file path from tool input
 pub fn extract_file_path(tool_input: &HashMap<String, serde_json::Value>) -> String {
-    tool_input.get("file_path")
+    tool_input
+        .get("file_path")
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string()

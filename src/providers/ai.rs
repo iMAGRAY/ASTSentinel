@@ -1,12 +1,15 @@
 /// Multi-provider AI client implementation
 use anyhow::{Context, Result};
 use reqwest::Client;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json;
 use std::time::Duration;
 use url::Url;
 
-use crate::{Config, SecurityValidation, GrokCodeAnalysis, GrokCodeIssue, GrokCodeSuggestion, GrokCodeMetrics};
+use crate::{
+    Config, GrokCodeAnalysis, GrokCodeIssue, GrokCodeMetrics, GrokCodeSuggestion,
+    SecurityValidation,
+};
 
 /// Supported AI providers for validation
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -35,14 +38,17 @@ impl std::fmt::Display for AIProvider {
 
 impl std::str::FromStr for AIProvider {
     type Err = anyhow::Error;
-    
+
     fn from_str(s: &str) -> Result<Self> {
         match s.to_lowercase().as_str() {
             "openai" => Ok(AIProvider::OpenAI),
             "anthropic" => Ok(AIProvider::Anthropic),
             "google" => Ok(AIProvider::Google),
             "xai" => Ok(AIProvider::XAI),
-            _ => Err(anyhow::anyhow!("Invalid provider: {}. Supported: openai, anthropic, google, xai", s)),
+            _ => Err(anyhow::anyhow!(
+                "Invalid provider: {}. Supported: openai, anthropic, google, xai",
+                s
+            )),
         }
     }
 }
@@ -73,10 +79,10 @@ impl UniversalAIClient {
             .connect_timeout(Duration::from_secs(config.connect_timeout_secs))
             .build()
             .context("Failed to create HTTP client")?;
-            
+
         Ok(Self { client, config })
     }
-    
+
     /// Validate security using the configured pretool provider
     pub async fn validate_security_pretool(
         &self,
@@ -97,13 +103,9 @@ impl UniversalAIClient {
             AIProvider::XAI => self.validate_with_xai(code, prompt).await,
         }
     }
-    
+
     /// Analyze code using the configured posttool provider
-    pub async fn analyze_code_posttool(
-        &self,
-        code: &str,
-        prompt: &str,
-    ) -> Result<String> {
+    pub async fn analyze_code_posttool(&self, code: &str, prompt: &str) -> Result<String> {
         // Return raw response from AI instead of parsing into structures
         match self.config.posttool_provider {
             AIProvider::OpenAI => {
@@ -119,12 +121,12 @@ impl UniversalAIClient {
             AIProvider::XAI => self.analyze_with_xai_raw(code, prompt).await,
         }
     }
-    
+
     /// GPT-5 specific implementation (uses Responses API)
     async fn validate_with_gpt5(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         // GPT-5-nano uses Chat Completions API with special parameters
         // No temperature, top_p, or stop allowed for reasoning models
         let request_body = serde_json::json!({
@@ -149,8 +151,9 @@ impl UniversalAIClient {
                 }
             }
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -159,82 +162,96 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to GPT-5")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("GPT-5 API error: {}", error_text));
         }
-        
+
         // GPT-5 uses standard Chat Completions response format
         #[derive(Deserialize)]
         struct ChatCompletionResponse {
             choices: Vec<ChatChoice>,
         }
-        
+
         #[derive(Deserialize)]
         struct ChatChoice {
             message: ChatMessage,
         }
-        
+
         #[derive(Deserialize)]
         struct ChatMessage {
             content: String,
         }
-        
+
         // Parse response body
-        let response_text = response.text().await
+        let response_text = response
+            .text()
+            .await
             .context("Failed to read GPT-5 response body")?;
-        
+
         // Check for empty response
         if response_text.trim().is_empty() {
             return Err(anyhow::anyhow!("Empty response from GPT-5"));
         }
-        
+
         // Log only in debug mode
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!("[DEBUG] GPT-5 response length: {} chars", response_text.len());
+            eprintln!(
+                "[DEBUG] GPT-5 response length: {} chars",
+                response_text.len()
+            );
             if response_text.len() < 500 {
                 eprintln!("[DEBUG] GPT-5 response: {response_text}");
             }
         }
-        
+
         // Parse as ChatCompletionResponse
         let gpt5_response: ChatCompletionResponse = serde_json::from_str(&response_text)
-            .with_context(|| format!("Failed to parse GPT-5 response. First 200 chars: {}", 
-                &response_text.chars().take(200).collect::<String>()))?;
-        
+            .with_context(|| {
+                format!(
+                    "Failed to parse GPT-5 response. First 200 chars: {}",
+                    &response_text.chars().take(200).collect::<String>()
+                )
+            })?;
+
         // Extract content from response
-        let json_text = gpt5_response.choices
+        let json_text = gpt5_response
+            .choices
             .first()
             .and_then(|c| Some(c.message.content.clone()))
             .ok_or_else(|| anyhow::anyhow!("No valid response in GPT-5 choices"))?;
-        
+
         // Check for empty content
         if json_text.trim().is_empty() {
             return Err(anyhow::anyhow!("Empty content from GPT-5"));
         }
-        
+
         // Log only in debug mode
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!("[DEBUG] GPT-5 content to parse: {}", 
-                &json_text.chars().take(200).collect::<String>());
+            eprintln!(
+                "[DEBUG] GPT-5 content to parse: {}",
+                &json_text.chars().take(200).collect::<String>()
+            );
         }
-            
+
         // Try to parse as SecurityValidation with better error handling
         let validation: SecurityValidation = serde_json::from_str(&json_text)
             .or_else(|e| {
                 // If JSON parsing fails, try to create a validation from plain text
-                if json_text.to_lowercase().contains("deny") || 
-                   json_text.to_lowercase().contains("block") ||
-                   json_text.to_lowercase().contains("dangerous") {
+                if json_text.to_lowercase().contains("deny")
+                    || json_text.to_lowercase().contains("block")
+                    || json_text.to_lowercase().contains("dangerous")
+                {
                     Ok(SecurityValidation {
                         decision: "deny".to_string(),
                         reason: json_text.clone(),
                         security_concerns: Some(vec![json_text.clone()]),
                         risk_level: "high".to_string(),
                     })
-                } else if json_text.to_lowercase().contains("allow") ||
-                          json_text.to_lowercase().contains("safe") {
+                } else if json_text.to_lowercase().contains("allow")
+                    || json_text.to_lowercase().contains("safe")
+                {
                     Ok(SecurityValidation {
                         decision: "allow".to_string(),
                         reason: "Code appears safe".to_string(),
@@ -245,17 +262,21 @@ impl UniversalAIClient {
                     Err(e)
                 }
             })
-            .with_context(|| format!("Failed to parse security validation. Content: {}", 
-                &json_text.chars().take(200).collect::<String>()))?;
-            
+            .with_context(|| {
+                format!(
+                    "Failed to parse security validation. Content: {}",
+                    &json_text.chars().take(200).collect::<String>()
+                )
+            })?;
+
         Ok(validation)
     }
-    
+
     /// Standard OpenAI implementation (GPT-4, GPT-3.5, etc.)
     async fn validate_with_openai(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.pretool_model,
             "messages": [
@@ -279,8 +300,9 @@ impl UniversalAIClient {
             "max_tokens": 1024,
             "temperature": self.config.temperature
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -288,15 +310,21 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to OpenAI")?;
-            
+
         self.parse_openai_response(response).await
     }
-    
+
     /// Anthropic (Claude) implementation
-    async fn validate_with_anthropic(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
+    async fn validate_with_anthropic(
+        &self,
+        code: &str,
+        prompt: &str,
+    ) -> Result<SecurityValidation> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
-        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
-        
+        let base_url = self
+            .config
+            .get_base_url_for_provider(&AIProvider::Anthropic);
+
         let request_body = serde_json::json!({
             "model": self.config.pretool_model,
             "messages": [
@@ -309,8 +337,9 @@ impl UniversalAIClient {
             "temperature": self.config.temperature,
             "system": prompt
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/v1/messages", base_url))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
@@ -319,15 +348,15 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to Anthropic")?;
-            
+
         self.parse_anthropic_response(response).await
     }
-    
+
     /// Google (Gemini) implementation
     async fn validate_with_google(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Google);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::Google);
-        
+
         let request_body = serde_json::json!({
             "contents": [
                 {
@@ -345,24 +374,28 @@ impl UniversalAIClient {
                 "responseSchema": self.get_security_validation_schema()
             }
         });
-        
+
         let model_name = &self.config.pretool_model;
-        let response = self.client
-            .post(format!("{}/models/{}:generateContent?key={}", base_url, model_name, api_key))
+        let response = self
+            .client
+            .post(format!(
+                "{}/models/{}:generateContent?key={}",
+                base_url, model_name, api_key
+            ))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .await
             .context("Failed to send request to Google")?;
-            
+
         self.parse_google_response(response).await
     }
-    
+
     /// xAI (Grok) implementation
     async fn validate_with_xai(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.pretool_model,
             "messages": [
@@ -386,8 +419,9 @@ impl UniversalAIClient {
             "temperature": self.config.temperature,
             "stream": false
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -395,10 +429,10 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to xAI")?;
-            
-        self.parse_openai_response(response).await  // xAI uses OpenAI-compatible format
+
+        self.parse_openai_response(response).await // xAI uses OpenAI-compatible format
     }
-    
+
     /// Get the JSON schema for security validation
     fn get_security_validation_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -429,7 +463,7 @@ impl UniversalAIClient {
             }
         })
     }
-    
+
     /// Get the JSON schema for code analysis
     #[allow(dead_code)]
     fn get_code_analysis_schema(&self) -> serde_json::Value {
@@ -511,120 +545,145 @@ impl UniversalAIClient {
             }
         })
     }
-    
+
     /// Parse OpenAI-compatible response
-    async fn parse_openai_response(&self, response: reqwest::Response) -> Result<SecurityValidation> {
+    async fn parse_openai_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<SecurityValidation> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct OpenAIResponse {
             choices: Vec<Choice>,
         }
-        
+
         #[derive(Deserialize)]
         struct Choice {
             message: Message,
         }
-        
+
         #[derive(Deserialize)]
         struct Message {
             content: String,
         }
-        
-        let api_response: OpenAIResponse = response.json().await
+
+        let api_response: OpenAIResponse = response
+            .json()
+            .await
             .context("Failed to parse API response")?;
-            
-        let content = api_response.choices.first()
+
+        let content = api_response
+            .choices
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No choices in response"))?
-            .message.content.clone();
-            
-        let validation: SecurityValidation = serde_json::from_str(&content)
-            .context("Failed to parse security validation")?;
-            
+            .message
+            .content
+            .clone();
+
+        let validation: SecurityValidation =
+            serde_json::from_str(&content).context("Failed to parse security validation")?;
+
         Ok(validation)
     }
-    
+
     /// Parse Anthropic response
-    async fn parse_anthropic_response(&self, response: reqwest::Response) -> Result<SecurityValidation> {
+    async fn parse_anthropic_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<SecurityValidation> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Anthropic API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct AnthropicResponse {
             content: Vec<Content>,
         }
-        
+
         #[derive(Deserialize)]
         struct Content {
             text: String,
         }
-        
-        let api_response: AnthropicResponse = response.json().await
+
+        let api_response: AnthropicResponse = response
+            .json()
+            .await
             .context("Failed to parse Anthropic response")?;
-            
-        let text = api_response.content.first()
+
+        let text = api_response
+            .content
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No content in Anthropic response"))?
-            .text.clone();
-            
+            .text
+            .clone();
+
         let validation: SecurityValidation = serde_json::from_str(&text)
             .context("Failed to parse security validation from Anthropic")?;
-            
+
         Ok(validation)
     }
-    
+
     /// Parse Google response
-    async fn parse_google_response(&self, response: reqwest::Response) -> Result<SecurityValidation> {
+    async fn parse_google_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<SecurityValidation> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Google API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct GoogleResponse {
             candidates: Vec<Candidate>,
         }
-        
+
         #[derive(Deserialize)]
         struct Candidate {
             content: ContentPart,
         }
-        
+
         #[derive(Deserialize)]
         struct ContentPart {
             parts: Vec<Part>,
         }
-        
+
         #[derive(Deserialize)]
         struct Part {
             text: String,
         }
-        
-        let api_response: GoogleResponse = response.json().await
+
+        let api_response: GoogleResponse = response
+            .json()
+            .await
             .context("Failed to parse Google response")?;
-            
-        let text = api_response.candidates.first()
+
+        let text = api_response
+            .candidates
+            .first()
             .and_then(|c| c.content.parts.first())
             .ok_or_else(|| anyhow::anyhow!("No content in Google response"))?
-            .text.clone();
-            
+            .text
+            .clone();
+
         let validation: SecurityValidation = serde_json::from_str(&text)
             .context("Failed to parse security validation from Google")?;
-            
+
         Ok(validation)
     }
-    
+
     // Code analysis methods for PostToolUse hook
-    
+
     /// Analyze code with GPT-5 (uses Responses API)
     async fn analyze_with_gpt5(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "input": [
@@ -658,8 +717,9 @@ impl UniversalAIClient {
             },
             "store": false
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/responses", base_url))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -667,43 +727,47 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to GPT-5")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("GPT-5 API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct Gpt5Response {
             output_text: String,
         }
-        
-        let gpt5_response: Gpt5Response = response.json().await
+
+        let gpt5_response: Gpt5Response = response
+            .json()
+            .await
             .context("Failed to parse GPT-5 response")?;
-            
+
         // Try to parse new format first, fallback to old format
-        if let Ok(new_format) = serde_json::from_str::<serde_json::Value>(&gpt5_response.output_text) {
+        if let Ok(new_format) =
+            serde_json::from_str::<serde_json::Value>(&gpt5_response.output_text)
+        {
             if new_format.get("validation_result").is_some() {
                 // Convert new format to old GrokCodeAnalysis format
                 return self.convert_new_format_to_grok_analysis(new_format);
             }
         }
-        
+
         // Fallback to old format parsing
         let analysis: GrokCodeAnalysis = serde_json::from_str(&gpt5_response.output_text)
             .context("Failed to parse code analysis from GPT-5")?;
-            
+
         Ok(analysis)
     }
-    
+
     /// Analyze with GPT-5 and return raw response
     async fn analyze_with_gpt5_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         // Use proper GPT-5 Responses API format
         let combined_input = format!("{}\n\nCode to analyze:\n{}", prompt, code);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "input": combined_input,
@@ -713,8 +777,9 @@ impl UniversalAIClient {
             },
             "store": false
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/responses", base_url))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -722,28 +787,30 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to GPT-5")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("GPT-5 API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct Gpt5Response {
             output_text: String,
         }
-        
-        let gpt5_response: Gpt5Response = response.json().await
+
+        let gpt5_response: Gpt5Response = response
+            .json()
+            .await
             .context("Failed to parse GPT-5 response")?;
-            
+
         Ok(gpt5_response.output_text)
     }
-    
+
     /// Analyze with OpenAI and return raw response
     async fn analyze_with_openai_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
@@ -760,8 +827,9 @@ impl UniversalAIClient {
             "max_tokens": 4500,
             "temperature": self.config.temperature
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -769,40 +837,46 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to OpenAI")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("OpenAI API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct ChatResponse {
             choices: Vec<ChatChoice>,
         }
-        
+
         #[derive(Deserialize)]
         struct ChatChoice {
             message: ChatMessage,
         }
-        
+
         #[derive(Deserialize)]
         struct ChatMessage {
             content: String,
         }
-        
-        let chat_response: ChatResponse = response.json().await
+
+        let chat_response: ChatResponse = response
+            .json()
+            .await
             .context("Failed to parse OpenAI response")?;
-            
-        chat_response.choices.first()
+
+        chat_response
+            .choices
+            .first()
             .map(|choice| choice.message.content.clone())
             .ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))
     }
-    
+
     /// Analyze with Anthropic and return raw response
     async fn analyze_with_anthropic_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
-        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
-        
+        let base_url = self
+            .config
+            .get_base_url_for_provider(&AIProvider::Anthropic);
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
@@ -815,8 +889,9 @@ impl UniversalAIClient {
             "temperature": self.config.temperature,
             "system": prompt
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/v1/messages", base_url))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
@@ -825,35 +900,39 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to Anthropic")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Anthropic API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct AnthropicResponse {
             content: Vec<ContentBlock>,
         }
-        
+
         #[derive(Deserialize)]
         struct ContentBlock {
             text: String,
         }
-        
-        let anthropic_response: AnthropicResponse = response.json().await
+
+        let anthropic_response: AnthropicResponse = response
+            .json()
+            .await
             .context("Failed to parse Anthropic response")?;
-            
-        anthropic_response.content.first()
+
+        anthropic_response
+            .content
+            .first()
             .map(|block| block.text.clone())
             .ok_or_else(|| anyhow::anyhow!("No response from Anthropic"))
     }
-    
+
     /// Analyze with Google and return raw response
     async fn analyze_with_google_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Google);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::Google);
-        
+
         let request_body = serde_json::json!({
             "contents": [
                 {
@@ -869,54 +948,59 @@ impl UniversalAIClient {
                 "maxOutputTokens": self.config.get_max_output_tokens_for_provider(&AIProvider::Google),
             }
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}?key={}", base_url, api_key))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .await
             .context("Failed to send request to Google")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Google API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct GoogleResponse {
             candidates: Vec<Candidate>,
         }
-        
+
         #[derive(Deserialize)]
         struct Candidate {
             content: Content,
         }
-        
+
         #[derive(Deserialize)]
         struct Content {
             parts: Vec<Part>,
         }
-        
+
         #[derive(Deserialize)]
         struct Part {
             text: String,
         }
-        
-        let google_response: GoogleResponse = response.json().await
+
+        let google_response: GoogleResponse = response
+            .json()
+            .await
             .context("Failed to parse Google response")?;
-            
-        google_response.candidates.first()
+
+        google_response
+            .candidates
+            .first()
             .and_then(|c| c.content.parts.first())
             .map(|p| p.text.clone())
             .ok_or_else(|| anyhow::anyhow!("No response from Google"))
     }
-    
+
     /// Analyze with xAI and return raw response
     async fn analyze_with_xai_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
@@ -932,8 +1016,9 @@ impl UniversalAIClient {
             "max_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::XAI),
             "temperature": self.config.temperature
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -941,122 +1026,149 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to xAI")?;
-            
+
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("xAI API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct XaiResponse {
             choices: Vec<XaiChoice>,
         }
-        
+
         #[derive(Deserialize)]
         struct XaiChoice {
             message: XaiMessage,
         }
-        
+
         #[derive(Deserialize)]
         struct XaiMessage {
             content: String,
         }
-        
-        let xai_response: XaiResponse = response.json().await
+
+        let xai_response: XaiResponse = response
+            .json()
+            .await
             .context("Failed to parse xAI response")?;
-            
-        xai_response.choices.first()
+
+        xai_response
+            .choices
+            .first()
             .map(|choice| choice.message.content.clone())
             .ok_or_else(|| anyhow::anyhow!("No response from xAI"))
     }
-    
+
     /// Convert new validation format to GrokCodeAnalysis format
-    fn convert_new_format_to_grok_analysis(&self, new_format: serde_json::Value) -> Result<GrokCodeAnalysis> {
-        let validation_result = new_format.get("validation_result")
+    fn convert_new_format_to_grok_analysis(
+        &self,
+        new_format: serde_json::Value,
+    ) -> Result<GrokCodeAnalysis> {
+        let validation_result = new_format
+            .get("validation_result")
             .ok_or_else(|| anyhow::anyhow!("Missing validation_result in response"))?;
-        
+
         // Extract overall assessment
-        let overall_assessment = validation_result.get("overall_assessment")
+        let overall_assessment = validation_result
+            .get("overall_assessment")
             .ok_or_else(|| anyhow::anyhow!("Missing overall_assessment"))?;
-        
-        let quality_score = overall_assessment.get("quality_score")
+
+        let quality_score = overall_assessment
+            .get("quality_score")
             .and_then(|v| v.as_u64())
             .unwrap_or(500);
-        
-        let status = overall_assessment.get("status")
+
+        let status = overall_assessment
+            .get("status")
             .and_then(|v| v.as_str())
             .unwrap_or("Неизвестно");
-        
+
         // Extract executive summary
-        let summary = validation_result.get("executive_summary")
+        let summary = validation_result
+            .get("executive_summary")
             .and_then(|v| v.as_str())
             .unwrap_or(status)
             .to_string();
-        
+
         // Determine overall quality based on score
         let overall_quality = match quality_score {
             850..=1000 => "excellent",
             700..=849 => "good",
             500..=699 => "needs_improvement",
             _ => "poor",
-        }.to_string();
-        
+        }
+        .to_string();
+
         // Convert critical issues and improvements to GrokCodeIssue format
         let mut issues = Vec::new();
-        
+
         // Add critical issues
-        if let Some(critical_issues) = validation_result.get("critical_issues").and_then(|v| v.as_array()) {
+        if let Some(critical_issues) = validation_result
+            .get("critical_issues")
+            .and_then(|v| v.as_array())
+        {
             for issue in critical_issues {
                 if let Some(issue_obj) = issue.as_object() {
                     issues.push(GrokCodeIssue {
                         severity: "critical".to_string(),
-                        category: issue_obj.get("category")
+                        category: issue_obj
+                            .get("category")
                             .and_then(|v| v.as_str())
                             .unwrap_or("correctness")
                             .to_lowercase(),
-                        message: issue_obj.get("description")
+                        message: issue_obj
+                            .get("description")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Критическая проблема")
                             .to_string(),
-                        line: issue_obj.get("line_reference")
+                        line: issue_obj
+                            .get("line_reference")
                             .and_then(|v| v.as_u64())
                             .map(|v| v as u32),
                         impact: Some(3),
                         fix_cost: Some(2),
                         confidence: Some(0.95),
-                        fix_suggestion: issue_obj.get("solution")
+                        fix_suggestion: issue_obj
+                            .get("solution")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
                     });
                 }
             }
         }
-        
+
         // Add improvement opportunities as issues
-        if let Some(improvements) = validation_result.get("improvement_opportunities").and_then(|v| v.as_array()) {
+        if let Some(improvements) = validation_result
+            .get("improvement_opportunities")
+            .and_then(|v| v.as_array())
+        {
             for improvement in improvements {
                 if let Some(imp_obj) = improvement.as_object() {
-                    let priority = imp_obj.get("priority")
+                    let priority = imp_obj
+                        .get("priority")
                         .and_then(|v| v.as_str())
                         .unwrap_or("P2");
-                    
+
                     let severity = match priority {
                         "P0" | "P1" => "major",
                         "P2" => "minor",
                         _ => "info",
                     };
-                    
+
                     issues.push(GrokCodeIssue {
                         severity: severity.to_string(),
-                        category: imp_obj.get("category")
+                        category: imp_obj
+                            .get("category")
                             .and_then(|v| v.as_str())
                             .unwrap_or("maintainability")
                             .to_lowercase(),
-                        message: imp_obj.get("description")
+                        message: imp_obj
+                            .get("description")
                             .and_then(|v| v.as_str())
                             .unwrap_or("Возможность улучшения")
                             .to_string(),
-                        line: imp_obj.get("line_reference")
+                        line: imp_obj
+                            .get("line_reference")
                             .and_then(|v| v.as_u64())
                             .map(|v| v as u32),
                         impact: Some(match priority {
@@ -1065,20 +1177,25 @@ impl UniversalAIClient {
                         }),
                         fix_cost: Some(2),
                         confidence: Some(0.8),
-                        fix_suggestion: imp_obj.get("solution")
+                        fix_suggestion: imp_obj
+                            .get("solution")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
                     });
                 }
             }
         }
-        
+
         // Convert positive aspects to suggestions
         let mut suggestions = Vec::new();
-        if let Some(positive_aspects) = validation_result.get("positive_aspects").and_then(|v| v.as_array()) {
+        if let Some(positive_aspects) = validation_result
+            .get("positive_aspects")
+            .and_then(|v| v.as_array())
+        {
             for (i, aspect) in positive_aspects.iter().enumerate() {
                 if let Some(text) = aspect.as_str() {
-                    if i < 3 { // Limit to first 3 positive aspects
+                    if i < 3 {
+                        // Limit to first 3 positive aspects
                         suggestions.push(GrokCodeSuggestion {
                             category: "strengths".to_string(),
                             description: text.to_string(),
@@ -1090,7 +1207,7 @@ impl UniversalAIClient {
                 }
             }
         }
-        
+
         // Add metrics if available
         let metrics = overall_assessment.get("score_breakdown").map(|breakdown| {
             // Determine complexity based on overall score
@@ -1098,23 +1215,28 @@ impl UniversalAIClient {
                 800..=1000 => "low",
                 600..=799 => "medium",
                 _ => "high",
-            }.to_string();
-            
+            }
+            .to_string();
+
             GrokCodeMetrics {
                 complexity: Some(complexity),
-                readability: breakdown.get("maintainability")
+                readability: breakdown
+                    .get("maintainability")
                     .and_then(|m| m.get("score"))
                     .and_then(|s| s.as_u64())
-                    .map(|score| match score {
-                        170..=200 => "excellent",
-                        140..=169 => "good",
-                        100..=139 => "fair",
-                        _ => "poor",
-                    }.to_string()),
+                    .map(|score| {
+                        match score {
+                            170..=200 => "excellent",
+                            140..=169 => "good",
+                            100..=139 => "fair",
+                            _ => "poor",
+                        }
+                        .to_string()
+                    }),
                 test_coverage: None, // Not available in new format
             }
         });
-        
+
         Ok(GrokCodeAnalysis {
             summary,
             overall_quality,
@@ -1123,12 +1245,12 @@ impl UniversalAIClient {
             metrics,
         })
     }
-    
+
     /// Analyze code with standard OpenAI models
     async fn analyze_with_openai(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
@@ -1152,8 +1274,9 @@ impl UniversalAIClient {
             "max_tokens": 2048,
             "temperature": self.config.temperature
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -1161,15 +1284,17 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to OpenAI")?;
-            
+
         self.parse_openai_analysis_response(response).await
     }
-    
+
     /// Analyze code with Anthropic Claude
     async fn analyze_with_anthropic(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
-        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
-        
+        let base_url = self
+            .config
+            .get_base_url_for_provider(&AIProvider::Anthropic);
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
@@ -1182,8 +1307,9 @@ impl UniversalAIClient {
             "temperature": self.config.temperature,
             "system": prompt
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{}/v1/messages", base_url))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
@@ -1192,15 +1318,15 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to Anthropic")?;
-            
+
         self.parse_anthropic_analysis_response(response).await
     }
-    
+
     /// Analyze code with Google Gemini
     async fn analyze_with_google(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Google);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::Google);
-        
+
         let request_body = serde_json::json!({
             "contents": [
                 {
@@ -1218,24 +1344,28 @@ impl UniversalAIClient {
                 "responseSchema": self.get_code_analysis_schema()
             }
         });
-        
+
         let model_name = &self.config.posttool_model;
-        let response = self.client
-            .post(format!("{}/models/{}:generateContent?key={}", base_url, model_name, api_key))
+        let response = self
+            .client
+            .post(format!(
+                "{}/models/{}:generateContent?key={}",
+                base_url, model_name, api_key
+            ))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
             .await
             .context("Failed to send request to Google")?;
-            
+
         self.parse_google_analysis_response(response).await
     }
-    
+
     /// Analyze code with xAI Grok
     async fn analyze_with_xai(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
-        
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
@@ -1259,8 +1389,9 @@ impl UniversalAIClient {
             "temperature": self.config.temperature,
             "stream": false
         });
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(format!("{base_url}/chat/completions"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
@@ -1268,115 +1399,140 @@ impl UniversalAIClient {
             .send()
             .await
             .context("Failed to send request to xAI")?;
-            
-        self.parse_openai_analysis_response(response).await  // xAI uses OpenAI-compatible format
+
+        self.parse_openai_analysis_response(response).await // xAI uses OpenAI-compatible format
     }
-    
+
     // Helper methods to parse analysis responses
-    
-    async fn parse_openai_analysis_response(&self, response: reqwest::Response) -> Result<GrokCodeAnalysis> {
+
+    async fn parse_openai_analysis_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<GrokCodeAnalysis> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct OpenAIResponse {
             choices: Vec<Choice>,
         }
-        
+
         #[derive(Deserialize)]
         struct Choice {
             message: Message,
         }
-        
+
         #[derive(Deserialize)]
         struct Message {
             content: String,
         }
-        
-        let api_response: OpenAIResponse = response.json().await
+
+        let api_response: OpenAIResponse = response
+            .json()
+            .await
             .context("Failed to parse API response")?;
-            
-        let content = api_response.choices.first()
+
+        let content = api_response
+            .choices
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No choices in response"))?
-            .message.content.clone();
-            
-        let analysis: GrokCodeAnalysis = serde_json::from_str(&content)
-            .context("Failed to parse code analysis")?;
-            
+            .message
+            .content
+            .clone();
+
+        let analysis: GrokCodeAnalysis =
+            serde_json::from_str(&content).context("Failed to parse code analysis")?;
+
         Ok(analysis)
     }
-    
-    async fn parse_anthropic_analysis_response(&self, response: reqwest::Response) -> Result<GrokCodeAnalysis> {
+
+    async fn parse_anthropic_analysis_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<GrokCodeAnalysis> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Anthropic API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct AnthropicResponse {
             content: Vec<Content>,
         }
-        
+
         #[derive(Deserialize)]
         struct Content {
             text: String,
         }
-        
-        let api_response: AnthropicResponse = response.json().await
+
+        let api_response: AnthropicResponse = response
+            .json()
+            .await
             .context("Failed to parse Anthropic response")?;
-            
-        let text = api_response.content.first()
+
+        let text = api_response
+            .content
+            .first()
             .ok_or_else(|| anyhow::anyhow!("No content in Anthropic response"))?
-            .text.clone();
-            
-        let analysis: GrokCodeAnalysis = serde_json::from_str(&text)
-            .context("Failed to parse code analysis from Anthropic")?;
-            
+            .text
+            .clone();
+
+        let analysis: GrokCodeAnalysis =
+            serde_json::from_str(&text).context("Failed to parse code analysis from Anthropic")?;
+
         Ok(analysis)
     }
-    
-    async fn parse_google_analysis_response(&self, response: reqwest::Response) -> Result<GrokCodeAnalysis> {
+
+    async fn parse_google_analysis_response(
+        &self,
+        response: reqwest::Response,
+    ) -> Result<GrokCodeAnalysis> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Google API error: {}", error_text));
         }
-        
+
         #[derive(Deserialize)]
         struct GoogleResponse {
             candidates: Vec<Candidate>,
         }
-        
+
         #[derive(Deserialize)]
         struct Candidate {
             content: ContentPart,
         }
-        
+
         #[derive(Deserialize)]
         struct ContentPart {
             parts: Vec<Part>,
         }
-        
+
         #[derive(Deserialize)]
         struct Part {
             text: String,
         }
-        
-        let api_response: GoogleResponse = response.json().await
+
+        let api_response: GoogleResponse = response
+            .json()
+            .await
             .context("Failed to parse Google response")?;
-            
-        let text = api_response.candidates.first()
+
+        let text = api_response
+            .candidates
+            .first()
             .and_then(|c| c.content.parts.first())
             .ok_or_else(|| anyhow::anyhow!("No content in Google response"))?
-            .text.clone();
-            
-        let analysis: GrokCodeAnalysis = serde_json::from_str(&text)
-            .context("Failed to parse code analysis from Google")?;
-            
+            .text
+            .clone();
+
+        let analysis: GrokCodeAnalysis =
+            serde_json::from_str(&text).context("Failed to parse code analysis from Google")?;
+
         Ok(analysis)
     }
-    
+
     /// Extract text content from GPT-5 output array
     /// Handles mixed JSON responses where schema and data are returned together
     fn extract_text_from_output_array(output: &[serde_json::Value]) -> String {
@@ -1388,61 +1544,71 @@ impl UniversalAIClient {
                     continue;
                 }
             }
-            
+
             // Check if this is an incomplete message - we'll accept incomplete content for now
             if let Some(status) = output_item.get("status").and_then(|v| v.as_str()) {
                 if status == "incomplete" {
-                    eprintln!("Warning: GPT-5 returned incomplete response, extracting partial content");
+                    eprintln!(
+                        "Warning: GPT-5 returned incomplete response, extracting partial content"
+                    );
                 }
             }
-            
+
             // Handle GPT-5 message structure: output_item.content[].text
             if let Some(content_array) = output_item.get("content").and_then(|v| v.as_array()) {
                 for content_entry in content_array {
                     if let Some(text_content) = content_entry.get("text").and_then(|v| v.as_str()) {
                         let trimmed_text = text_content.trim();
                         if !trimmed_text.is_empty() {
-                            eprintln!("Extracted {} characters from GPT-5 content", trimmed_text.len());
-                            
+                            eprintln!(
+                                "Extracted {} characters from GPT-5 content",
+                                trimmed_text.len()
+                            );
+
                             // Handle mixed JSON response (schema + data)
                             // GPT-5 sometimes returns: {schema},\n{data}
                             // We need to extract only the data part
                             if trimmed_text.contains("},\n{") || trimmed_text.contains("},\\n{") {
                                 eprintln!("Detected mixed JSON response, extracting data section");
-                                
+
                                 // Try to find and parse individual JSON objects
                                 let mut last_valid_json = String::new();
                                 let mut brace_count = 0;
                                 let mut current_json = String::new();
                                 let mut in_string = false;
                                 let mut escape_next = false;
-                                
+
                                 for ch in trimmed_text.chars() {
                                     if escape_next {
                                         current_json.push(ch);
                                         escape_next = false;
                                         continue;
                                     }
-                                    
+
                                     if ch == '\\' && in_string {
                                         escape_next = true;
                                         current_json.push(ch);
                                         continue;
                                     }
-                                    
+
                                     if ch == '"' && !escape_next {
                                         in_string = !in_string;
                                     }
-                                    
+
                                     if !in_string {
                                         if ch == '{' {
                                             if brace_count == 0 && !current_json.is_empty() {
                                                 // Try to parse completed JSON
-                                                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&current_json) {
+                                                if let Ok(parsed) =
+                                                    serde_json::from_str::<serde_json::Value>(
+                                                        &current_json,
+                                                    )
+                                                {
                                                     // Check if this is data (has active_context) not schema
-                                                    if parsed.get("active_context").is_some() || 
-                                                       parsed.get("technical_state").is_some() ||
-                                                       parsed.get("key_insights").is_some() {
+                                                    if parsed.get("active_context").is_some()
+                                                        || parsed.get("technical_state").is_some()
+                                                        || parsed.get("key_insights").is_some()
+                                                    {
                                                         last_valid_json = current_json.clone();
                                                         eprintln!("Found valid data JSON object");
                                                     }
@@ -1454,39 +1620,49 @@ impl UniversalAIClient {
                                             brace_count -= 1;
                                         }
                                     }
-                                    
+
                                     current_json.push(ch);
-                                    
+
                                     if brace_count == 0 && current_json.trim().ends_with('}') {
                                         // Try to parse completed JSON
-                                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&current_json) {
+                                        if let Ok(parsed) =
+                                            serde_json::from_str::<serde_json::Value>(&current_json)
+                                        {
                                             // Check if this is data (has active_context) not schema
-                                            if parsed.get("active_context").is_some() || 
-                                               parsed.get("technical_state").is_some() ||
-                                               parsed.get("key_insights").is_some() {
+                                            if parsed.get("active_context").is_some()
+                                                || parsed.get("technical_state").is_some()
+                                                || parsed.get("key_insights").is_some()
+                                            {
                                                 last_valid_json = current_json.clone();
                                                 eprintln!("Found valid data JSON object at end");
                                             }
                                         }
                                     }
                                 }
-                                
+
                                 if !last_valid_json.is_empty() {
-                                    eprintln!("Returning extracted data JSON of {} chars", last_valid_json.len());
+                                    eprintln!(
+                                        "Returning extracted data JSON of {} chars",
+                                        last_valid_json.len()
+                                    );
                                     return last_valid_json;
                                 }
                             }
-                            
+
                             // If no mixed JSON detected or extraction failed, return as-is
                             return trimmed_text.to_string();
                         }
                     }
                 }
-            } else if let Some(direct_content) = output_item.get("content").and_then(|v| v.as_str()) {
+            } else if let Some(direct_content) = output_item.get("content").and_then(|v| v.as_str())
+            {
                 // Fallback for direct string content
                 let trimmed_content = direct_content.trim();
                 if !trimmed_content.is_empty() {
-                    eprintln!("Extracted {} characters from GPT-5 direct content", trimmed_content.len());
+                    eprintln!(
+                        "Extracted {} characters from GPT-5 direct content",
+                        trimmed_content.len()
+                    );
                     return trimmed_content.to_string();
                 }
             }
@@ -1505,44 +1681,48 @@ impl UniversalAIClient {
         if api_key.is_empty() {
             return Err(anyhow::anyhow!("OpenAI API key not configured"));
         }
-        
+
         // Validate API key format for OpenAI (should start with 'sk-')
         if !api_key.starts_with("sk-") {
-            return Err(anyhow::anyhow!("Invalid OpenAI API key format. Key should start with 'sk-'"));
+            return Err(anyhow::anyhow!(
+                "Invalid OpenAI API key format. Key should start with 'sk-'"
+            ));
         }
-        
+
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
-        
+
         // GPT-5 Responses API - request JSON format in prompt
         let json_schema_str = serde_json::to_string_pretty(&self.get_memory_optimization_schema())?;
         let request_body = serde_json::json!({
             "model": model,
-            "input": format!("{}\n\n{}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{}", 
+            "input": format!("{}\n\n{}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{}",
                 prompt, context, json_schema_str),
             "max_output_tokens": 12000,
             "reasoning": {
                 "effort": "medium"
             }
         });
-        
+
         // Debug logging for GPT-5 troubleshooting (only in debug mode)
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
             eprintln!("GPT-5 Debug: Model = {}", model);
         }
-        
+
         // Implement retry logic for transient failures
         let mut retries = 3;
         let mut last_error = None;
-        
+
         while retries > 0 {
             // Construct proper URL - build directly since base_url already includes /v1
             let responses_url_string = format!("{}/responses", base_url.trim_end_matches('/'));
-            let responses_url = Url::parse(&responses_url_string)
-                .with_context(|| format!("Failed to parse responses URL: {}", responses_url_string))?;
-            
+            let responses_url = Url::parse(&responses_url_string).with_context(|| {
+                format!("Failed to parse responses URL: {}", responses_url_string)
+            })?;
+
             eprintln!("GPT-5 Debug: Requesting URL = {}", responses_url);
-            
-            let response = self.client
+
+            let response = self
+                .client
                 .post(responses_url)
                 .header("Authorization", format!("Bearer {api_key}"))
                 .header("Content-Type", "application/json")
@@ -1550,7 +1730,7 @@ impl UniversalAIClient {
                 .json(&request_body)
                 .send()
                 .await;
-                
+
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
@@ -1559,23 +1739,33 @@ impl UniversalAIClient {
                             output_text: Option<String>,
                             output: Option<Vec<serde_json::Value>>,
                         }
-                        
+
                         match resp.json::<Gpt5Response>().await {
                             Ok(gpt5_response) => {
                                 eprintln!("GPT-5 response received, extracting content...");
-                                
+
                                 // Try output_text first, then extract from output array
-                                let text_content = if let Some(output_text) = gpt5_response.output_text {
+                                let text_content = if let Some(output_text) =
+                                    gpt5_response.output_text
+                                {
                                     eprintln!("Using output_text field");
                                     output_text
                                 } else if let Some(output) = gpt5_response.output {
-                                    eprintln!("Extracting from output array with {} items", output.len());
-                                    eprintln!("Full output array: {}", serde_json::to_string_pretty(&output).unwrap_or_default());
+                                    eprintln!(
+                                        "Extracting from output array with {} items",
+                                        output.len()
+                                    );
+                                    eprintln!(
+                                        "Full output array: {}",
+                                        serde_json::to_string_pretty(&output).unwrap_or_default()
+                                    );
                                     Self::extract_text_from_output_array(&output)
                                 } else {
-                                    return Err(anyhow::anyhow!("No output content found in response"));
+                                    return Err(anyhow::anyhow!(
+                                        "No output content found in response"
+                                    ));
                                 };
-                                
+
                                 // Check if content is empty
                                 if text_content.trim().is_empty() {
                                     last_error = Some(anyhow::anyhow!("Response content is empty"));
@@ -1587,27 +1777,44 @@ impl UniversalAIClient {
                                         Ok(optimization) => {
                                             eprintln!("GPT-5 returned valid JSON structure");
                                             return Ok(optimization);
-                                        },
+                                        }
                                         Err(e) => {
-                                            eprintln!("Failed to parse JSON response from GPT-5: {}", e);
+                                            eprintln!(
+                                                "Failed to parse JSON response from GPT-5: {}",
+                                                e
+                                            );
                                             eprintln!("Response content: {}", text_content);
-                                            last_error = Some(anyhow::anyhow!("GPT-5 JSON parsing failed: {}", e));
+                                            last_error = Some(anyhow::anyhow!(
+                                                "GPT-5 JSON parsing failed: {}",
+                                                e
+                                            ));
                                         }
                                     }
                                 }
                             }
                             Err(e) => {
-                                last_error = Some(anyhow::anyhow!("Failed to parse response: {}", e));
+                                last_error =
+                                    Some(anyhow::anyhow!("Failed to parse response: {}", e));
                             }
                         }
                     } else {
                         let status = resp.status();
                         // Try to get error details for debugging
-                        let error_text = resp.text().await.unwrap_or_else(|_| "Unable to read error".to_string());
+                        let error_text = resp
+                            .text()
+                            .await
+                            .unwrap_or_else(|_| "Unable to read error".to_string());
                         // Log first 500 chars of error for debugging
                         let error_preview: String = error_text.chars().take(500).collect();
-                        eprintln!("GPT-5 API error (attempt {}): Status {} - {}", 4 - retries, status, error_preview);
-                        last_error = Some(anyhow::anyhow!("API request failed with status {}. {}", status, 
+                        eprintln!(
+                            "GPT-5 API error (attempt {}): Status {} - {}",
+                            4 - retries,
+                            status,
+                            error_preview
+                        );
+                        last_error = Some(anyhow::anyhow!(
+                            "API request failed with status {}. {}",
+                            status,
                             if error_preview.contains("context_length_exceeded") {
                                 "Context too long"
                             } else if error_preview.contains("invalid_schema") {
@@ -1623,7 +1830,7 @@ impl UniversalAIClient {
                     eprintln!("Network error (attempt {}): {}", 4 - retries, e);
                 }
             }
-            
+
             retries -= 1;
             if retries > 0 {
                 // Wait before retrying (exponential backoff with jitter)
@@ -1631,13 +1838,14 @@ impl UniversalAIClient {
                 let jitter = rand::random::<f64>() * 0.5 + 0.75; // 0.75 to 1.25 multiplier
                 let delay_ms = (base_delay_secs as f64 * 1000.0 * jitter) as u64;
                 let delay_with_jitter = delay_ms.max(100).min(300_000); // Min 100ms, Max 5 minutes
-                tokio::time::sleep(Duration::from_secs_f64(delay_with_jitter as f64 / 1000.0)).await;
+                tokio::time::sleep(Duration::from_secs_f64(delay_with_jitter as f64 / 1000.0))
+                    .await;
             }
         }
-        
+
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed to call GPT-5 after 3 attempts")))
     }
-    
+
     /// Create MemoryOptimization structure from GPT-5 text response
     #[allow(dead_code)]
     fn create_memory_optimization_from_text(text_content: &str) -> serde_json::Value {
@@ -1648,21 +1856,21 @@ impl UniversalAIClient {
         } else {
             text_content.to_string()
         };
-        
+
         // Detect code and errors with case-insensitive checking
         let text_lower = text_content.to_lowercase();
         let has_code = Self::detect_code_content(&text_lower);
         let has_errors = Self::detect_error_content(&text_lower);
-        
+
         // Determine current task based on content
         let current_task = if has_code {
             "Code implementation and optimization"
         } else if has_errors {
-            "Error resolution and debugging"  
+            "Error resolution and debugging"
         } else {
             "General problem solving and analysis"
         };
-        
+
         // Extract working files if mentioned
         let working_files = if text_content.contains(".py") {
             vec!["Python scripts".to_string()]
@@ -1673,7 +1881,7 @@ impl UniversalAIClient {
         } else {
             vec![]
         };
-        
+
         // Create structured memory optimization
         serde_json::json!({
             "active_context": {
@@ -1724,34 +1932,34 @@ impl UniversalAIClient {
             "reduction_ratio": 0.8 // Assumed reduction from raw conversation to structured format
         })
     }
-    
+
     /// Detect code content in text (case-insensitive)
     #[allow(dead_code)]
     fn detect_code_content(text_lower: &str) -> bool {
-        text_lower.contains("```") ||
-        text_lower.contains("def ") ||
-        text_lower.contains("function") ||
-        text_lower.contains("class ") ||
-        text_lower.contains("import ") ||
-        text_lower.contains("const ") ||
-        text_lower.contains("let ") ||
-        text_lower.contains("var ") ||
-        text_lower.contains("fn ") ||
-        text_lower.contains("struct ") ||
-        text_lower.contains("impl ")
+        text_lower.contains("```")
+            || text_lower.contains("def ")
+            || text_lower.contains("function")
+            || text_lower.contains("class ")
+            || text_lower.contains("import ")
+            || text_lower.contains("const ")
+            || text_lower.contains("let ")
+            || text_lower.contains("var ")
+            || text_lower.contains("fn ")
+            || text_lower.contains("struct ")
+            || text_lower.contains("impl ")
     }
-    
-    /// Detect error content in text (case-insensitive) 
+
+    /// Detect error content in text (case-insensitive)
     #[allow(dead_code)]
     fn detect_error_content(text_lower: &str) -> bool {
-        text_lower.contains("error") ||
-        text_lower.contains("exception") ||
-        text_lower.contains("failed") ||
-        text_lower.contains("panic") ||
-        text_lower.contains("crash") ||
-        text_lower.contains("bug")
+        text_lower.contains("error")
+            || text_lower.contains("exception")
+            || text_lower.contains("failed")
+            || text_lower.contains("panic")
+            || text_lower.contains("crash")
+            || text_lower.contains("bug")
     }
-    
+
     /// Get the JSON schema for memory optimization
     fn get_memory_optimization_schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -1773,7 +1981,7 @@ impl UniversalAIClient {
                             "description": "Files currently being modified"
                         },
                         "last_action": {
-                            "type": "string", 
+                            "type": "string",
                             "description": "Last thing that was done"
                         },
                         "next_steps": {

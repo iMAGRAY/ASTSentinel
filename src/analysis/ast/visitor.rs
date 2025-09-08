@@ -1,8 +1,8 @@
+use crate::analysis::ast::languages::SupportedLanguage;
+use crate::analysis::metrics::ComplexityMetrics;
+use anyhow::Result;
 /// Tree-sitter visitor for calculating complexity metrics across languages
 use tree_sitter::Node;
-use crate::analysis::metrics::ComplexityMetrics;
-use crate::analysis::ast::languages::SupportedLanguage;
-use anyhow::Result;
 
 // Methods are included directly in this file for simplicity
 
@@ -11,7 +11,7 @@ pub struct ComplexityVisitor<'a> {
     #[allow(dead_code)]
     source_code: &'a str,
     language: SupportedLanguage,
-    
+
     // Complexity metrics
     cyclomatic_complexity: u32,
     cognitive_complexity: u32,
@@ -60,15 +60,15 @@ impl<'a> ComplexityVisitor<'a> {
         // Validate parameter_list_type for current language
         if !self.is_valid_parameter_list_type(parameter_list_type) {
             return Err(anyhow::anyhow!(
-                "Invalid parameter list type '{}' for language {}", 
-                parameter_list_type, 
+                "Invalid parameter list type '{}' for language {}",
+                parameter_list_type,
                 self.language
             ));
         }
 
         let mut found_parameter_list = false;
         let mut cursor = node.walk();
-        
+
         if cursor.goto_first_child() {
             loop {
                 let child = cursor.node();
@@ -88,8 +88,10 @@ impl<'a> ComplexityVisitor<'a> {
         // Log when no parameter list is found for debugging
         if !found_parameter_list {
             #[cfg(debug_assertions)]
-            eprintln!("Warning: No parameter list of type '{}' found in {} node", 
-                     parameter_list_type, self.language);
+            eprintln!(
+                "Warning: No parameter list of type '{}' found in {} node",
+                parameter_list_type, self.language
+            );
         }
 
         Ok(())
@@ -113,12 +115,15 @@ impl<'a> ComplexityVisitor<'a> {
     fn get_parameter_node_kinds(&self) -> Result<&'static [&'static str]> {
         match self.language {
             SupportedLanguage::Python => Ok(&["parameters", "lambda_parameters"]),
-            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => 
-                Ok(&["formal_parameters", "parameters"]),
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                Ok(&["formal_parameters", "parameters"])
+            }
             SupportedLanguage::Java => Ok(&["formal_parameters", "receiver_parameter"]),
             SupportedLanguage::CSharp => Ok(&["parameter_list", "formal_parameters"]),
             SupportedLanguage::Go => Ok(&["parameter_list", "parameters"]),
-            SupportedLanguage::C | SupportedLanguage::Cpp => Ok(&["parameter_list", "formal_parameters"]),
+            SupportedLanguage::C | SupportedLanguage::Cpp => {
+                Ok(&["parameter_list", "formal_parameters"])
+            }
             SupportedLanguage::Php => Ok(&["formal_parameters", "parameters"]),
             SupportedLanguage::Ruby => Ok(&["parameters", "block_parameters"]),
             // Rust should use syn crate, not Tree-sitter
@@ -133,15 +138,36 @@ impl<'a> ComplexityVisitor<'a> {
     /// Returns the node types that represent individual parameters within parameter lists
     fn get_individual_parameter_kinds(&self) -> Result<&'static [&'static str]> {
         match self.language {
-            SupportedLanguage::Python => Ok(&["identifier", "typed_parameter", "default_parameter", "list_splat_pattern"]),
-            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => 
-                Ok(&["identifier", "formal_parameter", "rest_parameter", "object_pattern", "array_pattern"]),
-            SupportedLanguage::Java => Ok(&["formal_parameter", "receiver_parameter", "spread_parameter"]),
+            SupportedLanguage::Python => Ok(&[
+                "identifier",
+                "typed_parameter",
+                "default_parameter",
+                "list_splat_pattern",
+            ]),
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => Ok(&[
+                "identifier",
+                "formal_parameter",
+                "rest_parameter",
+                "object_pattern",
+                "array_pattern",
+            ]),
+            SupportedLanguage::Java => {
+                Ok(&["formal_parameter", "receiver_parameter", "spread_parameter"])
+            }
             SupportedLanguage::CSharp => Ok(&["parameter", "parameter_array"]),
-            SupportedLanguage::Go => Ok(&["parameter_declaration", "variadic_parameter_declaration"]),
-            SupportedLanguage::C | SupportedLanguage::Cpp => Ok(&["parameter_declaration", "abstract_declarator"]),
+            SupportedLanguage::Go => {
+                Ok(&["parameter_declaration", "variadic_parameter_declaration"])
+            }
+            SupportedLanguage::C | SupportedLanguage::Cpp => {
+                Ok(&["parameter_declaration", "abstract_declarator"])
+            }
             SupportedLanguage::Php => Ok(&["formal_parameter", "property_promotion_parameter"]),
-            SupportedLanguage::Ruby => Ok(&["identifier", "splat_parameter", "hash_splat_parameter", "block_parameter"]),
+            SupportedLanguage::Ruby => Ok(&[
+                "identifier",
+                "splat_parameter",
+                "hash_splat_parameter",
+                "block_parameter",
+            ]),
             // Rust should use syn crate, not Tree-sitter
             SupportedLanguage::Rust => Err(anyhow::anyhow!(
                 "Rust AST parsing should use syn crate, not Tree-sitter. \
@@ -154,18 +180,18 @@ impl<'a> ComplexityVisitor<'a> {
     fn count_parameter_nodes(&self, param_list_node: &Node) -> Result<u32> {
         let mut count = 0;
         let valid_param_kinds = self.get_individual_parameter_kinds()?;
-        
+
         let mut cursor = param_list_node.walk();
         if cursor.goto_first_child() {
             loop {
                 let child = cursor.node();
                 let node_kind = child.kind();
-                
+
                 // Use language-specific parameter kinds for better accuracy
                 if valid_param_kinds.contains(&node_kind) {
                     count += 1;
                 }
-                
+
                 if !cursor.goto_next_sibling() {
                     break;
                 }
@@ -207,7 +233,7 @@ impl<'a> ComplexityVisitor<'a> {
                         break;
                     }
                 }
-                
+
                 // Reverse to maintain left-to-right traversal order
                 for child in children.into_iter().rev() {
                     stack.push(child);
@@ -226,7 +252,7 @@ impl<'a> ComplexityVisitor<'a> {
 
     fn process_node(&mut self, node: &Node) -> Result<()> {
         let node_type = node.kind();
-        
+
         match self.language {
             SupportedLanguage::Python => self.process_python_node(node_type, node),
             SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
@@ -239,9 +265,12 @@ impl<'a> ComplexityVisitor<'a> {
                 eprintln!("Warning: Rust should use syn crate for AST analysis, not Tree-sitter");
                 self.process_generic_node(node_type, node)
             }
-            SupportedLanguage::CSharp | SupportedLanguage::Go | 
-            SupportedLanguage::C | SupportedLanguage::Cpp |
-            SupportedLanguage::Php | SupportedLanguage::Ruby => {
+            SupportedLanguage::CSharp
+            | SupportedLanguage::Go
+            | SupportedLanguage::C
+            | SupportedLanguage::Cpp
+            | SupportedLanguage::Php
+            | SupportedLanguage::Ruby => {
                 // Use generic processing for languages without specific handlers yet
                 self.process_generic_node(node_type, node)
             }
@@ -293,7 +322,10 @@ impl<'a> ComplexityVisitor<'a> {
 
     fn process_js_ts_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
         match node_type {
-            "function_declaration" | "function_expression" | "arrow_function" | "method_definition" => {
+            "function_declaration"
+            | "function_expression"
+            | "arrow_function"
+            | "method_definition" => {
                 self.function_count += 1;
                 self.enter_scope();
                 self.count_parameters(node, "formal_parameters")?;
@@ -368,9 +400,15 @@ impl<'a> ComplexityVisitor<'a> {
     /// Process generic AST nodes for languages without specific handlers
     pub fn process_generic_node(&mut self, node_type: &str, _node: &Node) -> Result<()> {
         match node_type {
-            "function_definition" | "function_declaration" | "function_expression" |
-            "method_definition" | "method_declaration" | "arrow_function" |
-            "lambda" | "function" | "def" => {
+            "function_definition"
+            | "function_declaration"
+            | "function_expression"
+            | "method_definition"
+            | "method_declaration"
+            | "arrow_function"
+            | "lambda"
+            | "function"
+            | "def" => {
                 self.function_count += 1;
                 self.enter_scope();
             }
@@ -379,15 +417,15 @@ impl<'a> ComplexityVisitor<'a> {
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "while_statement" | "while_loop" | "for_statement" | "for_loop" |
-            "for_in_statement" | "for_of_statement" | "foreach_statement" |
-            "do_while_statement" | "repeat_statement" => {
+            "while_statement" | "while_loop" | "for_statement" | "for_loop"
+            | "for_in_statement" | "for_of_statement" | "foreach_statement"
+            | "do_while_statement" | "repeat_statement" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "switch_statement" | "switch_expression" | "case_statement" |
-            "match_statement" | "pattern_match" => {
+            "switch_statement" | "switch_expression" | "case_statement" | "match_statement"
+            | "pattern_match" => {
                 self.cyclomatic_complexity += 1;
                 self.enter_scope();
             }
@@ -402,7 +440,10 @@ impl<'a> ComplexityVisitor<'a> {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!("Unrecognized node type for {}: {}", self.language, node_type);
+                eprintln!(
+                    "Unrecognized node type for {}: {}",
+                    self.language, node_type
+                );
             }
         }
         Ok(())

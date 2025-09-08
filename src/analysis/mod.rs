@@ -6,8 +6,5 @@ pub mod project;
 // Re-export commonly used types
 pub use metrics::ComplexityMetrics;
 pub use project::{
-    ProjectStructure,
-    scan_project_structure,
-    format_project_structure_for_ai,
-    ScanConfig,
+    format_project_structure_for_ai, scan_project_structure, ProjectStructure, ScanConfig,
 };

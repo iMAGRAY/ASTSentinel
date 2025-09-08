@@ -1,6 +1,6 @@
 /// Diff formatter for showing code changes in unified diff format
 /// This helps AI understand exactly what changes are being made
-use std::cmp::{min, max};
+use std::cmp::{max, min};
 
 /// Format code changes as unified diff for AI context
 pub fn format_code_diff(
@@ -10,18 +10,18 @@ pub fn format_code_diff(
     context_lines: usize,
 ) -> String {
     let mut result = String::new();
-    
+
     // Add file header
     result.push_str(&format!("--- {}\n", file_path));
     result.push_str(&format!("+++ {} (modified)\n", file_path));
-    
+
     match (old_content, new_content) {
         (None, Some(new)) => {
             // New file creation
             result.push_str("@@ -0,0 +1,");
             let lines: Vec<&str> = new.lines().collect();
             result.push_str(&format!("{} @@\n", lines.len()));
-            
+
             for (i, line) in lines.iter().enumerate() {
                 result.push_str(&format!("{} + {}\n", i + 1, line));
             }
@@ -30,7 +30,7 @@ pub fn format_code_diff(
             // File deletion
             let lines: Vec<&str> = old.lines().collect();
             result.push_str(&format!("@@ -1,{} +0,0 @@\n", lines.len()));
-            
+
             for (i, line) in lines.iter().enumerate() {
                 result.push_str(&format!("{} - {}\n", i + 1, line));
             }
@@ -44,7 +44,7 @@ pub fn format_code_diff(
             result.push_str("@@ No changes @@\n");
         }
     }
-    
+
     result
 }
 
@@ -57,27 +57,27 @@ pub fn format_edit_diff(
     context_lines: usize,
 ) -> String {
     let mut result = String::new();
-    
+
     // Add file header
     result.push_str(&format!("--- {}\n", file_path));
     result.push_str(&format!("+++ {} (modified)\n", file_path));
-    
+
     if let Some(content) = file_content {
         // Find the location of old_string in the file
         if let Some(pos) = content.find(old_string) {
             let before = &content[..pos];
             let _after = &content[pos + old_string.len()..];
-            
+
             // Count line numbers
             let line_num = before.lines().count() + 1;
             let old_lines: Vec<&str> = old_string.lines().collect();
             let new_lines: Vec<&str> = new_string.lines().collect();
-            
+
             // Get context lines before and after
             let all_lines: Vec<&str> = content.lines().collect();
             let start_line = max(1, line_num as i32 - context_lines as i32) as usize;
             let end_line = min(all_lines.len(), line_num + old_lines.len() + context_lines);
-            
+
             result.push_str(&format!(
                 "@@ -{},{} +{},{} @@\n",
                 start_line,
@@ -85,24 +85,24 @@ pub fn format_edit_diff(
                 start_line,
                 end_line - start_line + new_lines.len() - old_lines.len() + 1
             ));
-            
+
             // Add context before
             for i in start_line..line_num {
                 if i <= all_lines.len() {
                     result.push_str(&format!("{:3}   {}\n", i, all_lines[i - 1]));
                 }
             }
-            
+
             // Add removed lines
             for (i, line) in old_lines.iter().enumerate() {
                 result.push_str(&format!("{:3} - {}\n", line_num + i, line));
             }
-            
+
             // Add added lines
             for (i, line) in new_lines.iter().enumerate() {
                 result.push_str(&format!("{:3} + {}\n", line_num + i, line));
             }
-            
+
             // Add context after
             let after_start = line_num + old_lines.len();
             for i in after_start..min(after_start + context_lines, all_lines.len() + 1) {
@@ -123,7 +123,7 @@ pub fn format_edit_diff(
         result.push_str(&format!("- {}\n", old_string.replace('\n', "\n- ")));
         result.push_str(&format!("+ {}\n", new_string.replace('\n', "\n+ ")));
     }
-    
+
     result
 }
 
@@ -131,20 +131,20 @@ pub fn format_edit_diff(
 fn compute_line_diff(old: &str, new: &str, context_lines: usize) -> String {
     let old_lines: Vec<&str> = old.lines().collect();
     let new_lines: Vec<&str> = new.lines().collect();
-    
+
     // Simple line-by-line comparison (could use more sophisticated diff algorithm)
     let mut result = String::new();
     let mut changes = Vec::new();
-    
+
     // Find changed regions
     let max_len = max(old_lines.len(), new_lines.len());
     let mut in_change = false;
     let mut change_start = 0;
-    
+
     for i in 0..max_len {
         let old_line = old_lines.get(i).copied();
         let new_line = new_lines.get(i).copied();
-        
+
         if old_line != new_line {
             if !in_change {
                 change_start = max(0, i as i32 - context_lines as i32) as usize;
@@ -156,15 +156,15 @@ fn compute_line_diff(old: &str, new: &str, context_lines: usize) -> String {
             in_change = false;
         }
     }
-    
+
     if in_change {
         let change_end = min(max_len, max_len + context_lines);
         changes.push((change_start, change_end));
     }
-    
+
     // Format changes
     let has_changes = !changes.is_empty();
-    
+
     for (start, end) in changes {
         result.push_str(&format!(
             "@@ -{},{} +{},{} @@\n",
@@ -173,7 +173,7 @@ fn compute_line_diff(old: &str, new: &str, context_lines: usize) -> String {
             start + 1,
             min(end - start, new_lines.len() - start)
         ));
-        
+
         for i in start..end {
             if i < old_lines.len() && i < new_lines.len() {
                 if old_lines[i] == new_lines[i] {
@@ -193,11 +193,11 @@ fn compute_line_diff(old: &str, new: &str, context_lines: usize) -> String {
             }
         }
     }
-    
+
     if !has_changes {
         result.push_str("@@ No changes detected @@\n");
     }
-    
+
     result
 }
 
@@ -211,15 +211,15 @@ pub fn format_multi_edit_full_context(
     edits: &[(String, String)], // Vec of (old_string, new_string) pairs
 ) -> String {
     let mut result = String::with_capacity(1024);
-    
+
     result.push_str(&format!("=== MultiEdit on file: {} ===\n", file_path));
-    
+
     if let Some(content) = file_content {
         // Apply all edits to get the final content
         let mut modified_content = content.to_string();
         let mut successful_edits = 0;
         let mut failed_edits = Vec::new();
-        
+
         for (i, (old_str, new_str)) in edits.iter().enumerate() {
             if modified_content.contains(old_str) {
                 modified_content = modified_content.replace(old_str, new_str);
@@ -228,26 +228,43 @@ pub fn format_multi_edit_full_context(
                 failed_edits.push(i + 1);
             }
         }
-        
+
         // Report any failed edits
         if !failed_edits.is_empty() {
-            result.push_str(&format!("⚠️ {} edit(s) could not be applied (string not found): {:?}\n\n", 
-                failed_edits.len(), failed_edits));
+            result.push_str(&format!(
+                "⚠️ {} edit(s) could not be applied (string not found): {:?}\n\n",
+                failed_edits.len(),
+                failed_edits
+            ));
         }
-        
+
         // Show full file with all changes
-        result.push_str(&format!("Applied {} of {} edits:\n\n", successful_edits, edits.len()));
-        result.push_str(&format_full_file_with_changes(file_path, Some(content), Some(&modified_content)));
+        result.push_str(&format!(
+            "Applied {} of {} edits:\n\n",
+            successful_edits,
+            edits.len()
+        ));
+        result.push_str(&format_full_file_with_changes(
+            file_path,
+            Some(content),
+            Some(&modified_content),
+        ));
     } else {
         // No file content available, list the edits
         result.push_str("File content not available. Edits to apply:\n");
         for (i, (old_str, new_str)) in edits.iter().enumerate() {
             result.push_str(&format!("\nEdit #{}:\n", i + 1));
-            result.push_str(&format!("  - Replace: '{}'\n", truncate_for_display(old_str, 100)));
-            result.push_str(&format!("  + With:    '{}'\n", truncate_for_display(new_str, 100)));
+            result.push_str(&format!(
+                "  - Replace: '{}'\n",
+                truncate_for_display(old_str, 100)
+            ));
+            result.push_str(&format!(
+                "  + With:    '{}'\n",
+                truncate_for_display(new_str, 100)
+            ));
         }
     }
-    
+
     result.push_str(&format!("\n=== End of {} ===\n", file_path));
     result
 }
@@ -256,21 +273,21 @@ pub fn format_multi_edit_full_context(
 pub fn truncate_for_display(s: &str, max_len: usize) -> String {
     const ELLIPSIS: &str = "...";
     const ELLIPSIS_LEN: usize = 3;
-    
+
     // Handle edge cases
     if max_len == 0 || s.is_empty() {
         return String::new();
     }
-    
+
     if s.len() <= max_len {
         return s.to_string();
     }
-    
+
     // Not enough space for ellipsis, just truncate
     if max_len <= ELLIPSIS_LEN {
         let mut char_count = 0;
         let mut byte_count = 0;
-        
+
         for ch in s.chars() {
             let ch_len = ch.len_utf8();
             if byte_count + ch_len > max_len {
@@ -279,15 +296,15 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
             byte_count += ch_len;
             char_count += 1;
         }
-        
+
         return s.chars().take(char_count).collect();
     }
-    
+
     // Normal case: truncate and add ellipsis
     let content_max_len = max_len - ELLIPSIS_LEN;
     let mut char_count = 0;
     let mut byte_count = 0;
-    
+
     for ch in s.chars() {
         let ch_len = ch.len_utf8();
         if byte_count + ch_len > content_max_len {
@@ -296,7 +313,7 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
         byte_count += ch_len;
         char_count += 1;
     }
-    
+
     let mut result = s.chars().take(char_count).collect::<String>();
     result.push_str(ELLIPSIS);
     result
@@ -306,10 +323,10 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
 #[inline]
 fn format_line(line_num: usize, marker: &str, content: &str) -> String {
     // Ensure consistent spacing: "+" or "-" or "  " for unchanged
-    let padded_marker = if marker == " " { 
-        "  ".to_string() 
-    } else { 
-        format!("{} ", marker) 
+    let padded_marker = if marker == " " {
+        "  ".to_string()
+    } else {
+        format!("{} ", marker)
     };
     format!("{:4} {}{}\n", line_num, padded_marker, content)
 }
@@ -319,19 +336,17 @@ fn truncate_at_line_boundary(content: &str, max_size: usize) -> &str {
     if content.len() <= max_size {
         return content;
     }
-    
+
     // Find the last newline before max_size
-    let truncate_pos = content[..max_size]
-        .rfind('\n')
-        .unwrap_or_else(|| {
-            // If no newline found, truncate at last valid UTF-8 boundary
-            let mut pos = max_size;
-            while pos > 0 && !content.is_char_boundary(pos) {
-                pos -= 1;
-            }
-            pos
-        });
-    
+    let truncate_pos = content[..max_size].rfind('\n').unwrap_or_else(|| {
+        // If no newline found, truncate at last valid UTF-8 boundary
+        let mut pos = max_size;
+        while pos > 0 && !content.is_char_boundary(pos) {
+            pos -= 1;
+        }
+        pos
+    });
+
     &content[..truncate_pos]
 }
 
@@ -344,28 +359,30 @@ pub fn format_full_file_with_changes(
 ) -> String {
     // Safely truncate large files at line boundaries
     let (original, modified, was_truncated) = match (original_content, modified_content) {
-        (Some(o), Some(m)) if o.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT || m.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT => {
+        (Some(o), Some(m))
+            if o.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT
+                || m.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT =>
+        {
             let truncated_o = truncate_at_line_boundary(o, MAX_FILE_SIZE_FOR_FULL_CONTEXT);
             let truncated_m = truncate_at_line_boundary(m, MAX_FILE_SIZE_FOR_FULL_CONTEXT);
             (Some(truncated_o), Some(truncated_m), true)
         }
-        (o, m) => (o, m, false)
+        (o, m) => (o, m, false),
     };
-    
+
     // Pre-allocate capacity for better performance
-    let estimated_size = original.map(|s| s.len()).unwrap_or(0) 
-        + modified.map(|s| s.len()).unwrap_or(0) 
-        + 200; // Extra space for headers
+    let estimated_size =
+        original.map(|s| s.len()).unwrap_or(0) + modified.map(|s| s.len()).unwrap_or(0) + 200; // Extra space for headers
     let mut result = String::with_capacity(estimated_size);
-    
+
     // Add file header
     result.push_str(&format!("=== Full file: {} ===\n", file_path));
-    
+
     // Add warning for large files
     if was_truncated {
         result.push_str("⚠️ File truncated for display (exceeds 100KB)\n\n");
     }
-    
+
     match (original, modified) {
         (None, Some(new)) if new.is_empty() => {
             result.push_str("(New empty file)\n");
@@ -391,11 +408,11 @@ pub fn format_full_file_with_changes(
             // File modification - show full file with changes marked
             let old_lines: Vec<&str> = old.lines().collect();
             let new_lines: Vec<&str> = new.lines().collect();
-            
+
             // Simple line-by-line diff for full file view
             let max_lines = std::cmp::max(old_lines.len(), new_lines.len());
             let mut line_num = 1;
-            
+
             for i in 0..max_lines {
                 match (old_lines.get(i), new_lines.get(i)) {
                     (Some(old_line), Some(new_line)) if old_line == new_line => {
@@ -426,7 +443,7 @@ pub fn format_full_file_with_changes(
             result.push_str("(No content)\n");
         }
     }
-    
+
     result.push_str(&format!("\n=== End of {} ===\n", file_path));
     result
 }
@@ -439,9 +456,12 @@ pub fn format_edit_full_context(
     new_string: &str,
 ) -> String {
     let mut result = String::new();
-    
-    result.push_str(&format!("=== Full file with Edit changes: {} ===\n", file_path));
-    
+
+    result.push_str(&format!(
+        "=== Full file with Edit changes: {} ===\n",
+        file_path
+    ));
+
     if let Some(content) = file_content {
         // Apply the edit to get the new content
         if let Some(pos) = content.find(old_string) {
@@ -449,7 +469,7 @@ pub fn format_edit_full_context(
             new_content.push_str(&content[..pos]);
             new_content.push_str(new_string);
             new_content.push_str(&content[pos + old_string.len()..]);
-            
+
             // Now show the full file with changes
             for (i, (old_line, new_line)) in content.lines().zip(new_content.lines()).enumerate() {
                 if old_line == new_line {
@@ -459,11 +479,11 @@ pub fn format_edit_full_context(
                     result.push_str(&format!("{:4} + {}\n", i + 1, new_line));
                 }
             }
-            
+
             // Handle any extra lines in the new content
             let old_line_count = content.lines().count();
             let new_line_count = new_content.lines().count();
-            
+
             if new_line_count > old_line_count {
                 for (i, line) in new_content.lines().skip(old_line_count).enumerate() {
                     result.push_str(&format!("{:4} + {}\n", old_line_count + i + 1, line));
@@ -479,7 +499,7 @@ pub fn format_edit_full_context(
     } else {
         result.push_str("(File content not available)\n");
     }
-    
+
     result.push_str(&format!("\n=== End of {} ===\n", file_path));
     result
 }
@@ -491,21 +511,21 @@ pub fn format_multi_edit_diff(
     edits: &[(String, String)], // Vec of (old_string, new_string)
 ) -> String {
     let mut result = String::new();
-    
+
     // Apply edits sequentially to show cumulative changes
     let mut current_content = file_content.unwrap_or("").to_string();
-    
+
     result.push_str(&format!("--- {}\n", file_path));
     result.push_str(&format!("+++ {} (modified)\n", file_path));
     result.push_str(&format!("@@ {} edit operations @@\n", edits.len()));
-    
+
     for (i, (old_str, new_str)) in edits.iter().enumerate() {
         result.push_str(&format!("\n== Edit {} ==\n", i + 1));
-        
+
         if let Some(pos) = current_content.find(old_str) {
             // Show the specific change
             let line_num = current_content[..pos].lines().count() + 1;
-            
+
             result.push_str(&format!("@@ Line {} @@\n", line_num));
             for line in old_str.lines() {
                 result.push_str(&format!("  - {}\n", line));
@@ -513,50 +533,45 @@ pub fn format_multi_edit_diff(
             for line in new_str.lines() {
                 result.push_str(&format!("  + {}\n", line));
             }
-            
+
             // Apply the edit to current content for next iteration
             current_content.replace_range(pos..pos + old_str.len(), new_str);
         } else {
-            result.push_str(&format!("  ! String not found: \"{}\"\n", 
+            result.push_str(&format!(
+                "  ! String not found: \"{}\"\n",
                 truncate_for_display(old_str, 50)
             ));
         }
     }
-    
+
     result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_format_edit_diff() {
         let file_content = "line 1\nline 2\nline 3\nline 4\nline 5";
         let old_string = "line 3";
         let new_string = "modified line 3";
-        
-        let diff = format_edit_diff(
-            "test.txt",
-            Some(file_content),
-            old_string,
-            new_string,
-            2
-        );
-        
+
+        let diff = format_edit_diff("test.txt", Some(file_content), old_string, new_string, 2);
+
         assert!(diff.contains("--- test.txt"));
         assert!(diff.contains("+++ test.txt (modified)"));
         assert!(diff.contains("- line 3"));
         assert!(diff.contains("+ modified line 3"));
     }
-    
+
     #[test]
     fn test_format_code_diff() {
         let old = "line 1\nline 2\nline 3";
         let new = "line 1\nmodified line 2\nline 3\nline 4";
-        
+
         let diff = format_code_diff("test.txt", Some(old), Some(new), 1);
-        
+
         assert!(diff.contains("--- test.txt"));
         assert!(diff.contains("- line 2"));
         assert!(diff.contains("+ modified line 2"));

@@ -1,16 +1,18 @@
+use crate::analysis::metrics::{
+    calculate_complexity_score, calculate_js_complexity, calculate_rust_complexity,
+};
+use crate::cache::project::{
+    build_incremental_update, calculate_file_importance, compress_structure, count_lines_of_code,
+    ComplexityDistribution, FileHash, LanguageStats, ProjectCache, ProjectMetrics,
+};
 use anyhow::Result;
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
-use rayon::prelude::*;
-use sha2::{Sha256, Digest};
-use crate::cache::project::{
-    ProjectCache, ProjectMetrics, LanguageStats, FileHash, ComplexityDistribution,
-    calculate_file_importance, count_lines_of_code, compress_structure, build_incremental_update,
-};
-use crate::analysis::metrics::{calculate_rust_complexity, calculate_js_complexity, calculate_complexity_score};
 
 /// Project structure representation for AI context
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,23 +60,23 @@ pub fn scan_project_structure(
 ) -> Result<ProjectStructure> {
     let config = config.unwrap_or_default();
     let root = Path::new(root_path);
-    
+
     if !root.exists() {
         anyhow::bail!("Root path does not exist: {}", root_path);
     }
-    
+
     if !root.is_dir() {
         anyhow::bail!("Root path is not a directory: {}", root_path);
     }
 
     // Load ignore patterns
     let ignore_patterns = load_ignore_patterns(root)?;
-    
+
     // Scan directory recursively
     let mut files = Vec::new();
     let mut directories = Vec::new();
     let mut file_count = 0;
-    
+
     scan_directory_recursive(
         root,
         root,
@@ -107,13 +109,13 @@ pub fn scan_project_with_cache(
 ) -> Result<(ProjectStructure, ProjectMetrics, Option<String>)> {
     let default_cache = PathBuf::from(".claude_project_cache.json");
     let cache_file = cache_path.unwrap_or(&default_cache);
-    
+
     // Try to load cache
     let mut incremental_update = None;
     let (structure, from_cache) = if let Ok(Some(cache)) = ProjectCache::load(cache_file) {
         // Check for changes
         let changed_files = cache.get_changed_files(Path::new(root_path));
-        
+
         if changed_files.is_empty() {
             // Use cached structure
             (cache.structure, true)
@@ -130,7 +132,7 @@ pub fn scan_project_with_cache(
         // No cache or expired, full scan
         (scan_project_structure(root_path, config)?, false)
     };
-    
+
     // Calculate metrics if not from cache
     let metrics = if from_cache {
         // Load cached metrics
@@ -142,7 +144,7 @@ pub fn scan_project_with_cache(
     } else {
         calculate_project_metrics(&structure)?
     };
-    
+
     // Save to cache if we did a fresh scan
     if !from_cache {
         let file_hashes = build_file_hashes(&structure)?;
@@ -155,25 +157,27 @@ pub fn scan_project_with_cache(
         };
         let _ = cache.save(cache_file); // Ignore save errors
     }
-    
+
     Ok((structure, metrics, incremental_update))
 }
 
 /// Calculate comprehensive project metrics with AST-based complexity analysis
 pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<ProjectMetrics> {
     // Use parallel processing for comprehensive file analysis
-    let file_results: Vec<_> = structure.files
+    let file_results: Vec<_> = structure
+        .files
         .par_iter()
         .map(|file| {
             let importance = calculate_file_importance(file);
-            let is_test = file.relative_path.contains("test") || file.relative_path.contains("spec");
+            let is_test =
+                file.relative_path.contains("test") || file.relative_path.contains("spec");
             let is_doc = file.file_type == "md" || file.file_type == "rst";
-            
+
             let mut complexity_metrics = None;
             let loc_stats = if file.is_code_file {
                 let path = Path::new(&file.path);
                 let loc = count_lines_of_code(path).ok();
-                
+
                 // Calculate complexity metrics based on file type
                 let complexity = match file.file_type.as_str() {
                     "rs" => calculate_rust_complexity(path).ok(),
@@ -183,27 +187,34 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
                         } else {
                             None
                         }
-                    },
+                    }
                     _ => None,
                 };
-                
+
                 complexity_metrics = complexity;
                 loc
             } else {
                 None
             };
-            
-            (file.clone(), importance, is_test, is_doc, loc_stats, complexity_metrics)
+
+            (
+                file.clone(),
+                importance,
+                is_test,
+                is_doc,
+                loc_stats,
+                complexity_metrics,
+            )
         })
         .collect();
-    
+
     // Aggregate results with enhanced complexity tracking
     let mut total_loc = 0;
     let mut code_by_language: HashMap<String, LanguageStats> = HashMap::new();
     let mut file_importance_scores = HashMap::new();
     let mut test_files = 0;
     let mut doc_files = 0;
-    
+
     // Complexity aggregation
     let mut all_complexity_scores = Vec::new();
     let mut total_cyclomatic = 0.0;
@@ -212,34 +223,38 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
     let mut max_cognitive = 0u32;
     let mut high_complexity_files = 0;
     let mut complexity_count = 0;
-    
+
     // Distribution counters
     let mut low_complexity = 0;
     let mut medium_complexity = 0;
     let mut high_complexity = 0;
     let mut extreme_complexity = 0;
-    
+
     for (file, importance, is_test, is_doc, loc_stats, complexity_metrics) in file_results {
         file_importance_scores.insert(file.relative_path.clone(), importance);
-        
-        if is_test { test_files += 1; }
-        if is_doc { doc_files += 1; }
-        
+
+        if is_test {
+            test_files += 1;
+        }
+        if is_doc {
+            doc_files += 1;
+        }
+
         // Process complexity metrics
         if let Some(ref complexity) = complexity_metrics {
             let complexity_score = calculate_complexity_score(complexity);
             all_complexity_scores.push(complexity_score);
-            
+
             total_cyclomatic += complexity.cyclomatic_complexity as f32;
             total_cognitive += complexity.cognitive_complexity as f32;
             max_cyclomatic = max_cyclomatic.max(complexity.cyclomatic_complexity);
             max_cognitive = max_cognitive.max(complexity.cognitive_complexity);
             complexity_count += 1;
-            
+
             if complexity_score > 7.0 {
                 high_complexity_files += 1;
             }
-            
+
             // Complexity distribution
             match complexity_score {
                 s if s <= 3.0 => low_complexity += 1,
@@ -248,31 +263,33 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
                 _ => extreme_complexity += 1,
             }
         }
-        
+
         if let Some((loc, comments, blanks)) = loc_stats {
             total_loc += loc;
-            
-            let stats = code_by_language.entry(file.file_type.clone()).or_insert(LanguageStats {
-                file_count: 0,
-                lines_of_code: 0,
-                lines_of_comments: 0,
-                blank_lines: 0,
-                average_file_size: 0,
-                complexity_estimate: 0.0,
-                // New complexity fields
-                average_cyclomatic: 0.0,
-                average_cognitive: 0.0,
-                max_cyclomatic: 0,
-                max_cognitive: 0,
-                total_functions: 0,
-                average_nesting_depth: 0.0,
-            });
-            
+
+            let stats = code_by_language
+                .entry(file.file_type.clone())
+                .or_insert(LanguageStats {
+                    file_count: 0,
+                    lines_of_code: 0,
+                    lines_of_comments: 0,
+                    blank_lines: 0,
+                    average_file_size: 0,
+                    complexity_estimate: 0.0,
+                    // New complexity fields
+                    average_cyclomatic: 0.0,
+                    average_cognitive: 0.0,
+                    max_cyclomatic: 0,
+                    max_cognitive: 0,
+                    total_functions: 0,
+                    average_nesting_depth: 0.0,
+                });
+
             stats.file_count += 1;
             stats.lines_of_code += loc;
             stats.lines_of_comments += comments;
             stats.blank_lines += blanks;
-            
+
             // Add complexity data to language stats
             if let Some(ref complexity) = complexity_metrics {
                 stats.average_cyclomatic += complexity.cyclomatic_complexity as f32;
@@ -284,7 +301,7 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
             }
         }
     }
-    
+
     // Calculate averages and finalize complexity metrics for each language
     for stats in code_by_language.values_mut() {
         if stats.file_count > 0 {
@@ -292,54 +309,58 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
             stats.average_cyclomatic /= stats.file_count as f32;
             stats.average_cognitive /= stats.file_count as f32;
             stats.average_nesting_depth /= stats.file_count as f32;
-            
+
             // Enhanced complexity estimate using AST metrics if available
             let comment_ratio = stats.lines_of_comments as f32 / (stats.lines_of_code as f32 + 1.0);
-            let base_estimate = (stats.lines_of_code as f32 / 100.0) * (1.0 - comment_ratio.min(0.3));
-            
+            let base_estimate =
+                (stats.lines_of_code as f32 / 100.0) * (1.0 - comment_ratio.min(0.3));
+
             // Incorporate cyclomatic complexity if available
             if stats.average_cyclomatic > 0.0 {
-                stats.complexity_estimate = (base_estimate * 0.3) + (stats.average_cyclomatic / 10.0 * 0.7);
+                stats.complexity_estimate =
+                    (base_estimate * 0.3) + (stats.average_cyclomatic / 10.0 * 0.7);
             } else {
                 stats.complexity_estimate = base_estimate;
             }
         }
     }
-    
+
     // Calculate project-level scores
     let test_coverage_estimate = if structure.files.is_empty() {
         0.0
     } else {
         (test_files as f32 / structure.files.len() as f32).min(1.0)
     };
-    
+
     let documentation_ratio = if structure.files.is_empty() {
         0.0
     } else {
         (doc_files as f32 / structure.files.len() as f32).min(1.0)
     };
-    
+
     let project_complexity_score = if !all_complexity_scores.is_empty() {
         all_complexity_scores.iter().sum::<f32>() / all_complexity_scores.len() as f32
     } else {
-        code_by_language.values()
+        code_by_language
+            .values()
             .map(|s| s.complexity_estimate)
-            .sum::<f32>() / code_by_language.len().max(1) as f32
+            .sum::<f32>()
+            / code_by_language.len().max(1) as f32
     };
-    
+
     // Calculate average complexity metrics
     let average_cyclomatic_complexity = if complexity_count > 0 {
         total_cyclomatic / complexity_count as f32
     } else {
         0.0
     };
-    
+
     let average_cognitive_complexity = if complexity_count > 0 {
         total_cognitive / complexity_count as f32
     } else {
         0.0
     };
-    
+
     Ok(ProjectMetrics {
         total_lines_of_code: total_loc,
         code_by_language,
@@ -365,24 +386,28 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
 /// Build file hashes for cache validation with content hashing for important files
 fn build_file_hashes(structure: &ProjectStructure) -> Result<HashMap<String, FileHash>> {
     use std::io::Read;
-    
+
     // Use parallel processing for hashing
-    let hashes: Vec<_> = structure.files
+    let hashes: Vec<_> = structure
+        .files
         .par_iter()
         .filter_map(|file| {
             let path = Path::new(&file.path);
             if let Ok(metadata) = fs::metadata(path) {
                 if let Ok(modified) = metadata.modified() {
                     // Calculate content hash for important files (config, main files)
-                    let content_hash = if file.relative_path == "Cargo.toml" || 
-                                         file.relative_path == "package.json" ||
-                                         file.relative_path.contains("main.") ||
-                                         file.relative_path.contains("lib.") {
+                    let content_hash = if file.relative_path == "Cargo.toml"
+                        || file.relative_path == "package.json"
+                        || file.relative_path.contains("main.")
+                        || file.relative_path.contains("lib.")
+                    {
                         if let Ok(mut file_handle) = fs::File::open(path) {
                             let mut hasher = Sha256::new();
                             let mut buffer = [0; 8192];
                             while let Ok(bytes_read) = file_handle.read(&mut buffer) {
-                                if bytes_read == 0 { break; }
+                                if bytes_read == 0 {
+                                    break;
+                                }
                                 hasher.update(&buffer[..bytes_read]);
                             }
                             Some(format!("{:x}", hasher.finalize()))
@@ -392,13 +417,16 @@ fn build_file_hashes(structure: &ProjectStructure) -> Result<HashMap<String, Fil
                     } else {
                         None
                     };
-                    
-                    Some((file.relative_path.clone(), FileHash {
-                        path: file.relative_path.clone(),
-                        modified_time: modified,
-                        size: metadata.len(),
-                        hash: content_hash,
-                    }))
+
+                    Some((
+                        file.relative_path.clone(),
+                        FileHash {
+                            path: file.relative_path.clone(),
+                            modified_time: modified,
+                            size: metadata.len(),
+                            hash: content_hash,
+                        },
+                    ))
                 } else {
                     None
                 }
@@ -407,56 +435,97 @@ fn build_file_hashes(structure: &ProjectStructure) -> Result<HashMap<String, Fil
             }
         })
         .collect();
-    
+
     Ok(hashes.into_iter().collect())
 }
 
 /// Load ignore patterns from .gitignore and built-in excludes
 fn load_ignore_patterns(root: &Path) -> Result<HashSet<String>> {
     let mut patterns = HashSet::new();
-    
+
     // Built-in ignore patterns for common build/cache directories
     let builtin_patterns = [
         // Build outputs
-        "target/", "build/", "dist/", "out/", "_build/",
-        "bin/", "obj/", "coverage/", ".coverage/",
-        ".next/", ".nuxt/", ".output/", ".vercel/",
-        
+        "target/",
+        "build/",
+        "dist/",
+        "out/",
+        "_build/",
+        "bin/",
+        "obj/",
+        "coverage/",
+        ".coverage/",
+        ".next/",
+        ".nuxt/",
+        ".output/",
+        ".vercel/",
         // Package managers
-        "node_modules/", ".npm/", ".yarn/", ".pnpm/",
-        ".cargo/", "vendor/",
-        
+        "node_modules/",
+        ".npm/",
+        ".yarn/",
+        ".pnpm/",
+        ".cargo/",
+        "vendor/",
         // Version control
-        ".git/", ".svn/", ".hg/", ".bzr/",
-        
+        ".git/",
+        ".svn/",
+        ".hg/",
+        ".bzr/",
         // IDEs and editors
-        ".vscode/", ".idea/", "*.swp", "*.swo", "*~",
-        ".DS_Store", "Thumbs.db",
-        
+        ".vscode/",
+        ".idea/",
+        "*.swp",
+        "*.swo",
+        "*~",
+        ".DS_Store",
+        "Thumbs.db",
         // Temporary files
-        "tmp/", "temp/", ".tmp/", ".temp/",
-        "*.tmp", "*.temp", "*.log", "*.bak", "*.backup",
-        "*.cache", "*.pid",
+        "tmp/",
+        "temp/",
+        ".tmp/",
+        ".temp/",
+        "*.tmp",
+        "*.temp",
+        "*.log",
+        "*.bak",
+        "*.backup",
+        "*.cache",
+        "*.pid",
         // Note: not filtering *.lock as package-lock.json and Cargo.lock are important
-        
+
         // Language-specific
-        "__pycache__/", "*.pyc", "*.pyo", ".pytest_cache/",
-        "*.class", ".gradle/", ".maven/",
-        ".nuget/", "packages/",
-        
+        "__pycache__/",
+        "*.pyc",
+        "*.pyo",
+        ".pytest_cache/",
+        "*.class",
+        ".gradle/",
+        ".maven/",
+        ".nuget/",
+        "packages/",
         // Compilation artifacts
-        "*.o", "*.obj", "*.pdb", "*.exe", "*.dll", "*.so", "*.dylib",
-        "*.a", "*.lib", "*.rlib", "*.rmeta",
-        "*.wasm", "*.bc",
-        
+        "*.o",
+        "*.obj",
+        "*.pdb",
+        "*.exe",
+        "*.dll",
+        "*.so",
+        "*.dylib",
+        "*.a",
+        "*.lib",
+        "*.rlib",
+        "*.rmeta",
+        "*.wasm",
+        "*.bc",
         // OS-specific
-        ".Trash/", "$RECYCLE.BIN/",
+        ".Trash/",
+        "$RECYCLE.BIN/",
     ];
-    
+
     for pattern in builtin_patterns {
         patterns.insert(pattern.to_string());
     }
-    
+
     // Load .gitignore if exists
     let gitignore_path = root.join(".gitignore");
     if gitignore_path.exists() {
@@ -474,7 +543,7 @@ fn load_ignore_patterns(root: &Path) -> Result<HashSet<String>> {
             }
         }
     }
-    
+
     Ok(patterns)
 }
 
@@ -485,37 +554,38 @@ fn should_ignore(path: &Path, root: &Path, patterns: &HashSet<String>) -> bool {
         Ok(rel) => rel,
         Err(_) => return true, // If we can't get relative path, ignore
     };
-    
+
     let path_str = relative_path.to_string_lossy().replace('\\', "/");
-    let file_name = path.file_name()
+    let file_name = path
+        .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    
+
     // Check against all patterns
     for pattern in patterns {
         if pattern.ends_with('/') {
             // Directory pattern
-            let dir_pattern = &pattern[..pattern.len()-1];
-            if path_str.starts_with(dir_pattern) || 
-               path_str.contains(&format!("/{dir_pattern}")) {
+            let dir_pattern = &pattern[..pattern.len() - 1];
+            if path_str.starts_with(dir_pattern) || path_str.contains(&format!("/{dir_pattern}")) {
                 return true;
             }
         } else if pattern.contains('*') {
             // Glob pattern (simple implementation)
-            if matches_glob_pattern(&file_name, pattern) ||
-               matches_glob_pattern(&path_str, pattern) {
+            if matches_glob_pattern(&file_name, pattern) || matches_glob_pattern(&path_str, pattern)
+            {
                 return true;
             }
         } else {
             // Exact match
-            if path_str == *pattern || 
-               file_name == *pattern ||
-               path_str.ends_with(&format!("/{}", pattern)) {
+            if path_str == *pattern
+                || file_name == *pattern
+                || path_str.ends_with(&format!("/{}", pattern))
+            {
                 return true;
             }
         }
     }
-    
+
     false
 }
 
@@ -524,18 +594,18 @@ fn matches_glob_pattern(text: &str, pattern: &str) -> bool {
     if !pattern.contains('*') {
         return text == pattern;
     }
-    
+
     let parts: Vec<&str> = pattern.split('*').collect();
     if parts.is_empty() {
         return true;
     }
-    
+
     let mut pos = 0;
     for (i, part) in parts.iter().enumerate() {
         if part.is_empty() {
             continue;
         }
-        
+
         if i == 0 {
             // First part must match from start
             if !text.starts_with(part) {
@@ -556,7 +626,7 @@ fn matches_glob_pattern(text: &str, pattern: &str) -> bool {
             }
         }
     }
-    
+
     true
 }
 
@@ -574,7 +644,7 @@ fn scan_directory_recursive(
     if depth >= config.max_depth || *file_count >= config.max_files {
         return Ok(());
     }
-    
+
     let entries = match fs::read_dir(current_path) {
         Ok(entries) => entries,
         Err(e) => {
@@ -582,7 +652,7 @@ fn scan_directory_recursive(
             return Ok(());
         }
     };
-    
+
     for entry in entries {
         let entry = match entry {
             Ok(entry) => entry,
@@ -591,9 +661,9 @@ fn scan_directory_recursive(
                 continue;
             }
         };
-        
+
         let path = entry.path();
-        
+
         // Skip hidden files unless configured to include them
         if !config.include_hidden_files {
             if let Some(file_name) = path.file_name() {
@@ -602,12 +672,12 @@ fn scan_directory_recursive(
                 }
             }
         }
-        
+
         // Check if should be ignored
         if should_ignore(&path, root_path, ignore_patterns) {
             continue;
         }
-        
+
         // Handle symlinks
         let metadata = if config.follow_symlinks {
             match fs::metadata(&path) {
@@ -625,14 +695,14 @@ fn scan_directory_recursive(
                 Err(_) => continue,
             }
         };
-        
+
         if metadata.is_dir() {
             // Add directory to list
             if let Ok(relative_path) = path.strip_prefix(root_path) {
                 let dir_path = relative_path.to_string_lossy().replace('\\', "/");
                 directories.push(dir_path);
             }
-            
+
             // Recurse into directory
             scan_directory_recursive(
                 &path,
@@ -649,21 +719,22 @@ fn scan_directory_recursive(
             if !is_important_file(&path) {
                 continue;
             }
-            
+
             if *file_count >= config.max_files {
                 break;
             }
-            
+
             // Add file to list
             if let Ok(relative_path) = path.strip_prefix(root_path) {
                 let relative_path_str = relative_path.to_string_lossy().replace('\\', "/");
-                let file_extension = path.extension()
+                let file_extension = path
+                    .extension()
                     .and_then(|ext| ext.to_str())
                     .unwrap_or("")
                     .to_lowercase();
-                
+
                 let is_code_file = is_code_file_extension(&file_extension);
-                
+
                 files.push(ProjectFile {
                     path: path.to_string_lossy().to_string(),
                     relative_path: relative_path_str,
@@ -675,12 +746,12 @@ fn scan_directory_recursive(
                     size_bytes: metadata.len(),
                     is_code_file,
                 });
-                
+
                 *file_count += 1;
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -693,18 +764,37 @@ fn is_important_file(path: &Path) -> bool {
             return true;
         }
     }
-    
+
     // Check for important files without extensions
     if let Some(file_name) = path.file_name() {
         let name = file_name.to_str().unwrap_or("").to_lowercase();
-        matches!(name.as_str(),
-            "dockerfile" | "makefile" | "rakefile" | "gemfile" |
-            "procfile" | "guardfile" | "gruntfile" | "gulpfile" |
-            ".gitignore" | ".dockerignore" | ".env" | ".env.example" |
-            ".eslintrc" | ".prettierrc" | ".editorconfig" |
-            "package-lock.json" | "yarn.lock" | "cargo.lock" |
-            "pipfile" | "pipfile.lock" | "requirements.txt" |
-            "go.mod" | "go.sum" | "cargo.toml" | "package.json"
+        matches!(
+            name.as_str(),
+            "dockerfile"
+                | "makefile"
+                | "rakefile"
+                | "gemfile"
+                | "procfile"
+                | "guardfile"
+                | "gruntfile"
+                | "gulpfile"
+                | ".gitignore"
+                | ".dockerignore"
+                | ".env"
+                | ".env.example"
+                | ".eslintrc"
+                | ".prettierrc"
+                | ".editorconfig"
+                | "package-lock.json"
+                | "yarn.lock"
+                | "cargo.lock"
+                | "pipfile"
+                | "pipfile.lock"
+                | "requirements.txt"
+                | "go.mod"
+                | "go.sum"
+                | "cargo.toml"
+                | "package.json"
         )
     } else {
         false
@@ -713,7 +803,8 @@ fn is_important_file(path: &Path) -> bool {
 
 /// Determine if file extension indicates a code file
 fn is_code_file_extension(extension: &str) -> bool {
-    matches!(extension,
+    matches!(
+        extension,
         // Web technologies
         "js" | "jsx" | "ts" | "tsx" | "vue" | "svelte" |
         "html" | "htm" | "css" | "scss" | "sass" | "less" |
@@ -744,23 +835,25 @@ fn is_code_file_extension(extension: &str) -> bool {
 /// Build machine-readable tree structure with clear hierarchy
 fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
     let mut output = String::new();
-    let mut file_tree: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
-    
+    let mut file_tree: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+
     // Group files by directory
     for file in &structure.files {
         // Split path into directory and filename
         let path = &file.relative_path;
         let (dir, filename) = if let Some(pos) = path.rfind(|c| c == '/' || c == '\\') {
-            (&path[..pos], &path[pos+1..])
+            (&path[..pos], &path[pos + 1..])
         } else {
             (".", path.as_str())
         };
-        
-        file_tree.entry(dir.to_string())
+
+        file_tree
+            .entry(dir.to_string())
             .or_insert_with(Vec::new)
             .push(filename.to_string());
     }
-    
+
     // Format as hierarchical structure
     for (dir, files) in file_tree.iter() {
         if dir == "." {
@@ -776,7 +869,7 @@ fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
             }
         }
     }
-    
+
     output
 }
 
@@ -787,16 +880,16 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
         File(String),
         Dir(String, Vec<Node>),
     }
-    
+
     // Build tree from files and directories
     let mut root_nodes: Vec<Node> = Vec::new();
-    
+
     // Process all files and build tree structure
     for file in &structure.files {
         let path_parts: Vec<&str> = file.relative_path.split(&['/', '\\'][..]).collect();
         insert_file_into_tree(&mut root_nodes, &path_parts);
     }
-    
+
     // Format tree into compact string
     fn format_node(node: &Node) -> String {
         match node {
@@ -805,24 +898,23 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
                 if children.is_empty() {
                     format!("{}[]", name)
                 } else {
-                    let children_str: Vec<String> = children.iter()
-                        .map(|child| format_node(child))
-                        .collect();
+                    let children_str: Vec<String> =
+                        children.iter().map(|child| format_node(child)).collect();
                     format!("{}[{}]", name, children_str.join(","))
                 }
             }
         }
     }
-    
+
     // Insert file path into tree structure
     fn insert_file_into_tree(nodes: &mut Vec<Node>, path_parts: &[&str]) {
         if path_parts.is_empty() {
             return;
         }
-        
+
         let name = path_parts[0].to_string();
         let remaining = &path_parts[1..];
-        
+
         if remaining.is_empty() {
             // This is a file
             nodes.push(Node::File(name));
@@ -838,7 +930,7 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
                     }
                 }
             }
-            
+
             if !found {
                 let mut new_children = Vec::new();
                 insert_file_into_tree(&mut new_children, remaining);
@@ -846,11 +938,9 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
             }
         }
     }
-    
-    let formatted_nodes: Vec<String> = root_nodes.iter()
-        .map(|node| format_node(node))
-        .collect();
-    
+
+    let formatted_nodes: Vec<String> = root_nodes.iter().map(|node| format_node(node)).collect();
+
     formatted_nodes.join(",")
 }
 
@@ -863,35 +953,35 @@ fn format_directory_tree(directories: &[String]) -> String {
         name: String,
         children: Vec<DirNode>,
     }
-    
+
     // Build tree structure from flat paths
     fn build_tree(paths: &[String]) -> Vec<DirNode> {
         let mut roots: Vec<DirNode> = Vec::new();
-        
+
         // Sort paths to ensure parents come before children
         let mut sorted_paths = paths.to_vec();
         sorted_paths.sort();
-        
+
         for path in sorted_paths {
             let parts: Vec<&str> = path.split('/').collect();
             insert_path(&mut roots, &parts);
         }
-        
+
         roots
     }
-    
+
     // Insert a path into the tree
     fn insert_path(nodes: &mut Vec<DirNode>, parts: &[&str]) {
         if parts.is_empty() {
             return;
         }
-        
+
         let name = parts[0].to_string();
         let remaining = &parts[1..];
-        
+
         // Find or create node
         let node = nodes.iter_mut().find(|n| n.name == name);
-        
+
         if let Some(node) = node {
             if !remaining.is_empty() {
                 insert_path(&mut node.children, remaining);
@@ -901,18 +991,19 @@ fn format_directory_tree(directories: &[String]) -> String {
                 name,
                 children: Vec::new(),
             };
-            
+
             if !remaining.is_empty() {
                 insert_path(&mut new_node.children, remaining);
             }
-            
+
             nodes.push(new_node);
         }
     }
-    
+
     // Format tree to string recursively
     fn format_nodes(nodes: &[DirNode]) -> String {
-        nodes.iter()
+        nodes
+            .iter()
             .map(|node| {
                 if node.children.is_empty() {
                     node.name.clone()
@@ -923,7 +1014,7 @@ fn format_directory_tree(directories: &[String]) -> String {
             .collect::<Vec<_>>()
             .join(",")
     }
-    
+
     let tree = build_tree(directories);
     format_nodes(&tree)
 }
@@ -946,15 +1037,15 @@ pub fn format_project_structure_for_ai_with_metrics(
             compressed.token_estimate
         );
     }
-    
+
     // Standard format with enhanced metrics - machine-readable format
     let mut output = String::new();
-    
+
     // Build machine-readable tree structure
     output.push_str("PROJECT_STRUCTURE:\n");
     let tree = build_machine_readable_tree(structure);
     output.push_str(&tree);
-    
+
     // Add enhanced statistics if metrics available
     output.push_str("\nPROJECT_METRICS:\n");
     if let Some(metrics) = metrics {
@@ -964,23 +1055,21 @@ pub fn format_project_structure_for_ai_with_metrics(
             structure.directories.len(),
             metrics.total_lines_of_code
         ));
-        
+
         // Add language breakdown with LOC in machine-readable format
         if !metrics.code_by_language.is_empty() {
             output.push_str("  languages:\n");
             let mut sorted_langs: Vec<_> = metrics.code_by_language.iter().collect();
             sorted_langs.sort_by(|a, b| b.1.lines_of_code.cmp(&a.1.lines_of_code));
-            
+
             for (lang, stats) in sorted_langs.iter() {
                 output.push_str(&format!(
                     "    - {}: {} files, {} LOC\n",
-                    lang,
-                    stats.file_count,
-                    stats.lines_of_code
+                    lang, stats.file_count, stats.lines_of_code
                 ));
             }
         }
-        
+
         // Add project quality metrics
         output.push_str(&format!(
             "QUALITY: complexity:{:.1}, test_coverage:{:.0}%, docs:{:.0}%\n",
@@ -988,29 +1077,34 @@ pub fn format_project_structure_for_ai_with_metrics(
             metrics.test_coverage_estimate * 100.0,
             metrics.documentation_ratio * 100.0
         ));
-        
+
         // Add top important files
-        let mut important_files: Vec<_> = metrics.file_importance_scores.iter()
+        let mut important_files: Vec<_> = metrics
+            .file_importance_scores
+            .iter()
             .map(|(path, score)| (path, score))
             .collect();
         important_files.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
-        
+
         if !important_files.is_empty() {
             output.push_str("KEY_FILES:");
             for (i, (path, _score)) in important_files.iter().take(5).enumerate() {
-                if i > 0 { output.push(','); }
+                if i > 0 {
+                    output.push(',');
+                }
                 output.push_str(path);
             }
             output.push('\n');
         }
     } else {
         // Fallback to basic stats
-        output.push_str(&format!("STATS: {} files, {} dirs\n", 
+        output.push_str(&format!(
+            "STATS: {} files, {} dirs\n",
             structure.total_files,
             structure.directories.len()
         ));
     }
-    
+
     output
 }
 
@@ -1018,37 +1112,36 @@ pub fn format_project_structure_for_ai_with_metrics(
 pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: usize) -> String {
     // For compatibility, calculate metrics on the fly if needed
     let metrics = calculate_project_metrics(structure).ok();
-    
+
     // Use compression if output would be too large
     let compress = max_chars > 0 && max_chars < 2000;
-    
-    let _formatted = format_project_structure_for_ai_with_metrics(
-        structure,
-        metrics.as_ref(),
-        compress
-    );
-    
+
+    let _formatted =
+        format_project_structure_for_ai_with_metrics(structure, metrics.as_ref(), compress);
+
     // Original compact format continues below for backwards compatibility
     let mut output = String::new();
-    
+
     // Build complete tree structure with files and directories
     let tree = build_complete_project_tree(structure);
     output.push_str(&format!("PROJECT:[{}]\n", tree));
-    
+
     // Add summary statistics with LOC if available
     if let Some(m) = metrics.as_ref() {
-        output.push_str(&format!("STATS: {} files, {} dirs, {} LOC\n", 
+        output.push_str(&format!(
+            "STATS: {} files, {} dirs, {} LOC\n",
             structure.total_files,
             structure.directories.len(),
             m.total_lines_of_code
         ));
     } else {
-        output.push_str(&format!("STATS: {} files, {} dirs\n", 
+        output.push_str(&format!(
+            "STATS: {} files, {} dirs\n",
             structure.total_files,
             structure.directories.len()
         ));
     }
-    
+
     // File type statistics - ultra compact
     let mut file_types = std::collections::HashMap::new();
     for file in &structure.files {
@@ -1056,80 +1149,111 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
             *file_types.entry(&file.file_type).or_insert(0) += 1;
         }
     }
-    
+
     if !file_types.is_empty() {
         output.push_str("T:");
         let mut sorted_types: Vec<_> = file_types.iter().collect();
         sorted_types.sort_by(|a, b| b.1.cmp(a.1));
-        
+
         for (i, (ext, count)) in sorted_types.iter().enumerate() {
-            if i > 0 { output.push(','); }
+            if i > 0 {
+                output.push(',');
+            }
             output.push_str(&format!("{}:{}", ext, count));
         }
         output.push('\n');
     }
-    
+
     // Key files - just names, no paths unless necessary
     let key_files = [
-        "package.json", "cargo.toml", "requirements.txt", "go.mod",
-        "dockerfile", "makefile", "readme.md", ".gitignore",
-        "tsconfig.json", "pyproject.toml", "pom.xml"
+        "package.json",
+        "cargo.toml",
+        "requirements.txt",
+        "go.mod",
+        "dockerfile",
+        "makefile",
+        "readme.md",
+        ".gitignore",
+        "tsconfig.json",
+        "pyproject.toml",
+        "pom.xml",
     ];
-    
+
     let mut found_keys = Vec::new();
     for file in &structure.files {
         let filename = file.relative_path.to_lowercase();
         for &pattern in &key_files {
             if filename.ends_with(pattern) || filename == pattern {
                 // Just the filename if it's in root, otherwise minimal path
-                let display_name = if file.relative_path.contains('/') || file.relative_path.contains('\\') {
-                    // Include parent directory for context
-                    let parts: Vec<&str> = file.relative_path.split(|c| c == '/' || c == '\\').collect();
-                    if parts.len() >= 2 {
-                        format!("{}/{}", parts[parts.len()-2], parts[parts.len()-1])
+                let display_name =
+                    if file.relative_path.contains('/') || file.relative_path.contains('\\') {
+                        // Include parent directory for context
+                        let parts: Vec<&str> = file
+                            .relative_path
+                            .split(|c| c == '/' || c == '\\')
+                            .collect();
+                        if parts.len() >= 2 {
+                            format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
+                        } else {
+                            file.relative_path.clone()
+                        }
                     } else {
                         file.relative_path.clone()
-                    }
-                } else {
-                    file.relative_path.clone()
-                };
+                    };
                 found_keys.push(display_name);
                 break;
             }
         }
-        if found_keys.len() >= 8 { break; }
+        if found_keys.len() >= 8 {
+            break;
+        }
     }
-    
+
     if !found_keys.is_empty() {
         output.push_str("K:");
         output.push_str(&found_keys.join(","));
         output.push('\n');
     }
-    
+
     // All files list - ultra compact paths
     if structure.files.len() <= 50 {
         // If small project, list all files
         output.push_str("F:");
         for (i, file) in structure.files.iter().enumerate() {
-            if i > 0 { output.push(','); }
+            if i > 0 {
+                output.push(',');
+            }
             output.push_str(&file.relative_path);
         }
         output.push('\n');
     } else {
         // For large projects, sample important directories
         let mut sample_files = Vec::new();
-        let important_dirs = ["src", "lib", "app", "components", "pages", "api", "core", "utils"];
-        
+        let important_dirs = [
+            "src",
+            "lib",
+            "app",
+            "components",
+            "pages",
+            "api",
+            "core",
+            "utils",
+        ];
+
         for dir in important_dirs {
             for file in &structure.files {
                 if file.is_code_file && file.relative_path.starts_with(dir) {
                     sample_files.push(file.relative_path.clone());
-                    if sample_files.len() >= 30 { break; }
+                    if sample_files.len() >= 30 {
+                        break;
+                    }
                 }
             }
-            if sample_files.len() >= 30 { break; }
+            if sample_files.len() >= 30 {
+                break;
+            }
         }
-        
+
         if !sample_files.is_empty() {
             output.push_str("F:");
             output.push_str(&sample_files.join(","));
@@ -1139,13 +1263,13 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
             output.push('\n');
         }
     }
-    
+
     // Truncate only if max_chars is set (non-zero)
     if max_chars > 0 && output.len() > max_chars {
         output.truncate(max_chars - 4);
         output.push_str("...");
     }
-    
+
     output
 }
 
@@ -1155,75 +1279,75 @@ mod tests {
     use std::fs;
     use std::io::Write;
     use tempfile::TempDir;
-    
+
     #[test]
     fn test_scan_empty_directory() {
         let temp_dir = TempDir::new().unwrap();
         let structure = scan_project_structure(temp_dir.path().to_str().unwrap(), None).unwrap();
-        
+
         assert_eq!(structure.files.len(), 0);
         assert_eq!(structure.directories.len(), 0);
         assert_eq!(structure.total_files, 0);
     }
-    
+
     #[test]
     fn test_scan_with_files() {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
-        
+
         // Create test files
         fs::write(root.join("test.js"), "console.log('hello');").unwrap();
         fs::write(root.join("readme.md"), "# Test Project").unwrap();
         fs::create_dir(root.join("src")).unwrap();
         fs::write(root.join("src").join("main.rs"), "fn main() {}").unwrap();
-        
+
         let structure = scan_project_structure(root.to_str().unwrap(), None).unwrap();
-        
+
         assert_eq!(structure.total_files, 3);
         assert_eq!(structure.directories.len(), 1);
         assert_eq!(structure.files.len(), 3);
-        
+
         // Check code file detection
         let code_files: Vec<_> = structure.files.iter().filter(|f| f.is_code_file).collect();
         assert_eq!(code_files.len(), 3); // js, md, rs are all code files
     }
-    
+
     #[test]
     fn test_gitignore_parsing() {
         let temp_dir = TempDir::new().unwrap();
         let root = temp_dir.path();
-        
+
         // Create .gitignore
         let mut gitignore = fs::File::create(root.join(".gitignore")).unwrap();
         writeln!(gitignore, "*.log").unwrap();
         writeln!(gitignore, "node_modules/").unwrap();
         writeln!(gitignore, "# Comment").unwrap();
         writeln!(gitignore, "secret.key").unwrap();
-        
+
         // Create files (some should be ignored)
         fs::write(root.join("app.js"), "code").unwrap();
         fs::write(root.join("debug.log"), "log content").unwrap();
         fs::write(root.join("secret.key"), "secret").unwrap();
         fs::create_dir(root.join("node_modules")).unwrap();
         fs::write(root.join("node_modules").join("package.json"), "{}").unwrap();
-        
+
         let structure = scan_project_structure(root.to_str().unwrap(), None).unwrap();
-        
+
         // Should only include app.js (others ignored by gitignore)
         assert_eq!(structure.total_files, 1);
         assert_eq!(structure.files[0].relative_path, "app.js");
     }
-    
+
     #[test]
     fn test_glob_pattern_matching() {
         assert!(matches_glob_pattern("test.log", "*.log"));
         assert!(matches_glob_pattern("debug.log", "*.log"));
         assert!(!matches_glob_pattern("test.txt", "*.log"));
-        
+
         assert!(matches_glob_pattern("test_file.tmp", "*_file.*"));
         assert!(!matches_glob_pattern("testfile.tmp", "*_file.*"));
     }
-    
+
     #[test]
     fn test_format_directory_tree() {
         // Test basic nesting
@@ -1234,10 +1358,10 @@ mod tests {
             "tests/unit".to_string(),
             "tests/integration".to_string(),
         ];
-        
+
         let result = format_directory_tree(&dirs);
         assert_eq!(result, "src[bin],tests[integration,unit]");
-        
+
         // Test deeper nesting
         let dirs = vec![
             "src".to_string(),
@@ -1247,21 +1371,21 @@ mod tests {
             "src/lib/utils".to_string(),
             "src/lib/utils/helpers".to_string(),
         ];
-        
+
         let result = format_directory_tree(&dirs);
         assert_eq!(result, "src[bin[tools],lib[utils[helpers]]]");
-        
+
         // Test single directory
         let dirs = vec!["src".to_string()];
         let result = format_directory_tree(&dirs);
         assert_eq!(result, "src");
-        
+
         // Test empty input
         let dirs: Vec<String> = vec![];
         let result = format_directory_tree(&dirs);
         assert_eq!(result, "");
     }
-    
+
     #[test]
     fn test_format_with_nested_directories() {
         let structure = ProjectStructure {
@@ -1292,11 +1416,11 @@ mod tests {
             total_files: 2,
             scan_timestamp: chrono::Utc::now().to_rfc3339(),
         };
-        
+
         let formatted = format_project_structure_for_ai(&structure, 500);
-        
+
         println!("Formatted output: {}", formatted);
-        
+
         // Check that basic formatting structure works
         assert!(formatted.contains("PROJECT:")); // Project section exists
         assert!(formatted.contains("src")); // src directory is shown

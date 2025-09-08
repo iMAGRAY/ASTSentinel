@@ -1,20 +1,20 @@
 use anyhow::{Context, Result};
+use serde_json;
 use std::io::{self, Read};
 use tokio;
-use serde_json;
 
-use rust_validation_hooks::*;
 use rust_validation_hooks::truncate_utf8_safe;
+use rust_validation_hooks::*;
 // Use universal AI client for multi-provider support
 use rust_validation_hooks::providers::ai::UniversalAIClient;
-// Use project context for better AI understanding  
-use rust_validation_hooks::analysis::project::{scan_project_with_cache, format_project_structure_for_ai_with_metrics};
+// Use project context for better AI understanding
+use rust_validation_hooks::analysis::project::{
+    format_project_structure_for_ai_with_metrics, scan_project_with_cache,
+};
 use std::path::PathBuf;
 // Use diff formatter for better AI context - full file context for complete visibility
 use rust_validation_hooks::validation::diff_formatter::{
-    format_full_file_with_changes,
-    format_edit_full_context,
-    format_multi_edit_full_context,
+    format_edit_full_context, format_full_file_with_changes, format_multi_edit_full_context,
 };
 
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
@@ -40,7 +40,6 @@ fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
     }
 }
 
-
 /// Get the prompts directory path - always next to executable
 fn get_prompts_dir() -> PathBuf {
     // Always look for prompts directory next to executable
@@ -52,7 +51,7 @@ fn get_prompts_dir() -> PathBuf {
             return PathBuf::from("prompts");
         }
     };
-    
+
     let parent = match exe_path.parent() {
         Some(parent) => parent,
         None => {
@@ -61,15 +60,15 @@ fn get_prompts_dir() -> PathBuf {
             return PathBuf::from("prompts");
         }
     };
-    
+
     // Production scenario: prompts directory next to executable
     let prompts_path = parent.join("prompts");
-    
+
     if let Some(validated) = validate_prompts_path(&prompts_path) {
         eprintln!("PostTool using prompts directory: {:?}", validated);
         return validated;
     }
-    
+
     // Final fallback
     eprintln!("Warning: prompts directory not found next to executable, using current directory");
     PathBuf::from("prompts")
@@ -83,69 +82,72 @@ async fn load_prompt_file(filename: &str) -> Result<String> {
         .with_context(|| format!("Failed to load prompt file: {}", filename))
 }
 
+// Constants for formatting instructions
+const CRITICAL_INSTRUCTION: &str = "\n\nOUTPUT EXACTLY AS SHOWN IN THE TEMPLATE BELOW.\n\n";
+
+const TOKEN_LIMIT: &str = "TOKEN LIMIT: 4500\n\n";
+
+const TEMPLATE_HEADER: &str = "=== REQUIRED OUTPUT FORMAT ===\n";
+const TEMPLATE_FOOTER: &str = "\n=== END FORMAT ===\n";
+
+// This will be dynamically constructed with language
+const FINAL_INSTRUCTION_PREFIX: &str = "\n\nOUTPUT EXACTLY AS TEMPLATE. ANY FORMAT ALLOWED IF TEMPLATE SHOWS IT.\nRESPOND IN ";
+
 /// Format the analysis prompt with instructions, project context and conversation
 async fn format_analysis_prompt(
-    prompt: &str, 
-    project_context: Option<&str>, 
+    prompt: &str,
+    project_context: Option<&str>,
     diff_context: Option<&str>,
-    transcript_context: Option<&str>
+    transcript_context: Option<&str>,
 ) -> Result<String> {
-    
     // Load output template from file
     let output_template = load_prompt_file("output_template.txt").await?;
     
-    // Load edit validation instructions from file  
-    let edit_validation = load_prompt_file("edit_validation.txt").await?;
-    
+    // Load language preference with fallback to RUSSIAN
+    let language = load_prompt_file("language.txt")
+        .await
+        .unwrap_or_else(|_| "RUSSIAN".to_string())
+        .trim()
+        .to_string();
+
     let context_section = if let Some(context) = project_context {
         format!("\n\nPROJECT CONTEXT:\n{}\n", context)
     } else {
         String::new()
     };
-    
+
     let diff_section = if let Some(diff) = diff_context {
         format!("\n\nCODE CHANGES (diff format):\n{}\n", diff)
     } else {
         String::new()
     };
-    
+
     let transcript_section = if let Some(transcript) = transcript_context {
         format!("\n\nCONVERSATION CONTEXT:\n{}\n", transcript)
     } else {
         String::new()
     };
-    
+
     // Build prompt with pre-allocated capacity for better performance
-    const TOKEN_LIMIT_WARNING: &str = "\n\nCRITICAL TOKEN LIMIT: Your response must NOT exceed 4500 tokens. \
-         Keep analysis concise but thorough.\n\n";
-    const FINAL_INSTRUCTIONS: &str = "\n\nIMPORTANT:\n\
-         - ANALYZE THE ACTUAL CODE PROVIDED\n\
-         - FILL THE TEMPLATE WITH REAL ANALYSIS DATA\n\
-         - DO NOT COPY THE TEMPLATE STRUCTURE\n\
-         - PROVIDE SPECIFIC FINDINGS ABOUT THE CODE\n\
-         - Replace ALL placeholder text with actual analysis\n\
-         TOKEN LIMIT: Keep response under 4500 tokens.";
-    const SEPARATOR: &str = "\n\n";
-    
-    let estimated_capacity = prompt.len() 
-        + SEPARATOR.len()
-        + output_template.len() 
-        + edit_validation.len()
-        + transcript_section.len() 
-        + context_section.len() 
-        + diff_section.len() 
-        + TOKEN_LIMIT_WARNING.len()
-        + FINAL_INSTRUCTIONS.len();
-    
+    let estimated_capacity = prompt.len()
+        + output_template.len()
+        + transcript_section.len()
+        + context_section.len()
+        + diff_section.len()
+        + CRITICAL_INSTRUCTION.len()
+        + TOKEN_LIMIT.len()
+        + TEMPLATE_HEADER.len()
+        + TEMPLATE_FOOTER.len()
+        + FINAL_INSTRUCTION_PREFIX.len()
+        + language.len()
+        + 20; // buffer for separators and " LANGUAGE."
+
     let mut result = String::with_capacity(estimated_capacity);
-    
+
     // Main prompt
     result.push_str(prompt);
     result.push_str("\n\n");
-    
-    // Edit validation instructions
-    result.push_str(&edit_validation);
-    
+
     // Context sections
     if !transcript_section.is_empty() {
         result.push_str(&transcript_section);
@@ -156,19 +158,23 @@ async fn format_analysis_prompt(
     if !diff_section.is_empty() {
         result.push_str(&diff_section);
     }
-    
+
+    // Critical formatting instruction
+    result.push_str(CRITICAL_INSTRUCTION);
+
     // Token limit warning
-    result.push_str(
-        "\n\nCRITICAL TOKEN LIMIT: Your response must NOT exceed 4500 tokens. \
-         Keep analysis concise but thorough.\n\n"
-    );
-    
+    result.push_str(TOKEN_LIMIT);
+
     // Output template
+    result.push_str(TEMPLATE_HEADER);
     result.push_str(&output_template);
-    
-    // Final instructions - universal format support
-    result.push_str(FINAL_INSTRUCTIONS);
-    
+    result.push_str(TEMPLATE_FOOTER);
+
+    // Final instructions with language
+    result.push_str(FINAL_INSTRUCTION_PREFIX);
+    result.push_str(&language);
+    result.push_str(" LANGUAGE.");
+
     Ok(result)
 }
 
@@ -180,12 +186,12 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
     if path.is_empty() {
         anyhow::bail!("Invalid file path: empty path");
     }
-    
+
     // Check for null bytes
     if path.contains('\0') {
         anyhow::bail!("Invalid file path: contains null byte");
     }
-    
+
     // Convert to PathBuf and return - Claude Code already validates paths
     Ok(PathBuf::from(path))
 }
@@ -199,7 +205,7 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
             return Ok(None);
         }
     };
-    
+
     match tokio::fs::read_to_string(&validated_path).await {
         Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -207,7 +213,11 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
             Ok(None)
         }
         Err(e) => {
-            eprintln!("Warning: Failed to read file '{}': {}", validated_path.display(), e);
+            eprintln!(
+                "Warning: Failed to read file '{}': {}",
+                validated_path.display(),
+                e
+            );
             Ok(None)
         }
     }
@@ -216,85 +226,97 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
 /// Generate diff context for tool operations with FULL file content
 async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Result<String> {
     // Extract the actual file path from tool_input for file operations
-    let actual_file_path = hook_input.tool_input
+    let actual_file_path = hook_input
+        .tool_input
         .get("file_path")
         .and_then(|v| v.as_str())
         .unwrap_or(display_path);
-    
+
     // Read file content using actual path
     let file_content = read_file_content_safe(actual_file_path).await?;
-    
+
     match hook_input.tool_name.as_str() {
         "Edit" => {
             // Extract and validate required fields for Edit operation
-            let old_string = hook_input.tool_input
+            let old_string = hook_input
+                .tool_input
                 .get("old_string")
                 .and_then(|v| v.as_str())
                 .context("Edit operation missing required 'old_string' field")?;
-            
-            let new_string = hook_input.tool_input
+
+            let new_string = hook_input
+                .tool_input
                 .get("new_string")
                 .and_then(|v| v.as_str())
                 .context("Edit operation missing required 'new_string' field")?;
-            
+
             // Return FULL file with changes marked
-            Ok(format_edit_full_context(display_path, file_content.as_deref(), old_string, new_string))
+            Ok(format_edit_full_context(
+                display_path,
+                file_content.as_deref(),
+                old_string,
+                new_string,
+            ))
         }
-        
+
         "MultiEdit" => {
             // Extract and validate edits array
-            let edits_array = hook_input.tool_input
+            let edits_array = hook_input
+                .tool_input
                 .get("edits")
                 .and_then(|v| v.as_array())
                 .context("MultiEdit operation missing required 'edits' array")?;
-            
+
             // Validate edits array is not empty
             if edits_array.is_empty() {
                 anyhow::bail!("MultiEdit operation has empty 'edits' array");
             }
-            
+
             // Parse edits with validation
             let mut edits = Vec::new();
             for (idx, edit) in edits_array.iter().enumerate() {
-                let old_string = edit.get("old_string")
+                let old_string = edit
+                    .get("old_string")
                     .and_then(|v| v.as_str())
                     .with_context(|| format!("Edit {} missing 'old_string'", idx))?;
-                
-                let new_string = edit.get("new_string")
+
+                let new_string = edit
+                    .get("new_string")
                     .and_then(|v| v.as_str())
                     .with_context(|| format!("Edit {} missing 'new_string'", idx))?;
-                
+
                 // Validate strings are not empty
                 if old_string.is_empty() {
                     anyhow::bail!("Edit {} has empty 'old_string'", idx);
                 }
-                
+
                 edits.push((old_string.to_string(), new_string.to_string()));
             }
-            
+
             // Use the new format_multi_edit_full_context function for better diff output
             Ok(format_multi_edit_full_context(
                 display_path,
                 file_content.as_deref(),
-                &edits
+                &edits,
             ))
         }
-        
+
         "Write" => {
             // Extract and validate content field
-            let new_content = hook_input.tool_input
+            let new_content = hook_input
+                .tool_input
                 .get("content")
                 .and_then(|v| v.as_str())
                 .context("Write operation missing required 'content' field")?;
-            
+
             // Return FULL file comparison (old vs new)
             Ok(format_full_file_with_changes(
-                display_path, 
-                file_content.as_deref(), 
-                Some(new_content)
+                display_path,
+                file_content.as_deref(),
+                Some(new_content),
             ))
         }
-        
+
         _ => {
             // Not a code modification operation
             Ok(String::new())
@@ -302,57 +324,62 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
     }
 }
 
-
 /// Validate transcript path for security
 fn validate_transcript_path(path: &str) -> bool {
     // Check for path traversal attempts
     if path.contains("..") || path.contains("~") || path.contains("\\\\") {
         return false;
     }
-    
+
     // Check for suspicious patterns
     if path.contains("%") || path.contains('\0') {
         return false;
     }
-    
+
     true
 }
 
 /// Read and format transcript for AI context (without tool content)
-async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usize) -> Result<String> {
+async fn read_transcript_summary(
+    path: &str,
+    max_messages: usize,
+    max_chars: usize,
+) -> Result<String> {
     // Security check
     if !validate_transcript_path(path) {
         anyhow::bail!("Invalid transcript path: potential security risk");
     }
-    
-    use tokio::io::{AsyncBufReadExt, BufReader};
+
     use tokio::fs::File;
-    
+    use tokio::io::{AsyncBufReadExt, BufReader};
+
     // For large files, we'll read only the last portion
     const MAX_READ_BYTES: u64 = 1024 * 1024; // 1MB should be enough for recent messages
-    
-    let file = File::open(path).await.context("Failed to open transcript file")?;
+
+    let file = File::open(path)
+        .await
+        .context("Failed to open transcript file")?;
     let metadata = file.metadata().await?;
     let file_size = metadata.len();
-    
+
     // Position to read from (read last 1MB or entire file if smaller)
     let start_pos = if file_size > MAX_READ_BYTES {
         file_size.saturating_sub(MAX_READ_BYTES)
     } else {
         0
     };
-    
+
     // Seek to starting position if needed
     use tokio::io::AsyncSeekExt;
     let mut file = file;
     if start_pos > 0 {
         file.seek(std::io::SeekFrom::Start(start_pos)).await?;
     }
-    
+
     let reader = BufReader::new(file);
     let mut lines_buffer = Vec::new();
     let mut lines = reader.lines();
-    
+
     // Collect lines into buffer
     while let Some(line) = lines.next_line().await? {
         if start_pos > 0 && lines_buffer.is_empty() {
@@ -361,19 +388,19 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
         }
         lines_buffer.push(line);
     }
-    
+
     let mut messages = Vec::new();
     let mut total_chars = 0;
     let mut most_recent_user_message = String::new();
     let mut found_first_user_message = false;
-    
+
     // Parse JSONL format - each line is a separate JSON object
     // We iterate in reverse to get most recent messages first
     for line in lines_buffer.iter().rev() {
         if line.trim().is_empty() {
             continue;
         }
-        
+
         if let Ok(entry) = serde_json::from_str::<serde_json::Value>(line) {
             // Extract message from the entry - handle both nested and simple formats
             let msg = if let Some(nested_msg) = entry.get("message") {
@@ -383,79 +410,87 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
                 // Format: {"role": "...", "content": "..."} - simple format
                 &entry
             };
-            
+
             // Handle different message formats
             if let Some(role) = msg.get("role").and_then(|v| v.as_str()) {
-                    let content = if let Some(content_arr) = msg.get("content").and_then(|v| v.as_array()) {
-                        // Handle content array (assistant messages)
-                        let mut text_parts = Vec::new();
-                        
-                        for c in content_arr {
-                            if let Some(text) = c.get("text").and_then(|v| v.as_str()) {
-                                text_parts.push(text.to_string());
-                            } else if let Some(tool_name) = c.get("name").and_then(|v| v.as_str()) {
-                                // Get tool name and file if available
-                                if let Some(input) = c.get("input") {
-                                    if let Some(file_path) = input.get("file_path").and_then(|v| v.as_str()) {
-                                        text_parts.push(format!("{} tool file: {}", tool_name, file_path));
-                                    } else {
-                                        text_parts.push(format!("{} tool", tool_name));
-                                    }
+                let content = if let Some(content_arr) =
+                    msg.get("content").and_then(|v| v.as_array())
+                {
+                    // Handle content array (assistant messages)
+                    let mut text_parts = Vec::new();
+
+                    for c in content_arr {
+                        if let Some(text) = c.get("text").and_then(|v| v.as_str()) {
+                            text_parts.push(text.to_string());
+                        } else if let Some(tool_name) = c.get("name").and_then(|v| v.as_str()) {
+                            // Get tool name and file if available
+                            if let Some(input) = c.get("input") {
+                                if let Some(file_path) =
+                                    input.get("file_path").and_then(|v| v.as_str())
+                                {
+                                    text_parts
+                                        .push(format!("{} tool file: {}", tool_name, file_path));
+                                } else {
+                                    text_parts.push(format!("{} tool", tool_name));
                                 }
                             }
                         }
-                        
-                        if !text_parts.is_empty() {
-                            Some(text_parts.join(" "))
-                        } else {
-                            None
-                        }
-                    } else if let Some(text) = msg.get("content").and_then(|v| v.as_str()) {
-                        // Handle simple string content (user messages)
-                        Some(text.to_string())
+                    }
+
+                    if !text_parts.is_empty() {
+                        Some(text_parts.join(" "))
                     } else {
                         None
-                    };
-                    
-                    if let Some(content) = content {
-                        // Format message
-                        let formatted_msg = if role == "user" {
-                            // Save the FIRST user message we encounter (which is the most recent due to reverse iteration)
-                            if !found_first_user_message {
-                                most_recent_user_message = content.clone();
-                                found_first_user_message = true;
-                            }
-                            format!("[user]: {}", truncate_utf8_safe(&content, 150))
-                        } else if role == "assistant" {
-                            format!("[ai-assistant]: {}", truncate_utf8_safe(&content, 150))
-                        } else {
-                            continue;
-                        };
-                        
-                        total_chars += formatted_msg.len();
-                        messages.push(formatted_msg);
-                        
-                        if messages.len() >= max_messages || total_chars >= max_chars {
-                            break;
-                        }
                     }
+                } else if let Some(text) = msg.get("content").and_then(|v| v.as_str()) {
+                    // Handle simple string content (user messages)
+                    Some(text.to_string())
+                } else {
+                    None
+                };
+
+                if let Some(content) = content {
+                    // Format message
+                    let formatted_msg = if role == "user" {
+                        // Save the FIRST user message we encounter (which is the most recent due to reverse iteration)
+                        if !found_first_user_message {
+                            most_recent_user_message = content.clone();
+                            found_first_user_message = true;
+                        }
+                        format!("[user]: {}", truncate_utf8_safe(&content, 150))
+                    } else if role == "assistant" {
+                        format!("[ai-assistant]: {}", truncate_utf8_safe(&content, 150))
+                    } else {
+                        continue;
+                    };
+
+                    total_chars += formatted_msg.len();
+                    messages.push(formatted_msg);
+
+                    if messages.len() >= max_messages || total_chars >= max_chars {
+                        break;
+                    }
+                }
             }
         }
     }
-    
+
     // Reverse to get chronological order
     messages.reverse();
-    
+
     // Format final output
     let conversation = messages.join("\n");
-    
+
     // Extract current task from most recent user message
     let current_task = if !most_recent_user_message.is_empty() {
-        format!("Current user task: {}\n\n", truncate_utf8_safe(&most_recent_user_message, 200))
+        format!(
+            "Current user task: {}\n\n",
+            truncate_utf8_safe(&most_recent_user_message, 200)
+        )
     } else {
         String::new()
     };
-    
+
     Ok(format!("{}conversation:\n{}", current_task, conversation))
 }
 
@@ -464,11 +499,14 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
 async fn main() -> Result<()> {
     // Read hook input from stdin
     let mut buffer = String::new();
-    io::stdin().read_to_string(&mut buffer).context("Failed to read stdin")?;
-    
+    io::stdin()
+        .read_to_string(&mut buffer)
+        .context("Failed to read stdin")?;
+
     // Parse the input
-    let hook_input: HookInput = serde_json::from_str(&buffer).context("Failed to parse input JSON")?;
-    
+    let hook_input: HookInput =
+        serde_json::from_str(&buffer).context("Failed to parse input JSON")?;
+
     // Only analyze Write, Edit, and MultiEdit operations
     if !matches!(
         hook_input.tool_name.as_str(),
@@ -481,24 +519,28 @@ async fn main() -> Result<()> {
                 additional_context: String::new(),
             },
         };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
         return Ok(());
     }
-    
+
     // Get the file path and new content from tool input
     let file_path = hook_input
         .tool_input
         .get("file_path")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    
+
     // Skip non-code files
-    if file_path.ends_with(".md") || 
-       file_path.ends_with(".txt") || 
-       file_path.ends_with(".json") ||
-       file_path.ends_with(".toml") ||
-       file_path.ends_with(".yaml") ||
-       file_path.ends_with(".yml") {
+    if file_path.ends_with(".md")
+        || file_path.ends_with(".txt")
+        || file_path.ends_with(".json")
+        || file_path.ends_with(".toml")
+        || file_path.ends_with(".yaml")
+        || file_path.ends_with(".yml")
+    {
         // Pass through - not a code file
         let output = PostToolUseOutput {
             hook_specific_output: PostToolUseHookOutput {
@@ -506,28 +548,27 @@ async fn main() -> Result<()> {
                 additional_context: String::new(),
             },
         };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
         return Ok(());
     }
-    
+
     // Extract content based on tool type
     let content = match hook_input.tool_name.as_str() {
-        "Write" => {
-            hook_input
-                .tool_input
-                .get("content")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        }
-        "Edit" => {
-            hook_input
-                .tool_input
-                .get("new_string")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string()
-        }
+        "Write" => hook_input
+            .tool_input
+            .get("content")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "Edit" => hook_input
+            .tool_input
+            .get("new_string")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string(),
         "MultiEdit" => {
             // For MultiEdit, aggregate all new_strings
             hook_input
@@ -537,9 +578,7 @@ async fn main() -> Result<()> {
                 .map(|edits| {
                     edits
                         .iter()
-                        .filter_map(|edit| {
-                            edit.get("new_string").and_then(|v| v.as_str())
-                        })
+                        .filter_map(|edit| edit.get("new_string").and_then(|v| v.as_str()))
                         .collect::<Vec<_>>()
                         .join("\n")
                 })
@@ -547,7 +586,7 @@ async fn main() -> Result<()> {
         }
         _ => String::new(),
     };
-    
+
     // Skip if no content to analyze
     if content.trim().is_empty() {
         let output = PostToolUseOutput {
@@ -556,18 +595,21 @@ async fn main() -> Result<()> {
                 additional_context: String::new(),
             },
         };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
         return Ok(());
     }
-    
+
     // Load configuration from environment
     let config = Config::from_env().context("Failed to load configuration")?;
-    
+
     // Load the analysis prompt
     let prompt = load_prompt_file("post_edit_validation.txt")
         .await
         .context("Failed to load prompt")?;
-    
+
     // Get project structure with caching and metrics
     let cache_path = PathBuf::from(".claude_project_cache.json");
     let project_context = match scan_project_with_cache(".", Some(&cache_path), None) {
@@ -577,21 +619,22 @@ async fn main() -> Result<()> {
             let mut formatted = format_project_structure_for_ai_with_metrics(
                 &structure,
                 Some(&metrics),
-                use_compression
+                use_compression,
             );
-            
+
             // Add incremental update info if available
             if let Some(inc) = incremental {
                 formatted.push_str(&format!("\n{}", inc));
             }
-            
+
             // Log metrics to stderr for debugging
-            eprintln!("Project metrics: {} LOC, {} files, complexity: {:.1}", 
+            eprintln!(
+                "Project metrics: {} LOC, {} files, complexity: {:.1}",
                 metrics.total_lines_of_code,
                 structure.files.len(),
                 metrics.project_complexity_score
             );
-            
+
             Some(formatted)
         }
         Err(e) => {
@@ -612,8 +655,8 @@ async fn main() -> Result<()> {
     } else {
         file_path.to_string()
     };
-    
-    // Generate diff context for the code changes  
+
+    // Generate diff context for the code changes
     let diff_context = match generate_diff_context(&hook_input, &display_path).await {
         Ok(diff) => diff,
         Err(e) => {
@@ -632,7 +675,7 @@ async fn main() -> Result<()> {
                 let truncated: String = summary.chars().take(500).collect();
                 eprintln!("DEBUG: First ~500 chars: {}", truncated);
                 Some(summary)
-            },
+            }
             Err(e) => {
                 eprintln!("Warning: Failed to read transcript: {}", e);
                 None
@@ -645,12 +688,13 @@ async fn main() -> Result<()> {
 
     // Format the prompt with context, diff and conversation
     let formatted_prompt = format_analysis_prompt(
-        &prompt, 
-        project_context.as_deref(), 
+        &prompt,
+        project_context.as_deref(),
         Some(&diff_context),
-        transcript_context.as_deref()
-    ).await?;
-    
+        transcript_context.as_deref(),
+    )
+    .await?;
+
     // DEBUG: Write the exact prompt to a file for inspection
     if let Ok(mut debug_file) = tokio::fs::File::create("post-context.txt").await {
         use tokio::io::AsyncWriteExt;
@@ -658,13 +702,15 @@ async fn main() -> Result<()> {
         let _ = debug_file.write_all(b"\n\n=== END OF PROMPT ===\n").await;
         eprintln!("DEBUG: Full prompt written to post-context.txt");
     }
-    
+
     // Create AI client and perform analysis
-    let client = UniversalAIClient::new(config.clone())
-        .context("Failed to create AI client")?;
-    
+    let client = UniversalAIClient::new(config.clone()).context("Failed to create AI client")?;
+
     // Analyze code using the configured provider - returns raw response
-    match client.analyze_code_posttool(&content, &formatted_prompt).await {
+    match client
+        .analyze_code_posttool(&content, &formatted_prompt)
+        .await
+    {
         Ok(ai_response) => {
             // Pass the raw AI response directly as additional context
             // The AI will format it according to output_template.txt
@@ -674,13 +720,16 @@ async fn main() -> Result<()> {
                     additional_context: ai_response,
                 },
             };
-            
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+
+            println!(
+                "{}",
+                serde_json::to_string(&output).context("Failed to serialize output")?
+            );
         }
         Err(e) => {
             // Log error but don't block the operation
             eprintln!("PostToolUse analysis error: {}", e);
-            
+
             // Pass through with minimal feedback
             let output = PostToolUseOutput {
                 hook_specific_output: PostToolUseHookOutput {
@@ -688,14 +737,15 @@ async fn main() -> Result<()> {
                     additional_context: String::new(),
                 },
             };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            println!(
+                "{}",
+                serde_json::to_string(&output).context("Failed to serialize output")?
+            );
         }
     }
-    
+
     Ok(())
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -708,17 +758,29 @@ mod tests {
     async fn test_read_transcript_summary_with_user_messages() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
-        writeln!(file, r#"{{"role":"user","content":"Help me write a function"}}"#).unwrap();
-        writeln!(file, r#"{{"role":"assistant","content":"I'll help you write a function"}}"#).unwrap();
-        writeln!(file, r#"{{"role":"user","content":"Make it handle errors properly"}}"#).unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"Help me write a function"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"assistant","content":"I'll help you write a function"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"Make it handle errors properly"}}"#
+        )
+        .unwrap();
         drop(file); // Ensure file is closed
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         assert!(summary.contains("Current user task: Make it handle errors properly"));
         assert!(summary.contains("user: Help me write a function"));
         assert!(summary.contains("assistant: I'll help you write a function"));
@@ -728,17 +790,17 @@ mod tests {
     async fn test_read_transcript_summary_truncation() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Create a very long message
         let long_message = "x".repeat(3000);
         writeln!(file, r#"{{"role":"user","content":"{}"}}"#, long_message).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should be truncated to around 2000 chars
         assert!(summary.len() < 2500);
         assert!(summary.contains("Current user task:"));
@@ -748,14 +810,14 @@ mod tests {
     async fn test_read_transcript_summary_empty_file() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         // Create empty file
         fs::File::create(&transcript_path).unwrap();
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Empty file returns just the header
         assert_eq!(summary.trim(), "conversation:");
     }
@@ -770,16 +832,16 @@ mod tests {
     async fn test_read_transcript_summary_invalid_json() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         writeln!(file, "not valid json").unwrap();
         writeln!(file, r#"{{"role":"user","content":"Valid message"}}"#).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should skip invalid lines and process valid ones
         assert!(summary.contains("user: Valid message"));
     }
@@ -788,17 +850,17 @@ mod tests {
     async fn test_read_transcript_summary_complex_content() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Message with content array (assistant format)
         writeln!(file, r#"{{"message":{{"role":"assistant","content":[{{"text":"I'll help"}},{{"name":"Edit","input":{{"file_path":"test.rs"}}}}]}},"timestamp":"2024-01-01T00:00:00Z"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Thanks"}}"#).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         assert!(summary.contains("assistant: I'll help Edit tool file: test.rs"));
         assert!(summary.contains("Current user task: Thanks"));
     }
@@ -807,25 +869,25 @@ mod tests {
     async fn test_read_transcript_summary_message_order() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         writeln!(file, r#"{{"role":"user","content":"First message"}}"#).unwrap();
         writeln!(file, r#"{{"role":"assistant","content":"Response"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Second message"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Most recent message"}}"#).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should identify the most recent user message
         assert!(summary.contains("Current user task: Most recent message"));
         // Messages should appear in order
         if let (Some(first_pos), Some(second_pos), Some(recent_pos)) = (
             summary.find("First message"),
             summary.find("Second message"),
-            summary.find("Most recent message")
+            summary.find("Most recent message"),
         ) {
             assert!(first_pos < second_pos);
             assert!(second_pos < recent_pos);
@@ -842,27 +904,30 @@ mod tests {
         assert!(!validate_transcript_path("file%20with%20encoding"));
         assert!(!validate_transcript_path("file\0with\0nulls"));
         assert!(validate_transcript_path("/valid/path/transcript.jsonl"));
-        assert!(validate_transcript_path("C:/Users/1/Documents/transcript.jsonl"));
+        assert!(validate_transcript_path(
+            "C:/Users/1/Documents/transcript.jsonl"
+        ));
     }
 
     #[tokio::test]
     async fn test_read_transcript_summary_message_limit_reached_before_char_limit() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Create more messages than max_messages
         for i in 0..10 {
             writeln!(file, r#"{{"role":"user","content":"Message {}"}}"#, i).unwrap();
         }
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 5, 10000)
             .await
             .unwrap();
-        
+
         // Should only contain 5 messages even though char limit not reached
-        let message_count = summary.matches("[user]:").count() + summary.matches("[ai-assistant]:").count();
+        let message_count =
+            summary.matches("[user]:").count() + summary.matches("[ai-assistant]:").count();
         assert_eq!(message_count, 5);
     }
 
@@ -870,19 +935,24 @@ mod tests {
     async fn test_read_transcript_summary_char_limit_reached_before_message_limit() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Create messages with very long content
         let long_content = "x".repeat(500);
         for i in 0..10 {
-            writeln!(file, r#"{{"role":"user","content":"Message {}: {}"}}"#, i, long_content).unwrap();
+            writeln!(
+                file,
+                r#"{{"role":"user","content":"Message {}: {}"}}"#,
+                i, long_content
+            )
+            .unwrap();
         }
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 500)
             .await
             .unwrap();
-        
+
         // Should stop before reaching message limit due to char limit
         // The limit is 500 chars, but we need to be precise
         assert!(summary.len() <= 550); // Allow small buffer for headers/formatting
@@ -896,13 +966,14 @@ mod tests {
     async fn test_read_transcript_summary_various_malformed_json() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Various malformed JSON scenarios
         writeln!(file, r#"{{"role": "user", "content": "Valid message 1"}}"#).unwrap();
         writeln!(file, "{{{{invalid json}}}}").unwrap(); // Missing quotes
         writeln!(file, r#"{{"role":"user","content":"Valid message 2"}}"#).unwrap();
-        file.write_all(b"{\"role\":\"user\",\"content\":\"Unclosed string\n").unwrap(); // Unclosed
+        file.write_all(b"{\"role\":\"user\",\"content\":\"Unclosed string\n")
+            .unwrap(); // Unclosed
         writeln!(file, r#"{{"role":"user","content":"Valid message 3"}}"#).unwrap();
         writeln!(file, "").unwrap(); // Empty line
         writeln!(file, "null").unwrap(); // Just null
@@ -910,11 +981,11 @@ mod tests {
         writeln!(file, r#"{{"content":"Missing role"}}"#).unwrap(); // Missing role field
         writeln!(file, r#"{{"role":"user","content":"Valid message 4"}}"#).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should only process valid messages
         assert!(summary.contains("Valid message 1"));
         assert!(summary.contains("Valid message 2"));
@@ -927,22 +998,42 @@ mod tests {
     async fn test_read_transcript_summary_utf8_edge_cases() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Various UTF-8 edge cases
         writeln!(file, r#"{{"role":"user","content":"ASCII only message"}}"#).unwrap();
-        writeln!(file, r#"{{"role":"user","content":"Emoji 🎉🚀💻 message"}}"#).unwrap();
-        writeln!(file, r#"{{"role":"user","content":"Cyrillic текст сообщение"}}"#).unwrap();
-        writeln!(file, r#"{{"role":"user","content":"CJK 中文 日本語 한국어"}}"#).unwrap();
-        writeln!(file, "{{\"role\":\"user\",\"content\":\"Zero-width \u{200B}\u{200C}\u{200D} chars\"}}").unwrap();
-        writeln!(file, r#"{{"role":"user","content":"RTL text مرحبا עברית"}}"#).unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"Emoji 🎉🚀💻 message"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"Cyrillic текст сообщение"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"CJK 中文 日本語 한국어"}}"#
+        )
+        .unwrap();
+        writeln!(
+            file,
+            "{{\"role\":\"user\",\"content\":\"Zero-width \u{200B}\u{200C}\u{200D} chars\"}}"
+        )
+        .unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"RTL text مرحبا עברית"}}"#
+        )
+        .unwrap();
         writeln!(file, r#"{{"role":"user","content":"Combined 👨‍👩‍👧‍👦 emoji"}}"#).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should handle all UTF-8 properly
         assert!(summary.contains("ASCII only"));
         assert!(summary.contains("🎉"));
@@ -955,7 +1046,7 @@ mod tests {
     async fn test_read_transcript_summary_large_file_with_seek() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Create a file larger than 1MB
         for i in 0..50000 {
@@ -966,11 +1057,11 @@ mod tests {
         writeln!(file, r#"{{"role":"user","content":"Recent message 2"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Most recent message"}}"#).unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should contain recent messages, not old ones from beginning
         assert!(summary.contains("Recent message"));
         assert!(summary.contains("Most recent message"));
@@ -984,20 +1075,31 @@ mod tests {
     async fn test_read_transcript_summary_nested_json_content() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Message with nested JSON in content - using write! to avoid formatting issues
-        file.write_all(b"{\"role\":\"user\",\"content\":\"Here is JSON: {\\\"key\\\": \\\"value\\\"}\"}\n").unwrap();
+        file.write_all(
+            b"{\"role\":\"user\",\"content\":\"Here is JSON: {\\\"key\\\": \\\"value\\\"}\"}\n",
+        )
+        .unwrap();
         // Message with escaped characters
-        writeln!(file, r#"{{"role":"user","content":"Path: C:\\Users\\Test\\file.txt"}}"#).unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"Path: C:\\Users\\Test\\file.txt"}}"#
+        )
+        .unwrap();
         // Message with newlines
-        writeln!(file, r#"{{"role":"user","content":"Line 1\nLine 2\nLine 3"}}"#).unwrap();
+        writeln!(
+            file,
+            r#"{{"role":"user","content":"Line 1\nLine 2\nLine 3"}}"#
+        )
+        .unwrap();
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should handle nested/escaped content properly
         assert!(summary.contains("JSON"));
         assert!(summary.contains("Path"));
@@ -1008,7 +1110,7 @@ mod tests {
     async fn test_read_transcript_summary_empty_content_messages() {
         let dir = tempdir().unwrap();
         let transcript_path = dir.path().join("transcript.jsonl");
-        
+
         let mut file = fs::File::create(&transcript_path).unwrap();
         writeln!(file, r#"{{"role":"user","content":""}}"#).unwrap();
         writeln!(file, r#"{{"role":"assistant","content":""}}"#).unwrap();
@@ -1016,11 +1118,11 @@ mod tests {
         writeln!(file, r#"{{"role":"assistant","content":[]}}"#).unwrap(); // Empty array
         writeln!(file, r#"{{"role":"assistant","content":[{{"text":""}}]}}"#).unwrap(); // Empty text in array
         drop(file);
-        
+
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)
             .await
             .unwrap();
-        
+
         // Should handle empty content gracefully
         assert!(summary.contains("Non-empty message"));
         assert!(summary.contains("Current user task: Non-empty message"));
@@ -1029,18 +1131,16 @@ mod tests {
     #[tokio::test]
     async fn test_format_multi_edit_diff_edge_cases() {
         use crate::validation::diff_formatter::format_multi_edit_diff;
-        
+
         // Test with empty edits
         let result = format_multi_edit_diff("test.rs", Some("content"), &[]);
         assert!(result.contains("0 edit operations"));
-        
+
         // Test with empty old_string (should handle gracefully)
-        let edits = vec![
-            ("".to_string(), "new content".to_string()),
-        ];
+        let edits = vec![("".to_string(), "new content".to_string())];
         let result = format_multi_edit_diff("test.rs", Some("file content"), &edits);
         assert!(result.contains("Edit #1 failed"));
-        
+
         // Test with overlapping edits
         let edits = vec![
             ("hello".to_string(), "hi".to_string()),
@@ -1048,29 +1148,27 @@ mod tests {
         ];
         let result = format_multi_edit_diff("test.rs", Some("hello world"), &edits);
         assert!(result.contains("Applied"));
-        
+
         // Test with no file content
-        let edits = vec![
-            ("old".to_string(), "new".to_string()),
-        ];
+        let edits = vec![("old".to_string(), "new".to_string())];
         let result = format_multi_edit_diff("test.rs", None, &edits);
         assert!(result.contains("File content not available"));
     }
 
-    #[tokio::test]  
+    #[tokio::test]
     async fn test_truncate_for_display_with_special_chars() {
         use crate::validation::diff_formatter::truncate_for_display;
-        
+
         // Test with control characters
         let text_with_control = "Hello\x00\x01\x02World";
         let result = truncate_for_display(text_with_control, 10);
         assert_eq!(result.len(), 10);
-        
+
         // Test with combining characters
         let combining = "e\u{0301}"; // é as e + combining acute
         let result = truncate_for_display(combining, 5);
         assert!(result.len() <= 5);
-        
+
         // Test with surrogate pairs edge case
         let text = "𝄞𝄞𝄞𝄞𝄞"; // Musical symbols (4 bytes each)
         let result = truncate_for_display(text, 10);

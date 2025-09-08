@@ -2,8 +2,8 @@
 use anyhow::Result;
 use tree_sitter::{Language, Parser};
 
-use crate::analysis::metrics::ComplexityMetrics;
 use crate::analysis::ast::visitor::ComplexityVisitor;
+use crate::analysis::metrics::ComplexityMetrics;
 
 /// Supported languages for AST analysis
 /// Note: Rust uses syn crate for superior macro and procedural parsing,
@@ -93,15 +93,21 @@ pub struct MultiLanguageAnalyzer;
 
 impl MultiLanguageAnalyzer {
     /// Analyze source code with Tree-sitter and return complexity metrics
-    pub fn analyze_with_tree_sitter(source_code: &str, language: SupportedLanguage) -> Result<ComplexityMetrics> {
+    pub fn analyze_with_tree_sitter(
+        source_code: &str,
+        language: SupportedLanguage,
+    ) -> Result<ComplexityMetrics> {
         // Input validation
         if source_code.is_empty() {
             return Err(anyhow::anyhow!("Source code cannot be empty"));
         }
-        
+
         // Additional validation for extremely long input to prevent resource exhaustion
-        if source_code.len() > 10_000_000 { // 10MB limit
-            return Err(anyhow::anyhow!("Source code too large (>10MB), potential DoS risk"));
+        if source_code.len() > 10_000_000 {
+            // 10MB limit
+            return Err(anyhow::anyhow!(
+                "Source code too large (>10MB), potential DoS risk"
+            ));
         }
 
         // Rust should use syn crate, not Tree-sitter
@@ -113,25 +119,31 @@ impl MultiLanguageAnalyzer {
 
         // Get Tree-sitter language
         let ts_language = language.get_tree_sitter_language()?;
-        
+
         // Create parser
         let mut parser = Parser::new();
         parser.set_language(&ts_language)?;
-        
+
         // Parse source code with error handling for malformed syntax
-        let tree = parser.parse(source_code, None)
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse {} source code - syntax may be invalid", language))?;
-        
+        let tree = parser.parse(source_code, None).ok_or_else(|| {
+            anyhow::anyhow!(
+                "Failed to parse {} source code - syntax may be invalid",
+                language
+            )
+        })?;
+
         // Validate tree structure to prevent potential crashes
         let root_node = tree.root_node();
         if root_node.has_error() {
-            return Err(anyhow::anyhow!("Source code contains syntax errors that prevent analysis"));
+            return Err(anyhow::anyhow!(
+                "Source code contains syntax errors that prevent analysis"
+            ));
         }
-        
+
         // Create visitor and analyze AST
         let mut visitor = ComplexityVisitor::new(source_code, language);
         visitor.visit_node(&root_node)?;
-        
+
         Ok(visitor.build_metrics())
     }
 }
@@ -142,11 +154,26 @@ mod tests {
 
     #[test]
     fn test_supported_language_from_extension() {
-        assert_eq!(SupportedLanguage::from_extension("py"), Some(SupportedLanguage::Python));
-        assert_eq!(SupportedLanguage::from_extension("js"), Some(SupportedLanguage::JavaScript));
-        assert_eq!(SupportedLanguage::from_extension("ts"), Some(SupportedLanguage::TypeScript));
-        assert_eq!(SupportedLanguage::from_extension("java"), Some(SupportedLanguage::Java));
-        assert_eq!(SupportedLanguage::from_extension("rs"), Some(SupportedLanguage::Rust));
+        assert_eq!(
+            SupportedLanguage::from_extension("py"),
+            Some(SupportedLanguage::Python)
+        );
+        assert_eq!(
+            SupportedLanguage::from_extension("js"),
+            Some(SupportedLanguage::JavaScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_extension("ts"),
+            Some(SupportedLanguage::TypeScript)
+        );
+        assert_eq!(
+            SupportedLanguage::from_extension("java"),
+            Some(SupportedLanguage::Java)
+        );
+        assert_eq!(
+            SupportedLanguage::from_extension("rs"),
+            Some(SupportedLanguage::Rust)
+        );
         assert_eq!(SupportedLanguage::from_extension("unknown"), None);
     }
 
@@ -154,9 +181,11 @@ mod tests {
     fn test_tree_sitter_language_creation() {
         // Test that we can create Tree-sitter languages for supported languages
         assert!(SupportedLanguage::Python.get_tree_sitter_language().is_ok());
-        assert!(SupportedLanguage::JavaScript.get_tree_sitter_language().is_ok());
+        assert!(SupportedLanguage::JavaScript
+            .get_tree_sitter_language()
+            .is_ok());
         assert!(SupportedLanguage::Java.get_tree_sitter_language().is_ok());
-        
+
         // Rust should fail as it uses syn crate
         assert!(SupportedLanguage::Rust.get_tree_sitter_language().is_err());
     }
@@ -170,7 +199,10 @@ mod tests {
 
     #[test]
     fn test_analyze_rust_rejection() {
-        let result = MultiLanguageAnalyzer::analyze_with_tree_sitter("fn main() {}", SupportedLanguage::Rust);
+        let result = MultiLanguageAnalyzer::analyze_with_tree_sitter(
+            "fn main() {}",
+            SupportedLanguage::Rust,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("syn crate"));
     }
@@ -178,9 +210,10 @@ mod tests {
     #[test]
     fn test_analyze_simple_python() {
         let python_code = "def hello():\n    return 'world'";
-        let result = MultiLanguageAnalyzer::analyze_with_tree_sitter(python_code, SupportedLanguage::Python);
+        let result =
+            MultiLanguageAnalyzer::analyze_with_tree_sitter(python_code, SupportedLanguage::Python);
         assert!(result.is_ok());
-        
+
         let metrics = result.unwrap();
         assert!(metrics.function_count >= 1);
         assert!(metrics.line_count >= 2);
@@ -189,9 +222,10 @@ mod tests {
     #[test]
     fn test_analyze_simple_javascript() {
         let js_code = "function hello() { return 'world'; }";
-        let result = MultiLanguageAnalyzer::analyze_with_tree_sitter(js_code, SupportedLanguage::JavaScript);
+        let result =
+            MultiLanguageAnalyzer::analyze_with_tree_sitter(js_code, SupportedLanguage::JavaScript);
         assert!(result.is_ok());
-        
+
         let metrics = result.unwrap();
         assert!(metrics.function_count >= 1);
     }
