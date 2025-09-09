@@ -11,7 +11,8 @@
 - [x] Упаковать артефакты в dist/ (linux/windows) и сгенерировать SHA256SUMS + RELEASE_MANIFEST.
  - [x] Legacy parity: добавить LongLineRule в multi-pass (no-default-features); e2e cap тест проходит.
  - [x] Ограничить интеграционные тесты fastpath-специфичных правил `cfg(feature=ast_fastpath)`.
- - [x] Пройти clippy во всей кодовой базе (0 предупреждений) без изменения поведения.
- - [ ] Прогнать perf-бенчмарки (criterion) и обновить baseline — следующий шаг.
+- [x] Пройти clippy во всей кодовой базе (0 предупреждений) без изменения поведения.
+- [ ] Прогнать perf-бенчмарки (criterion) и обновить baseline — следующий шаг.
+ - [x] Прогнать perf-бенчмарки (criterion) и сохранить baseline в reports/benchmarks/baseline; perf_gate без регрессий.
 
 Примечание: все изменения направлены на завершение AST‑системы передачи контекста в PostToolUse для Claude Code (детерминизм, лимиты, ясность).
