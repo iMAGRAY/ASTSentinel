@@ -4,7 +4,9 @@
 - [x] Добавить интеграционный тест проектного AST-анализа в posttooluse (детерминизм + критические находки).
 - [x] Актуализировать README_HOOKS по дополнительному контексту PostToolUse (AST + границы).
 - [x] Расширить кросс-языковые фикстуры: добавлены fastpath-тесты для JS/TS/Java/C#/Go (unreachable, creds/sql) + «good code» для JS/Java.
-  - [ ] Добавить «good code» образцы для TypeScript/C#/Go и дополнительные негативные кейсы (nesting/params) — в процессе.
+  - [x] Добавить «good code» образцы для TypeScript/C#/Go и дополнительные негативные кейсы (unreachable/creds/sql) — добавлены.
+  - [ ] Углубить TS/C#/Go негативные кейсы (сложные nesting/params) — следующий шаг.
+  - [x] Rust: включить syn‑анализ в AstQualityScorer (unwrap/panic, unreachable, params, nesting, creds/sql, long lines) + тесты.
 - [x] E2E: интеграционный тест PostToolUse (AST-only режим без сети).
 - [x] Причесать doctest’ы форматтеров или изолировать их от CI (помечены как no_run; устойчивы без внешних бинарей).
 - [x] Полный прогон тестов (unit+e2e+doctest) и сборка release бинарников (pretooluse, posttooluse).
