@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
-use serde_json;
 use std::fs::File;
 use std::io::{self, Read};
-use tokio;
 
 use rust_validation_hooks::analysis::ast::{MultiLanguageAnalyzer, SupportedLanguage};
 use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
@@ -140,14 +138,12 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
                             content_arr
                                 .iter()
                                 .filter_map(|c| {
-                                    if let Some(text) = c.get("text").and_then(|v| v.as_str()) {
+                                if let Some(text) = c.get("text").and_then(|v| v.as_str()) {
                                         Some(text.to_string())
-                                    } else if let Some(tool_name) =
-                                        c.get("name").and_then(|v| v.as_str())
-                                    {
-                                        Some(format!("[Tool: {}]", tool_name))
                                     } else {
-                                        None
+                                        c.get("name")
+                                            .and_then(|v| v.as_str())
+                                            .map(|tool_name| format!("[Tool: {}]", tool_name))
                                     }
                                 })
                                 .collect::<Vec<_>>()
@@ -202,7 +198,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
         char_count += task_str.len();
     }
 
-    for (_i, (role, content)) in all_messages[start..].iter().enumerate() {
+    for (role, content) in all_messages[start..].iter() {
         // Truncate individual messages to 100 chars (UTF-8 safe)
         let truncated = if content.chars().count() > 100 {
             let truncated_chars: String = content.chars().take(97).collect();
@@ -379,6 +375,79 @@ fn output_error_response(error: &anyhow::Error) {
 /// Main PreToolUse hook execution
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Optional offline AST-only mode (no network): decide allow/deny from local AST/security heuristics
+    if std::env::var("PRETOOL_AST_ONLY").is_ok() {
+        // Read input from stdin
+        let mut input = String::new();
+        io::stdin().read_to_string(&mut input).context("Failed to read stdin")?;
+        let hook_input: HookInput = serde_json::from_str(&input).context("Failed to parse hook input")?;
+
+        // Extract file path and content to analyze
+        let file_path = extract_file_path(&hook_input.tool_input);
+        let language = file_path
+            .split('.')
+            .next_back()
+            .and_then(SupportedLanguage::from_extension);
+
+        let code: String = match hook_input.tool_name.as_str() {
+            "Write" => hook_input
+                .tool_input
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .or_else(|| std::fs::read_to_string(&file_path).ok())
+                .unwrap_or_default(),
+            "Edit" => hook_input
+                .tool_input
+                .get("new_string")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| std::fs::read_to_string(&file_path).unwrap_or_default()),
+            "MultiEdit" => {
+                if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
+                    let mut buf = String::new();
+                    for e in edits.iter().take(1000) {
+                        if let Some(ns) = e.get("new_string").and_then(|v| v.as_str()) { buf.push_str(ns); buf.push('\n'); }
+                    }
+                    buf
+                } else { std::fs::read_to_string(&file_path).unwrap_or_default() }
+            }
+            _ => String::new(),
+        };
+
+        // Default to allow if no code/language
+        if code.trim().is_empty() || language.is_none() {
+            let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "allow".to_string(), permission_decision_reason: None } };
+            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            return Ok(());
+        }
+
+        // Analyze with AST quality scorer
+        let scorer = analysis::ast::quality_scorer::AstQualityScorer::new();
+        let score = scorer.analyze(&code, language.unwrap())
+            .unwrap_or_else(|_| analysis::ast::quality_scorer::QualityScore { total_score: 1000, functionality_score: 300, reliability_score: 200, maintainability_score: 200, performance_score: 150, security_score: 100, standards_score: 50, concrete_issues: vec![] });
+
+        // Decide: deny on critical security signals
+        use analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
+        let mut deny_reasons: Vec<String> = Vec::new();
+        for i in &score.concrete_issues {
+            let critical = matches!(i.category, IssueCategory::HardcodedCredentials | IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal) || i.severity == IssueSeverity::Critical;
+            if critical {
+                deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id));
+            }
+        }
+
+        let (permission_decision, permission_decision_reason) = if !deny_reasons.is_empty() {
+            ("deny".to_string(), Some(format_quality_message(&deny_reasons.join("\n"))))
+        } else {
+            ("allow".to_string(), None)
+        };
+
+        let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision, permission_decision_reason } };
+        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        return Ok(());
+    }
+
     // Load configuration
     let config = Config::from_env().context("Failed to load configuration")?;
 
@@ -754,7 +823,7 @@ async fn perform_validation(
         if let Some(language) = SupportedLanguage::from_extension(extension) {
             eprintln!(
                 "PreToolUse: Performing AST analysis for {} file",
-                language.to_string()
+                language
             );
 
             match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {

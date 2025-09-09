@@ -32,6 +32,12 @@ pub struct DuplicateDetector {
     files: Vec<FileInfo>,
 }
 
+impl Default for DuplicateDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DuplicateDetector {
     pub fn new() -> Self {
         Self { files: Vec::new() }
@@ -125,7 +131,7 @@ impl DuplicateDetector {
         for file in &self.files {
             hash_map
                 .entry(file.hash.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(file);
         }
 
@@ -163,10 +169,7 @@ impl DuplicateDetector {
 
                 let grouping_key = format!("{}::{}", parent_dir, clean_stem);
 
-                name_groups
-                    .entry(grouping_key)
-                    .or_insert_with(Vec::new)
-                    .push(file);
+                name_groups.entry(grouping_key).or_default().push(file);
             }
         }
 

@@ -631,6 +631,7 @@ fn matches_glob_pattern(text: &str, pattern: &str) -> bool {
 }
 
 /// Recursively scan directory
+#[allow(clippy::too_many_arguments)]
 fn scan_directory_recursive(
     current_path: &Path,
     root_path: &Path,
@@ -842,7 +843,7 @@ fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
     for file in &structure.files {
         // Split path into directory and filename
         let path = &file.relative_path;
-        let (dir, filename) = if let Some(pos) = path.rfind(|c| c == '/' || c == '\\') {
+        let (dir, filename) = if let Some(pos) = path.rfind(|c| ['/', '\\'].contains(&c)) {
             (&path[..pos], &path[pos + 1..])
         } else {
             (".", path.as_str())
@@ -850,7 +851,7 @@ fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
 
         file_tree
             .entry(dir.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(filename.to_string());
     }
 
@@ -899,7 +900,7 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
                     format!("{}[]", name)
                 } else {
                     let children_str: Vec<String> =
-                        children.iter().map(|child| format_node(child)).collect();
+                        children.iter().map(format_node).collect();
                     format!("{}[{}]", name, children_str.join(","))
                 }
             }
@@ -939,7 +940,7 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
         }
     }
 
-    let formatted_nodes: Vec<String> = root_nodes.iter().map(|node| format_node(node)).collect();
+    let formatted_nodes: Vec<String> = root_nodes.iter().map(format_node).collect();
 
     formatted_nodes.join(",")
 }
@@ -1026,16 +1027,18 @@ pub fn format_project_structure_for_ai_with_metrics(
     compress: bool,
 ) -> String {
     // Use compression if requested and metrics available
-    if compress && metrics.is_some() {
-        let compressed = compress_structure(structure, metrics.unwrap());
-        return format!(
-            "COMPRESSED_PROJECT[v{}][{}]\nMETRICS[{}]\nIMPORTANT[{}]\nTOKENS:{}",
-            compressed.format_version,
-            compressed.tree,
-            compressed.metrics,
-            compressed.important_files.join(","),
-            compressed.token_estimate
-        );
+    if compress {
+        if let Some(m) = metrics {
+            let compressed = compress_structure(structure, m);
+            return format!(
+                "COMPRESSED_PROJECT[v{}][{}]\nMETRICS[{}]\nIMPORTANT[{}]\nTOKENS:{}",
+                compressed.format_version,
+                compressed.tree,
+                compressed.metrics,
+                compressed.important_files.join(","),
+                compressed.token_estimate
+            );
+        }
     }
 
     // Standard format with enhanced metrics - machine-readable format
@@ -1079,11 +1082,8 @@ pub fn format_project_structure_for_ai_with_metrics(
         ));
 
         // Add top important files
-        let mut important_files: Vec<_> = metrics
-            .file_importance_scores
-            .iter()
-            .map(|(path, score)| (path, score))
-            .collect();
+    let mut important_files: Vec<_> =
+        metrics.file_importance_scores.iter().collect();
         important_files.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
 
         if !important_files.is_empty() {
@@ -1190,7 +1190,7 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
                         // Include parent directory for context
                         let parts: Vec<&str> = file
                             .relative_path
-                            .split(|c| c == '/' || c == '\\')
+                            .split(&['/', '\\'][..])
                             .collect();
                         if parts.len() >= 2 {
                             format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])

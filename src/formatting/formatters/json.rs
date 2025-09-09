@@ -19,7 +19,7 @@ impl JsonFormatter {
             .map_err(|e| anyhow::anyhow!("Invalid JSON syntax: {}", e))?;
 
         // Sort object keys for consistent formatting
-        let sorted_json = self.sort_json_keys(&parsed);
+        let sorted_json = Self::sort_json_keys(&parsed);
 
         // Pretty-print with 2-space indentation
         let formatted = serde_json::to_string_pretty(&sorted_json)
@@ -29,17 +29,17 @@ impl JsonFormatter {
     }
 
     /// Recursively sort JSON object keys for consistent output
-    fn sort_json_keys(&self, value: &serde_json::Value) -> serde_json::Value {
+    fn sort_json_keys(value: &serde_json::Value) -> serde_json::Value {
         match value {
             serde_json::Value::Object(obj) => {
                 let mut sorted_map = BTreeMap::new();
                 for (key, val) in obj {
-                    sorted_map.insert(key.clone(), self.sort_json_keys(val));
+                    sorted_map.insert(key.clone(), Self::sort_json_keys(val));
                 }
                 serde_json::Value::Object(sorted_map.into_iter().collect())
             }
             serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(arr.iter().map(|v| self.sort_json_keys(v)).collect())
+                serde_json::Value::Array(arr.iter().map(Self::sort_json_keys).collect())
             }
             _ => value.clone(),
         }

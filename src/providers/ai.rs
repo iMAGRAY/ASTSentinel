@@ -539,7 +539,7 @@ impl UniversalAIClient {
         let json_text = gpt5_response
             .choices
             .first()
-            .and_then(|c| Some(c.message.content.clone()))
+            .map(|c| c.message.content.clone())
             .ok_or_else(|| anyhow::anyhow!("No valid response in GPT-5 choices"))?;
 
         // Check for empty content
@@ -2157,7 +2157,7 @@ impl UniversalAIClient {
                 let base_delay_secs = 2_u64.pow(3 - retries as u32);
                 let jitter = rand::random::<f64>() * 0.5 + 0.75; // 0.75 to 1.25 multiplier
                 let delay_ms = (base_delay_secs as f64 * 1000.0 * jitter) as u64;
-                let delay_with_jitter = delay_ms.max(100).min(300_000); // Min 100ms, Max 5 minutes
+                let delay_with_jitter = delay_ms.clamp(100, 300_000); // Min 100ms, Max 5 minutes
                 tokio::time::sleep(Duration::from_secs_f64(delay_with_jitter as f64 / 1000.0))
                     .await;
             }

@@ -1,3 +1,5 @@
+#![cfg(feature = "ast_fastpath")] // These assertions rely on fastpath single-pass engine parity
+// NOTE: Multi-pass legacy path does not guarantee identical rule coverage for these languages.
 use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
 use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
 

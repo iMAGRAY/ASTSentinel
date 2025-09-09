@@ -1,7 +1,5 @@
 use anyhow::{Context, Result};
-use serde_json;
 use std::io::{self};
-use tokio;
 
 use rust_validation_hooks::truncate_utf8_safe;
 use rust_validation_hooks::*;
@@ -49,8 +47,7 @@ fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> 
         }
 
         // Directory name match (ends with /)
-        if pattern.ends_with('/') {
-            let dir_pattern = &pattern[..pattern.len() - 1];
+        if let Some(dir_pattern) = pattern.strip_suffix('/') {
             if path.is_dir()
                 && (file_name == dir_pattern || path_str.contains(&format!("/{}/", dir_pattern)))
             {
@@ -59,8 +56,7 @@ fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> 
         }
 
         // Extension match (*.ext)
-        if pattern.starts_with("*.") {
-            let ext_pattern = &pattern[2..];
+        if let Some(ext_pattern) = pattern.strip_prefix("*.") {
             if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                 if ext == ext_pattern {
                     return true;
@@ -850,12 +846,12 @@ async fn read_transcript_summary(
                     } else {
                         None
                     }
-                } else if let Some(text) = msg.get("content").and_then(|v| v.as_str()) {
-                    // Handle simple string content (user messages)
-                    Some(text.to_string())
-                } else {
-                    None
-                };
+                    } else {
+                        // Handle simple string content (user messages)
+                        msg.get("content")
+                            .and_then(|v| v.as_str())
+                            .map(|text| text.to_string())
+                    };
 
                 if let Some(content) = content {
                     // Format message
@@ -914,7 +910,7 @@ async fn read_transcript_summary(
 /// Perform AST-based quality analysis on code with a hard timeout
 async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityScore> {
     // Detect language from file extension
-    let extension = file_path.split('.').last().unwrap_or("");
+    let extension = file_path.split('.').next_back().unwrap_or("");
     let language = match SupportedLanguage::from_extension(extension) {
         Some(lang) => lang,
         None => {
@@ -1159,6 +1155,7 @@ async fn perform_project_ast_analysis(working_dir: &str) -> String {
 }
 
 /// Recursively analyze directory for code files  
+#[allow(clippy::too_many_arguments)]
 async fn analyze_directory_recursive(
     path: &std::path::Path,
     results: &mut Vec<(String, usize, Vec<String>)>,
@@ -1287,14 +1284,14 @@ async fn analyze_directory_recursive(
                         if std::env::var("DEBUG_HOOKS").is_ok() {
                             eprintln!("AST analysis join error for {}: {}", path.display(), join_err);
                         }
-                    } else if analysis.is_err() {
-                        if std::env::var("DEBUG_HOOKS").is_ok() {
-                            eprintln!(
-                                "AST analysis timeout ({}s) for {}",
-                                timeout_secs,
-                                path.display()
-                            );
-                        }
+                    } else if analysis.is_err()
+                        && std::env::var("DEBUG_HOOKS").is_ok()
+                    {
+                        eprintln!(
+                            "AST analysis timeout ({}s) for {}",
+                            timeout_secs,
+                            path.display()
+                        );
                     }
                 }
                 Err(e) => {
@@ -1579,6 +1576,42 @@ async fn main() -> Result<()> {
         }
     };
 
+    // In offline/e2e tests we may want to skip network and prompt loading entirely
+    if std::env::var("POSTTOOL_AST_ONLY").is_ok() {
+        let mut final_response = String::new();
+        if let Some(ast_score) = &ast_analysis {
+            final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
+            if !ast_score.concrete_issues.is_empty() {
+                let max_issues: usize = std::env::var("AST_MAX_ISSUES").ok().and_then(|v| v.parse().ok()).unwrap_or(100).clamp(10, 500);
+                let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+                let mut issues = ast_score.concrete_issues.clone();
+                issues.sort_by(|a,b| sev_key(a.severity).cmp(&sev_key(b.severity)).then_with(|| a.line.cmp(&b.line)).then_with(|| a.rule_id.cmp(&b.rule_id)));
+                let total = issues.len();
+                issues.truncate(max_issues);
+                final_response.push_str("Concrete Issues Found (sorted):\n");
+                for issue in &issues {
+                    final_response.push_str(&format!("• Line {}: {} [{}] (-{} pts)\n", issue.line, issue.message, issue.rule_id, issue.points_deducted));
+                }
+                if total > issues.len() { final_response.push_str(&format!("… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n", issues.len(), total)); }
+                final_response.push('\n');
+            } else {
+                final_response.push_str("No concrete issues found by AST analysis.\n\n");
+            }
+        }
+        if let Some(format_result) = &formatting_result {
+            if format_result.changed {
+                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
+            } else if !format_result.messages.is_empty() {
+                final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
+                for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
+                final_response.push_str("\n\n");
+            }
+        }
+        let output = PostToolUseOutput { hook_specific_output: PostToolUseHookOutput { hook_event_name: "PostToolUse".to_string(), additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) }, }, };
+        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        return Ok(());
+    }
+
     // Load configuration from environment with graceful degradation
     let config = Config::from_env_graceful().context("Failed to load configuration")?;
 
@@ -1642,7 +1675,7 @@ async fn main() -> Result<()> {
     };
 
     // Analyze project dependencies for AI context
-    let dependencies_context = match analyze_project_dependencies(&std::path::Path::new(".")).await
+    let dependencies_context = match analyze_project_dependencies(std::path::Path::new(".")).await
     {
         Ok(deps) => {
             eprintln!(
@@ -1765,6 +1798,118 @@ async fn main() -> Result<()> {
         }
     }
 
+    // Dry-run mode: build prompt and contexts, skip network call; return AST details in additionalContext
+    if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
+        let mut final_response = String::new();
+
+        if let Some(ast_score) = &ast_analysis {
+            final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
+            if !ast_score.concrete_issues.is_empty() {
+                let max_issues: usize = std::env::var("AST_MAX_ISSUES").ok().and_then(|v| v.parse().ok()).unwrap_or(100).clamp(10, 500);
+                let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+                let mut issues = ast_score.concrete_issues.clone();
+                issues.sort_by(|a, b| sev_key(a.severity).cmp(&sev_key(b.severity)).then_with(|| a.line.cmp(&b.line)).then_with(|| a.rule_id.cmp(&b.rule_id)));
+                let total = issues.len();
+                issues.truncate(max_issues);
+                final_response.push_str("Concrete Issues Found (sorted):\n");
+                for issue in &issues {
+                    final_response.push_str(&format!(
+                        "• Line {}: {} [{}] (-{} pts)\n",
+                        issue.line, issue.message, issue.rule_id, issue.points_deducted
+                    ));
+                }
+                if total > issues.len() {
+                    final_response.push_str(&format!(
+                        "… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
+                        issues.len(), total
+                    ));
+                }
+                final_response.push('\n');
+            } else {
+                final_response.push_str("No concrete issues found by AST analysis.\n\n");
+            }
+        }
+
+        if let Some(format_result) = &formatting_result {
+            if format_result.changed {
+                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
+            } else if !format_result.messages.is_empty() {
+                final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
+                for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
+                final_response.push_str("\n\n");
+            }
+        }
+
+        let output = PostToolUseOutput {
+            hook_specific_output: PostToolUseHookOutput {
+                hook_event_name: "PostToolUse".to_string(),
+                additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) },
+            },
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
+        return Ok(());
+    }
+
+    // Optional AST-only mode for offline/e2e testing: skip AI call but still return AST context
+    if std::env::var("POSTTOOL_AST_ONLY").is_ok() {
+        let mut final_response = String::new();
+
+        if let Some(ast_score) = &ast_analysis {
+            final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
+
+            if !ast_score.concrete_issues.is_empty() {
+                let max_issues: usize = std::env::var("AST_MAX_ISSUES")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(100)
+                    .clamp(10, 500);
+                let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+                let mut issues = ast_score.concrete_issues.clone();
+                issues.sort_by(|a, b| sev_key(a.severity).cmp(&sev_key(b.severity)).then_with(|| a.line.cmp(&b.line)).then_with(|| a.rule_id.cmp(&b.rule_id)));
+                let total = issues.len();
+                issues.truncate(max_issues);
+                final_response.push_str("Concrete Issues Found (sorted):\n");
+                for issue in &issues {
+                    final_response.push_str(&format!(
+                        "• Line {}: {} [{}] (-{} pts)\n",
+                        issue.line, issue.message, issue.rule_id, issue.points_deducted
+                    ));
+                }
+                if total > issues.len() {
+                    final_response.push_str(&format!(
+                        "… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
+                        issues.len(), total
+                    ));
+                }
+                final_response.push('\n');
+            } else {
+                final_response.push_str("No concrete issues found by AST analysis.\n\n");
+            }
+        }
+
+        if let Some(format_result) = &formatting_result {
+            if format_result.changed {
+                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
+            } else if !format_result.messages.is_empty() {
+                final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
+                for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
+                final_response.push_str("\n\n");
+            }
+        }
+
+        let output = PostToolUseOutput {
+            hook_specific_output: PostToolUseHookOutput {
+                hook_event_name: "PostToolUse".to_string(),
+                additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) },
+            },
+        };
+        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        return Ok(());
+    }
+
     // Create AI client and perform analysis
     let client = UniversalAIClient::new(config.clone()).context("Failed to create AI client")?;
 
@@ -1826,7 +1971,7 @@ async fn main() -> Result<()> {
                 } else {
                     final_response.push_str("No concrete issues found by AST analysis.\n");
                 }
-                final_response.push_str("\n");
+                final_response.push('\n');
             }
 
             // Add formatting results if available
@@ -2328,6 +2473,32 @@ mod tests {
         let result = truncate_for_display(text, 10);
         // 𝄞 is 4 bytes, so with 10 byte limit: 4 bytes (𝄞) + 3 bytes (...) = 7 bytes, fits one symbol
         assert_eq!(result, "𝄞...");
+    }
+
+    #[tokio::test]
+    async fn test_project_ast_analysis_includes_critical_and_is_deterministic() {
+        // Prepare a temporary project with a Python file that triggers a critical issue
+        let dir = tempfile::tempdir().unwrap();
+        let py_path = dir.path().join("bad.py");
+        // Hardcoded credential assignment should trigger HardcodedCredentials (Critical)
+        let code = "password = 'supersecret'\nprint('ok')\n";
+        tokio::fs::write(&py_path, code).await.unwrap();
+
+        // Run project-wide AST analysis twice to verify determinism of output
+        let wd = dir.path().to_str().unwrap();
+        let out1 = perform_project_ast_analysis(wd).await;
+        let out2 = perform_project_ast_analysis(wd).await;
+
+        // Smoke checks: section header and file counters
+        assert!(out1.contains("PROJECT-WIDE AST ANALYSIS"));
+        assert!(out1.contains("Files analyzed:"));
+        // Should reference the created file somewhere in the summary
+        assert!(out1.contains("bad.py"));
+        // Should indicate at least one critical issue found
+        assert!(out1.contains("Critical issues:"));
+
+        // Deterministic output across runs given same inputs
+        assert_eq!(out1, out2);
     }
 }
 

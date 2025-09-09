@@ -44,7 +44,7 @@ impl YamlFormatter {
                 0 // Top-level items
             } else {
                 // Round to nearest indent_size multiple
-                let calculated_level = (original_spaces + indent_size - 1) / indent_size;
+                let calculated_level = original_spaces.div_ceil(indent_size);
                 calculated_level * indent_size
             };
 

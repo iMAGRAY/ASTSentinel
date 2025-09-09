@@ -601,7 +601,7 @@ pub fn format_full_file_with_changes(
     }
 
     match (original, modified) {
-        (None, Some(new)) if new.is_empty() => {
+        (None, Some("")) => {
             result.push_str("(New empty file)\n");
         }
         (None, Some(new)) => {
@@ -611,7 +611,7 @@ pub fn format_full_file_with_changes(
                 result.push_str(&format_line(i + 1, "+", line));
             }
         }
-        (Some(old), None) if old.is_empty() => {
+        (Some(""), None) => {
             result.push_str("(Empty file deleted)\n");
         }
         (Some(old), None) => {

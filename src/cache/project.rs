@@ -534,14 +534,11 @@ pub fn compress_structure(
                 filename.to_string()
             };
 
-            dir_files
-                .entry(dir)
-                .or_insert_with(Vec::new)
-                .push(short_name);
+            dir_files.entry(dir).or_default().push(short_name);
         } else {
             dir_files
                 .entry(String::new())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(file.relative_path.clone());
         }
     }
@@ -584,7 +581,7 @@ pub fn compress_structure(
             .map(|(lang, stats)| {
                 let short = lang_abbrev
                     .get(lang.as_str())
-                    .map(|s| *s)
+                    .copied()
                     .unwrap_or(lang.as_str());
                 format!(
                     "{}:{}/{}/{:.1}/{:.1}",
@@ -633,7 +630,7 @@ pub fn compress_structure(
         .take(5)
         .map(|(path, _)| {
             // Abbreviate path
-            path.split('/').last().unwrap_or(path).to_string()
+            path.split('/').next_back().unwrap_or(path).to_string()
         })
         .collect();
 

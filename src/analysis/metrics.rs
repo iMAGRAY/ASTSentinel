@@ -75,9 +75,11 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
         };
     }
     
-    let mut metrics = ComplexityMetrics::default();
-    // Optimize memory usage by counting lines without storing them all
-    metrics.line_count = content.lines().count();
+    // Initialize with known fields instead of assigning after Default
+    let mut metrics = ComplexityMetrics {
+        line_count: content.lines().count(),
+        ..Default::default()
+    };
     
     let mut brace_depth = 0u32;
     let mut max_nesting = 0u32;
@@ -136,9 +138,7 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
                     max_nesting = max_nesting.max(brace_depth);
                 },
                 '}' if !in_multiline_comment && !in_string => {
-                    if brace_depth > 0 {
-                        brace_depth -= 1;
-                    }
+                    brace_depth = brace_depth.saturating_sub(1);
                 },
                 _ => {}
             }
@@ -211,18 +211,18 @@ fn contains_keyword(text: &str, keyword: &str) -> bool {
     
     if let Some(pos) = text.find(keyword) {
         // Safe boundary checking without unwrap() to prevent panics
-        let before = pos == 0 || {
-            text.chars()
+        let before = pos == 0
+            || text
+                .chars()
                 .nth(pos.saturating_sub(1))
-                .map_or(true, |c| !c.is_alphanumeric())
-        };
+                .is_none_or(|c| !c.is_alphanumeric());
         
         let after_pos = pos + keyword.len();
-        let after = after_pos >= text.len() || {
-            text.chars()
+        let after = after_pos >= text.len()
+            || text
+                .chars()
                 .nth(after_pos)
-                .map_or(true, |c| !c.is_alphanumeric())
-        };
+                .is_none_or(|c| !c.is_alphanumeric());
         
         before && after
     } else {

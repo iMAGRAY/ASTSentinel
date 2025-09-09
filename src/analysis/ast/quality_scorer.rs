@@ -1,14 +1,6 @@
-/// Automated Code Quality Scorer using AST analysis
-
-
-
-/// Automated Code Quality Scorer using AST analysis
-
-
+//! Automated Code Quality Scorer using AST analysis
+//! Provides concrete, deterministic scoring from 0-1000 based on AST patterns
 // helper removed (duplicate)
-
-/// Automated Code Quality Scorer using AST analysis
-/// Provides concrete, deterministic scoring from 0-1000 based on AST patterns
 use anyhow::Result;
 use crate::analysis::ast::languages::LanguageCache;
 #[cfg(feature = "ast_fastpath")]
@@ -89,11 +81,17 @@ pub enum IssueCategory {
     MissingDocumentation,      // -10 points
     UnusedImports,             // -5 points
     UnusedVariables,           // -5 points
+    // Style/Readability (no direct score change unless mapped above)
+    LongLine,                  // Lines exceeding recommended length
 }
 
 /// AST-based quality scorer
 pub struct AstQualityScorer {
     rules: HashMap<String, Box<dyn AstRule>>,
+}
+
+impl Default for AstQualityScorer {
+    fn default() -> Self { Self::new() }
 }
 
 /// Enhanced trait for AST-based quality rules with language context
@@ -122,6 +120,8 @@ impl AstQualityScorer {
         self.register_rule(Box::new(ComplexityRule));
         self.register_rule(Box::new(SecurityPatternRule));
         self.register_rule(Box::new(ResourceLeakRule));
+        // Register style/readability rules for multi-pass path
+        self.register_rule(Box::new(LongLineRule { max_len: 120 }));
     }
     
     pub fn register_rule(&mut self, rule: Box<dyn AstRule>) {
@@ -153,7 +153,12 @@ impl AstQualityScorer {
                         issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::NamingConvention, message: format!("JSON parse error: {}", e), file: String::new(), line: 1, column: 1, rule_id: "CFG001".to_string(), points_deducted: 5, });
                     }
                 }
-                for issue in issues { match issue.category { IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50), _ => {} } score.concrete_issues.push(issue); }
+                for issue in issues {
+                    if matches!(issue.category, IssueCategory::HardcodedCredentials) {
+                        score.security_score = score.security_score.saturating_sub(50);
+                    }
+                    score.concrete_issues.push(issue);
+                }
                 score.total_score = score.functionality_score + score.reliability_score + score.maintainability_score + score.performance_score + score.security_score + score.standards_score;
                 return Ok(score);
             }
@@ -167,7 +172,12 @@ impl AstQualityScorer {
                         issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::NamingConvention, message: format!("YAML parse error: {}", e), file: String::new(), line: 1, column: 1, rule_id: "CFG001".to_string(), points_deducted: 5, });
                     }
                 }
-                for issue in issues { match issue.category { IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50), _ => {} } score.concrete_issues.push(issue); }
+                for issue in issues {
+                    if matches!(issue.category, IssueCategory::HardcodedCredentials) {
+                        score.security_score = score.security_score.saturating_sub(50);
+                    }
+                    score.concrete_issues.push(issue);
+                }
                 score.total_score = score.functionality_score + score.reliability_score + score.maintainability_score + score.performance_score + score.security_score + score.standards_score;
                 return Ok(score);
             }
@@ -181,7 +191,12 @@ impl AstQualityScorer {
                         issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::NamingConvention, message: format!("TOML parse error: {}", e), file: String::new(), line: 1, column: 1, rule_id: "CFG001".to_string(), points_deducted: 5, });
                     }
                 }
-                for issue in issues { match issue.category { IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50), _ => {} } score.concrete_issues.push(issue); }
+                for issue in issues {
+                    if matches!(issue.category, IssueCategory::HardcodedCredentials) {
+                        score.security_score = score.security_score.saturating_sub(50);
+                    }
+                    score.concrete_issues.push(issue);
+                }
                 score.total_score = score.functionality_score + score.reliability_score + score.maintainability_score + score.performance_score + score.security_score + score.standards_score;
                 return Ok(score);
             }
@@ -303,7 +318,9 @@ fn security_overlay_scan(source: &str, _kind: &str) -> Vec<ConcreteIssue> {
         });
     }
     issues
-}impl AstRule for UnhandledErrorRule {
+}
+
+impl AstRule for UnhandledErrorRule {
     fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
         let mut issues = Vec::new();
         
@@ -354,10 +371,8 @@ impl AstRule for DeadCodeRule {
                 }
             }
             
-            if !cursor.goto_next_sibling() {
-                if !cursor.goto_parent() {
-                    break;
-                }
+            if !cursor.goto_next_sibling() && !cursor.goto_parent() {
+                break;
             }
         }
         
@@ -367,6 +382,44 @@ impl AstRule for DeadCodeRule {
     fn rule_id(&self) -> &str {
         "AST002"
     }
+}
+
+/// Rule: Detect overly long lines in source code (language-agnostic)
+/// This restores parity for AST-only path when `ast_fastpath` is disabled.
+struct LongLineRule {
+    max_len: usize,
+}
+
+impl AstRule for LongLineRule {
+    fn check(
+        &self,
+        _ast: &tree_sitter::Tree,
+        source: &str,
+        _language: SupportedLanguage,
+    ) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        for (index, line_text) in source.lines().enumerate() {
+            let char_count = line_text.chars().count();
+            if char_count > self.max_len {
+                issues.push(ConcreteIssue {
+                    severity: IssueSeverity::Minor,
+                    category: IssueCategory::LongLine,
+                    message: format!(
+                        "Line too long ({} > {} chars)",
+                        char_count, self.max_len
+                    ),
+                    file: String::new(),
+                    line: index + 1,
+                    column: 1,
+                    rule_id: "STYLE001".to_string(),
+                    points_deducted: 0,
+                });
+            }
+        }
+        issues
+    }
+
+    fn rule_id(&self) -> &str { "STYLE001" }
 }
 
 /// Rule: Check cyclomatic complexity
@@ -588,10 +641,8 @@ impl AstRule for ResourceLeakRule {
                 }
             }
             
-            if !cursor.goto_next_sibling() {
-                if !cursor.goto_parent() {
-                    break;
-                }
+            if !cursor.goto_next_sibling() && !cursor.goto_parent() {
+                break;
             }
         }
         
@@ -624,10 +675,8 @@ fn calculate_complexity(node: &tree_sitter::Node, source: &str) -> u32 {
             _ => {}
         }
         
-        if !cursor.goto_next_sibling() {
-            if !cursor.goto_parent() {
-                break;
-            }
+        if !cursor.goto_next_sibling() && !cursor.goto_parent() {
+            break;
         }
     }
     

@@ -20,11 +20,11 @@ impl SinglePassEngine {
             for i in (0..node.child_count()).rev() { if let Some(ch) = node.child(i) { stack.push(ch); } }
             if is_function_fast(language, &kind_ids, &node) {
                 let params = count_params(language, &node);
-                if params > 5 { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::TooManyParameters, message: format!("Function has too many parameters ({} > 5)", params), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "PARAMS001".to_string(), points_deducted: 15, }); }
+                if params > 5 { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::TooManyParameters, message: format!("Function has too many parameters ({} > 5)", params), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "PARAMS001".to_string(), points_deducted: 15, }); }
                 let (complexity, max_depth) = scan_complexity(language, &node);
                 let threshold = match language { SupportedLanguage::Python => 8, SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => 10, SupportedLanguage::Java | SupportedLanguage::CSharp => 12, SupportedLanguage::Go => 8, _ => 10 };
-                if complexity > threshold { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::HighComplexity, message: format!("High cyclomatic complexity: {} (threshold: {})", complexity, threshold), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "AST003".to_string(), points_deducted: (complexity - threshold) * 5, }); }
-                if max_depth > 4 { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::DeepNesting, message: format!("Deep nesting detected (level {})", max_depth), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "NEST001".to_string(), points_deducted: (max_depth - 4) as u32 * 10, }); }
+                if complexity > threshold { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::HighComplexity, message: format!("High cyclomatic complexity: {} (threshold: {})", complexity, threshold), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "AST003".to_string(), points_deducted: (complexity - threshold) * 5, }); }
+                if max_depth > 4 { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::DeepNesting, message: format!("Deep nesting detected (level {})", max_depth), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "NEST001".to_string(), points_deducted: (max_depth - 4) * 10, }); }
             }
 
             // Unreachable code after return (generic)
@@ -54,8 +54,8 @@ impl SinglePassEngine {
                             category: IssueCategory::UnreachableCode,
                             message: "Unreachable code after return statement".to_string(),
                             file: String::new(),
-                            line: next.start_position().row as usize + 1,
-                            column: next.start_position().column as usize + 1,
+                            line: next.start_position().row + 1,
+                            column: next.start_position().column + 1,
                             rule_id: "AST002".to_string(),
                             points_deducted: 30,
                         });
@@ -82,8 +82,8 @@ impl SinglePassEngine {
                     category: IssueCategory::HardcodedCredentials,
                     message: "Hardcoded credentials in assignment".to_string(),
                     file: String::new(),
-                    line: node.start_position().row as usize + 1,
-                    column: node.start_position().column as usize + 1,
+                    line: node.start_position().row + 1,
+                    column: node.start_position().column + 1,
                     rule_id: "SEC001".to_string(),
                     points_deducted: 50,
                 });
@@ -106,8 +106,8 @@ impl SinglePassEngine {
                                     category: IssueCategory::SqlInjection,
                                     message: "SQL injection risk in f-string - use parameterized queries".to_string(),
                                     file: String::new(),
-                                    line: node.start_position().row as usize + 1,
-                                    column: node.start_position().column as usize + 1,
+                                    line: node.start_position().row + 1,
+                                    column: node.start_position().column + 1,
                                     rule_id: "SEC001".to_string(),
                                     points_deducted: 50,
                                 });
@@ -127,13 +127,13 @@ impl SinglePassEngine {
                     if is_string {
                         if let Ok(text) = node.utf8_text(src_bytes) {
                             let low = text.to_lowercase();
-                            if low.contains("password") || low.contains("api_key") || low.contains("secret") || low.contains("token") {
-                                if likely_assignment_context(language, &node) {
-                                    issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in string literal".to_string(), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
-                                }
+                            if (low.contains("password") || low.contains("api_key") || low.contains("secret") || low.contains("token"))
+                                && likely_assignment_context(language, &node)
+                            {
+                                issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in string literal".to_string(), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
                             }
                             if (text.contains("SELECT") && text.contains("WHERE")) || (text.contains("INSERT") && text.contains("VALUES")) || (text.contains("UPDATE") && text.contains("SET")) || (text.contains("DELETE") && text.contains("FROM")) {
-                                issues.push(ConcreteIssue { severity: IssueSeverity::Major, category: IssueCategory::SqlInjection, message: "Possible SQL in string literal — validate parameterization".to_string(), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
+                                issues.push(ConcreteIssue { severity: IssueSeverity::Major, category: IssueCategory::SqlInjection, message: "Possible SQL in string literal — validate parameterization".to_string(), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
                             }
                         }
                     }
@@ -151,7 +151,7 @@ impl SinglePassEngine {
                                 && !low.contains("config")
                                 && !low.contains("input")
                             {
-                                issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in assignment".to_string(), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
+                                issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in assignment".to_string(), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
                             }
                         }
                     }
@@ -160,10 +160,10 @@ impl SinglePassEngine {
                         if let Ok(text) = node.utf8_text(src_bytes) {
                             let low = text.to_lowercase();
                             if low.contains("password") || low.contains("api_key") || low.contains("secret") || low.contains("token") {
-                                issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in string literal".to_string(), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
+                                issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in string literal".to_string(), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
                             }
                             if (text.contains("SELECT") && text.contains("WHERE")) || (text.contains("INSERT") && text.contains("VALUES")) || (text.contains("UPDATE") && text.contains("SET")) || (text.contains("DELETE") && text.contains("FROM")) {
-                                issues.push(ConcreteIssue { severity: IssueSeverity::Major, category: IssueCategory::SqlInjection, message: "Possible SQL in string literal — validate parameterization".to_string(), file: String::new(), line: node.start_position().row as usize + 1, column: node.start_position().column as usize + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
+                                issues.push(ConcreteIssue { severity: IssueSeverity::Major, category: IssueCategory::SqlInjection, message: "Possible SQL in string literal — validate parameterization".to_string(), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
                             }
                         }
                     }

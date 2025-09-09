@@ -118,7 +118,6 @@ impl<'a> ComplexityVisitor<'a> {
 
     /// Get language-specific parameter node kinds
     /// Returns the node types that represent parameter lists in function declarations
-
     /// Process C#-specific AST nodes
     pub fn process_csharp_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
         if let Some(ref ids) = self.kind_ids {
@@ -433,7 +432,7 @@ impl<'a> ComplexityVisitor<'a> {
                 self.enter_scope();
                 // count params
                 if has_params {
-                    if let Err(_) = self.count_parameters(node, "parameters") {
+                    if self.count_parameters(node, "parameters").is_err() {
                         // fallback if tree version differs
                         let _ = self.count_parameters(node, "parameter_list");
                     }
@@ -481,14 +480,8 @@ impl<'a> ComplexityVisitor<'a> {
                 self.enter_scope();
                 // Try both parameter list types for Python AST compatibility
                 // Tree-sitter Python may use "parameters" or "parameter_list" depending on version
-                if let Err(_) = self.count_parameters(node, "parameters") {
-                    if let Err(_e) = self.count_parameters(node, "parameter_list") {
-                        #[cfg(debug_assertions)]
-                        eprintln!(
-                            "Warning: Failed to find parameter list in Python function: {}",
-                            e
-                        );
-                    }
+                if self.count_parameters(node, "parameters").is_err() {
+                    let _ = self.count_parameters(node, "parameter_list"); // fallback for alternate AST shape
                 }
             }
             "class_definition" | "class" => {
@@ -818,7 +811,7 @@ impl<'a> ComplexityVisitor<'a> {
                 self.function_count += 1;
                 self.enter_scope();
                 // Try both param kinds
-                if let Err(_) = self.count_parameters(node, "formal_parameters") {
+                if self.count_parameters(node, "formal_parameters").is_err() {
                     let _ = self.count_parameters(node, "parameters");
                 }
                 return Ok(());
@@ -850,14 +843,8 @@ impl<'a> ComplexityVisitor<'a> {
                 self.function_count += 1;
                 self.enter_scope();
                 // Try both parameter list types for JavaScript
-                if let Err(_) = self.count_parameters(node, "formal_parameters") {
-                    if let Err(_e) = self.count_parameters(node, "parameters") {
-                        #[cfg(debug_assertions)]
-                        eprintln!(
-                            "Warning: Failed to find parameter list in JavaScript function: {}",
-                            e
-                        );
-                    }
+                if self.count_parameters(node, "formal_parameters").is_err() {
+                    let _ = self.count_parameters(node, "parameters"); // fallback for alternate AST shape
                 }
             }
             "arrow_function" => {
@@ -865,8 +852,9 @@ impl<'a> ComplexityVisitor<'a> {
                 self.enter_scope();
                 // Arrow functions have different parameter structures
                 // They can have single identifier as parameter or formal_parameters
-                if let Err(_) = self.count_parameters(node, "formal_parameters") {
-                    if let Err(_) = self.count_parameters(node, "parameters") {
+                if self.count_parameters(node, "formal_parameters").is_err()
+                    && self.count_parameters(node, "parameters").is_err()
+                {
                         // For arrow functions, check if there's a direct identifier parameter
                         if let Some(param_node) = self.find_arrow_function_parameter(node) {
                             if param_node.kind() == "identifier" {
@@ -875,7 +863,6 @@ impl<'a> ComplexityVisitor<'a> {
                         }
                     }
                 }
-            }
             "class_declaration" | "class" | "class_body" => {
                 self.enter_scope();
             }

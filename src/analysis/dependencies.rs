@@ -1,5 +1,5 @@
-/// Dependency analysis module for project dependencies validation
-/// Supports multiple package managers: npm, pip, cargo, etc.
+//! Dependency analysis module for project dependencies validation
+//! Supports multiple package managers: npm, pip, cargo, etc.
 
 use anyhow::{Context, Result};
 use serde_json;
@@ -45,6 +45,12 @@ pub struct ProjectDependencies {
     pub dev_dependencies_count: usize,
 }
 
+impl Default for ProjectDependencies {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProjectDependencies {
     pub fn new() -> Self {
         Self {
@@ -75,10 +81,7 @@ impl ProjectDependencies {
         }
 
         let mut result = String::with_capacity(1024);
-        
-        result.push_str(&format!(
-            "\n## PROJECT DEPENDENCIES ANALYSIS\n"
-        ));
+        result.push_str("\n## PROJECT DEPENDENCIES ANALYSIS\n");
         result.push_str(&format!(
             "Total: {} dependencies ({} dev, {} production)\n",
             self.total_count,
