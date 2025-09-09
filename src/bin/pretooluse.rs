@@ -4,11 +4,11 @@ use std::fs::File;
 use std::io::{self, Read};
 use tokio;
 
+use rust_validation_hooks::analysis::ast::{MultiLanguageAnalyzer, SupportedLanguage};
+use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
 use rust_validation_hooks::analysis::project::{
     format_project_structure_for_ai, scan_project_structure, ScanConfig,
 };
-use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
-use rust_validation_hooks::analysis::ast::{MultiLanguageAnalyzer, SupportedLanguage};
 use rust_validation_hooks::*;
 // Use universal AI client
 use rust_validation_hooks::providers::ai::UniversalAIClient;
@@ -605,10 +605,16 @@ async fn perform_validation(
     content: &str,
     hook_input: &HookInput,
 ) -> Result<SecurityValidation> {
-    // Load security prompt
+    // Load security prompt and anti-patterns
     let mut prompt =
         load_prompt("edit_validation.txt").context("Failed to load edit validation prompt")?;
-    
+
+    // Load anti-patterns for comprehensive validation
+    let anti_patterns = load_prompt("anti_patterns.txt").unwrap_or_else(|_| String::new());
+    if !anti_patterns.is_empty() {
+        prompt = format!("{}\n\nANTI-PATTERNS REFERENCE:\n{}", prompt, anti_patterns);
+    }
+
     // Load language preference with fallback to RUSSIAN
     let language = load_prompt("language.txt")
         .unwrap_or_else(|_| "RUSSIAN".to_string())
@@ -671,13 +677,15 @@ async fn perform_validation(
         Ok(structure) => {
             let project_context = format_project_structure_for_ai(&structure, 1500);
             prompt = format!("{}\n\nPROJECT STRUCTURE:\n{}", prompt, project_context);
-            
+
             // Add detailed project metrics
-            let total_loc: usize = structure.files.iter()
+            let total_loc: usize = structure
+                .files
+                .iter()
                 .filter(|f| f.is_code_file)
                 .map(|f| f.size_bytes as usize / 50) // Rough estimate: 50 bytes per line
                 .sum();
-            
+
             let metrics = format!(
                 "\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
                 structure.total_files,
@@ -685,7 +693,7 @@ async fn perform_validation(
                 structure.files.iter().filter(|f| f.is_code_file).count()
             );
             prompt = format!("{}{}", prompt, metrics);
-            
+
             eprintln!(
                 "PreToolUse: Added project structure context ({} files, {} dirs, ~{} LOC)",
                 structure.total_files,
@@ -709,22 +717,25 @@ async fn perform_validation(
                 dependencies.total_count - dependencies.dev_dependencies_count
             );
             prompt = format!("{}{}", prompt, deps_summary);
-            
+
             // Add details by package manager
-            let mut deps_by_manager: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
+            let mut deps_by_manager: std::collections::HashMap<_, Vec<_>> =
+                std::collections::HashMap::new();
             for dep in &dependencies.dependencies {
-                deps_by_manager.entry(dep.package_manager.clone()).or_default().push(dep);
+                deps_by_manager
+                    .entry(dep.package_manager.clone())
+                    .or_default()
+                    .push(dep);
             }
-            
+
             for (manager, deps) in deps_by_manager {
                 let manager_summary = format!("\n{}: {} dependencies", manager, deps.len());
                 prompt = format!("{}{}", prompt, manager_summary);
             }
-            
+
             eprintln!(
                 "PreToolUse: Added dependencies context ({} total, {} outdated)",
-                dependencies.total_count,
-                dependencies.outdated_count
+                dependencies.total_count, dependencies.outdated_count
             );
         }
         Err(e) => {
@@ -739,10 +750,13 @@ async fn perform_validation(
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("");
-        
+
         if let Some(language) = SupportedLanguage::from_extension(extension) {
-            eprintln!("PreToolUse: Performing AST analysis for {} file", language.to_string());
-            
+            eprintln!(
+                "PreToolUse: Performing AST analysis for {} file",
+                language.to_string()
+            );
+
             match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {
                 Ok(complexity_metrics) => {
                     let ast_summary = format!(
@@ -754,7 +768,7 @@ async fn perform_validation(
                         complexity_metrics.line_count
                     );
                     prompt = format!("{}{}", prompt, ast_summary);
-                    
+
                     eprintln!(
                         "PreToolUse: AST analysis complete (cyclomatic: {}, cognitive: {})",
                         complexity_metrics.cyclomatic_complexity,

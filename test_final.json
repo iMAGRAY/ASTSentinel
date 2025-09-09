@@ -1,0 +1,14 @@
+{
+  "tool_name": "Write",
+  "tool_args": {
+    "file_path": "test_final.py",
+    "content": "def secure_function():\n    return \"Hello World\""
+  },
+  "tool_result": {
+    "success": true
+  },
+  "tool_input": {
+    "file_path": "test_final.py",
+    "content": "def secure_function():\n    return \"Hello World\""
+  }
+}

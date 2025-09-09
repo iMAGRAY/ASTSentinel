@@ -1,4 +1,5 @@
 use crate::analysis::ast::languages::SupportedLanguage;
+use crate::analysis::ast::kind_ids::{self, KindIds};
 use crate::analysis::metrics::ComplexityMetrics;
 use anyhow::Result;
 /// Tree-sitter visitor for calculating complexity metrics across languages
@@ -11,6 +12,8 @@ pub struct ComplexityVisitor<'a> {
     #[allow(dead_code)]
     source_code: &'a str,
     language: SupportedLanguage,
+    // Optional fast-path: precomputed kind ids for hot nodes (per language)
+    kind_ids: Option<KindIds>,
 
     // Complexity metrics
     cyclomatic_complexity: u32,
@@ -25,9 +28,12 @@ pub struct ComplexityVisitor<'a> {
 
 impl<'a> ComplexityVisitor<'a> {
     pub fn new(source_code: &'a str, language: SupportedLanguage) -> Self {
+        // Use precomputed kind ids when available (constant-time)
+        let kind_ids = kind_ids::get_for_language(language);
         Self {
             source_code,
             language,
+            kind_ids,
             cyclomatic_complexity: 1, // Base complexity
             cognitive_complexity: 0,
             nesting_depth: 0,
@@ -112,6 +118,105 @@ impl<'a> ComplexityVisitor<'a> {
 
     /// Get language-specific parameter node kinds
     /// Returns the node types that represent parameter lists in function declarations
+
+    /// Process C#-specific AST nodes
+    pub fn process_csharp_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.cs_method_declaration || k == ids.cs_constructor_declaration {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameter_list");
+                return Ok(());
+            }
+            if k == ids.cs_if_statement
+                || k == ids.cs_for_statement
+                || k == ids.cs_while_statement
+                || k == ids.cs_foreach_statement
+                || k == ids.cs_switch_statement
+            {
+                self.cyclomatic_complexity += 1;
+                if k != ids.cs_switch_statement {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.cs_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+            if k == ids.cs_block {
+                return Ok(());
+            }
+        }
+        match node_type {
+            "method_declaration" | "constructor_declaration" => {
+                self.function_count += 1;
+                self.enter_scope();
+                self.count_parameters(node, "parameter_list")?;
+            }
+            "if_statement" | "for_statement" | "while_statement" | "foreach_statement" | "switch_statement" => {
+                self.cyclomatic_complexity += 1;
+                if node_type != "switch_statement" {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+            }
+            "return_statement" => self.return_points += 1,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Process Go-specific AST nodes
+    pub fn process_go_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.go_function_declaration || k == ids.go_method_declaration {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameter_list");
+                return Ok(());
+            }
+            if k == ids.go_if_statement
+                || k == ids.go_for_statement
+                || k == ids.go_switch_statement
+                || k == ids.go_select_statement
+            {
+                self.cyclomatic_complexity += 1;
+                if k != ids.go_switch_statement {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.go_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+            if k == ids.go_block {
+                return Ok(());
+            }
+        }
+        match node_type {
+            "function_declaration" | "method_declaration" => {
+                self.function_count += 1;
+                self.enter_scope();
+                self.count_parameters(node, "parameter_list")?;
+            }
+            "if_statement" | "for_statement" | "switch_statement" | "select_statement" => {
+                self.cyclomatic_complexity += 1;
+                if node_type != "switch_statement" {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+            }
+            "return_statement" => self.return_points += 1,
+            _ => {}
+        }
+        Ok(())
+    }
     fn get_parameter_node_kinds(&self) -> Result<&'static [&'static str]> {
         match self.language {
             SupportedLanguage::Python => Ok(&["parameters", "lambda_parameters"]),
@@ -135,6 +240,8 @@ impl<'a> ComplexityVisitor<'a> {
             SupportedLanguage::Zig => Ok(&["parameter_list", "parameters"]),
             SupportedLanguage::V => Ok(&["parameter_list", "parameters"]),
             SupportedLanguage::Gleam => Ok(&["parameters", "parameter_list"]),
+            // Config languages don't have function parameters
+            SupportedLanguage::Json | SupportedLanguage::Yaml | SupportedLanguage::Toml => Ok(&[]),
         }
     }
 
@@ -181,6 +288,8 @@ impl<'a> ComplexityVisitor<'a> {
             SupportedLanguage::Zig => Ok(&["identifier", "parameter_declaration"]),
             SupportedLanguage::V => Ok(&["identifier", "parameter"]),
             SupportedLanguage::Gleam => Ok(&["identifier", "parameter"]),
+            // Config languages don't have function parameters
+            SupportedLanguage::Json | SupportedLanguage::Yaml | SupportedLanguage::Toml => Ok(&[]),
         }
     }
 
@@ -260,20 +369,14 @@ impl<'a> ComplexityVisitor<'a> {
             // Process current node and track depth changes
             self.process_node(&node)?;
 
-            // Add children to stack in reverse order for left-to-right processing
-            let mut cursor = node.walk();
-            if cursor.goto_first_child() {
-                let mut children = Vec::new();
-                loop {
-                    children.push((cursor.node(), self.current_depth));
-                    if !cursor.goto_next_sibling() {
-                        break;
+            // Push children right-to-left without per-node heap allocations
+            // to keep traversal order left-to-right on pop
+            let child_count = node.child_count();
+            if child_count > 0 {
+                for i in (0..child_count).rev() {
+                    if let Some(child) = node.child(i) {
+                        stack.push((child, self.current_depth));
                     }
-                }
-
-                // Reverse to maintain left-to-right traversal order
-                for child in children.into_iter().rev() {
-                    stack.push(child);
                 }
             }
 
@@ -302,23 +405,75 @@ impl<'a> ComplexityVisitor<'a> {
                 eprintln!("Warning: Rust should use syn crate for AST analysis, not Tree-sitter");
                 self.process_generic_node(node_type, node)
             }
-            SupportedLanguage::CSharp
-            | SupportedLanguage::Go
-            | SupportedLanguage::C
-            | SupportedLanguage::Cpp
-            | SupportedLanguage::Php
-            | SupportedLanguage::Ruby => {
-                // Use generic processing for languages without specific handlers yet
-                self.process_generic_node(node_type, node)
-            }
+            SupportedLanguage::CSharp => self.process_csharp_node(node_type, node),
+            SupportedLanguage::Go => self.process_go_node(node_type, node),
+            SupportedLanguage::C => self.process_c_node(node_type, node),
+            SupportedLanguage::Cpp => self.process_cpp_node(node_type, node),
+            SupportedLanguage::Php => self.process_php_node(node_type, node),
+            SupportedLanguage::Ruby => self.process_ruby_node(node_type, node),
             // New languages: Zig, V, and Gleam with basic AST support
             SupportedLanguage::Zig => self.process_zig_node(node_type, node),
             SupportedLanguage::V => self.process_v_node(node_type, node),
             SupportedLanguage::Gleam => self.process_gleam_node(node_type, node),
+            // Config languages shouldn't use tree-sitter analysis
+            SupportedLanguage::Json | SupportedLanguage::Yaml | SupportedLanguage::Toml => {
+                // These languages should use regex-based analysis instead of AST
+                Ok(())
+            }
         }
     }
 
     fn process_python_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        // Fast path via kind ids when available
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.py_function_definition || k == ids.py_async_function_definition {
+                let has_params = ids.py_parameters_id.is_some();
+                self.function_count += 1;
+                self.enter_scope();
+                // count params
+                if has_params {
+                    if let Err(_) = self.count_parameters(node, "parameters") {
+                        // fallback if tree version differs
+                        let _ = self.count_parameters(node, "parameter_list");
+                    }
+                } else {
+                    // fallback to string-based
+                    let _ = self.count_parameters(node, "parameters");
+                }
+                return Ok(());
+            }
+            if k == ids.py_class_definition {
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.py_if_statement || k == ids.py_elif_clause {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.py_while_statement || k == ids.py_for_statement {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.py_try_statement {
+                self.cyclomatic_complexity += 1;
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.py_except_clause {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1;
+                return Ok(());
+            }
+            if k == ids.py_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+        }
         match node_type {
             // Tree-sitter Python actual node types
             "function_definition" | "async_function_definition" | "def" => {
@@ -327,7 +482,7 @@ impl<'a> ComplexityVisitor<'a> {
                 // Try both parameter list types for Python AST compatibility
                 // Tree-sitter Python may use "parameters" or "parameter_list" depending on version
                 if let Err(_) = self.count_parameters(node, "parameters") {
-                    if let Err(e) = self.count_parameters(node, "parameter_list") {
+                    if let Err(_e) = self.count_parameters(node, "parameter_list") {
                         #[cfg(debug_assertions)]
                         eprintln!(
                             "Warning: Failed to find parameter list in Python function: {}",
@@ -453,7 +608,238 @@ impl<'a> ComplexityVisitor<'a> {
         Ok(())
     }
 
+    /// Process C-specific AST nodes
+    pub fn process_c_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.c_function_definition {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameter_list");
+                return Ok(());
+            }
+            if k == ids.c_if_statement
+                || k == ids.c_for_statement
+                || k == ids.c_while_statement
+                || k == ids.c_switch_statement
+            {
+                self.cyclomatic_complexity += 1;
+                if k != ids.c_switch_statement {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.c_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+            if k == ids.c_compound_statement {
+                return Ok(());
+            }
+        }
+        match node_type {
+            "function_definition" => {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameter_list");
+            }
+            "if_statement" | "for_statement" | "while_statement" | "switch_statement" => {
+                self.cyclomatic_complexity += 1;
+                if node_type != "switch_statement" {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+            }
+            "return_statement" => self.return_points += 1,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Process C++-specific AST nodes (shares many node kinds with C)
+    pub fn process_cpp_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.cpp_function_definition {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameter_list");
+                return Ok(());
+            }
+            if k == ids.cpp_if_statement
+                || k == ids.cpp_for_statement
+                || k == ids.cpp_while_statement
+                || k == ids.cpp_switch_statement
+            {
+                self.cyclomatic_complexity += 1;
+                if k != ids.cpp_switch_statement {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.cpp_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+            if k == ids.cpp_compound_statement {
+                return Ok(());
+            }
+        }
+        match node_type {
+            "function_definition" => {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameter_list");
+            }
+            "if_statement" | "for_statement" | "while_statement" | "switch_statement" => {
+                self.cyclomatic_complexity += 1;
+                if node_type != "switch_statement" {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+            }
+            "return_statement" => self.return_points += 1,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Process PHP-specific AST nodes
+    pub fn process_php_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.php_function_definition || k == ids.php_method_declaration {
+                self.function_count += 1;
+                self.enter_scope();
+                // PHP parameters
+                let _ = self.count_parameters(node, "formal_parameters");
+                return Ok(());
+            }
+            if k == ids.php_if_statement
+                || k == ids.php_for_statement
+                || k == ids.php_while_statement
+                || k == ids.php_switch_statement
+            {
+                self.cyclomatic_complexity += 1;
+                if k != ids.php_switch_statement {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.php_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+            if k == ids.php_compound_statement {
+                return Ok(());
+            }
+        }
+        match node_type {
+            "function_definition" | "method_declaration" => {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "formal_parameters");
+            }
+            "if_statement" | "for_statement" | "while_statement" | "switch_statement" => {
+                self.cyclomatic_complexity += 1;
+                if node_type != "switch_statement" {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+            }
+            "return_statement" => self.return_points += 1,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Process Ruby-specific AST nodes
+    pub fn process_ruby_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.ruby_method || k == ids.ruby_def {
+                self.function_count += 1;
+                self.enter_scope();
+                // Ruby parameters
+                let _ = self.count_parameters(node, "parameters");
+                return Ok(());
+            }
+            if k == ids.ruby_if || k == ids.ruby_elsif || k == ids.ruby_while || k == ids.ruby_for || k == ids.ruby_case {
+                self.cyclomatic_complexity += 1;
+                if k != ids.ruby_case {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.ruby_when {
+                self.cyclomatic_complexity += 1;
+                return Ok(());
+            }
+            if k == ids.ruby_return {
+                self.return_points += 1;
+                return Ok(());
+            }
+        }
+        match node_type {
+            // Tree-sitter-ruby uses 'method' and also 'def' tokens
+            "method" | "def" => {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "parameters");
+            }
+            "if" | "elsif" | "while" | "for" | "case" => {
+                self.cyclomatic_complexity += 1;
+                if node_type != "case" {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+            }
+            "when" => {
+                self.cyclomatic_complexity += 1;
+            }
+            "return" => self.return_points += 1,
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn process_js_ts_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.js_function_declaration
+                || k == ids.js_function_expression
+                || k == ids.js_method_definition
+                || k == ids.ts_function_declaration
+            {
+                self.function_count += 1;
+                self.enter_scope();
+                // Try both param kinds
+                if let Err(_) = self.count_parameters(node, "formal_parameters") {
+                    let _ = self.count_parameters(node, "parameters");
+                }
+                return Ok(());
+            }
+            if k == ids.js_if_statement {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.js_for_statement || k == ids.js_while_statement {
+                self.cyclomatic_complexity += 1;
+                self.cognitive_complexity += 1 + self.current_depth;
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.js_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+        }
         match node_type {
             // Tree-sitter JavaScript actual node types
             "function_declaration"
@@ -465,7 +851,7 @@ impl<'a> ComplexityVisitor<'a> {
                 self.enter_scope();
                 // Try both parameter list types for JavaScript
                 if let Err(_) = self.count_parameters(node, "formal_parameters") {
-                    if let Err(e) = self.count_parameters(node, "parameters") {
+                    if let Err(_e) = self.count_parameters(node, "parameters") {
                         #[cfg(debug_assertions)]
                         eprintln!(
                             "Warning: Failed to find parameter list in JavaScript function: {}",
@@ -603,6 +989,33 @@ impl<'a> ComplexityVisitor<'a> {
 
     /// Process Java-specific AST nodes
     pub fn process_java_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
+        // Fast path via kind ids when available
+        if let Some(ref ids) = self.kind_ids {
+            let k = node.kind_id();
+            if k == ids.java_method_declaration {
+                self.function_count += 1;
+                self.enter_scope();
+                let _ = self.count_parameters(node, "formal_parameters");
+                return Ok(());
+            }
+            if k == ids.java_if_statement || k == ids.java_for_statement || k == ids.java_while_statement || k == ids.java_switch_expression {
+                self.cyclomatic_complexity += 1;
+                if k != ids.java_switch_expression {
+                    self.cognitive_complexity += 1 + self.current_depth;
+                }
+                self.enter_scope();
+                return Ok(());
+            }
+            if k == ids.java_return_statement {
+                self.return_points += 1;
+                return Ok(());
+            }
+            if k == ids.java_block {
+                // scope exits handled by traversal; nothing to do here
+                return Ok(());
+            }
+        }
+
         match node_type {
             "method_declaration" | "constructor_declaration" => {
                 self.function_count += 1;
@@ -612,10 +1025,13 @@ impl<'a> ComplexityVisitor<'a> {
             "class_declaration" | "interface_declaration" => {
                 self.enter_scope();
             }
-            "if_statement" => {
+            "if_statement" | "for_statement" | "while_statement" | "switch_expression" => {
                 self.cyclomatic_complexity += 1;
-                self.cognitive_complexity += 1 + self.current_depth;
+                self.cognitive_complexity += if node_type == "switch_expression" { 0 } else { 1 + self.current_depth };
                 self.enter_scope();
+            }
+            "return_statement" => {
+                self.return_points += 1;
             }
             _ => {
                 #[cfg(debug_assertions)]
@@ -825,3 +1241,5 @@ impl<'a> ComplexityVisitor<'a> {
         Ok(())
     }
 }
+
+// NOTE: KindIds and per-language caches are now provided by crate::analysis::ast::kind_ids

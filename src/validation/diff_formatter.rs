@@ -206,13 +206,13 @@ fn find_line_sequence(content_lines: &[&str], target_lines: &[&str]) -> Option<u
     if target_lines.is_empty() {
         return None;
     }
-    
+
     for (i, window) in content_lines.windows(target_lines.len()).enumerate() {
         if window == target_lines {
             return Some(i);
         }
     }
-    
+
     None
 }
 
@@ -229,46 +229,48 @@ pub fn format_edit_as_unified_diff(
     // Pre-allocate capacity for better performance
     let estimated_size = old_string.len() + new_string.len() + 200;
     let mut result = String::with_capacity(estimated_size);
-    
+
     // Basic unified diff header
     result.push_str(&format!("--- a/{}\n", file_path));
     result.push_str(&format!("+++ b/{}\n", file_path));
-    
+
     // Try to find context in the actual file content
     if let Some(content) = file_content {
         // Since posttooluse runs AFTER edit, new_string should be in the modified content
         // We need to find where the change occurred by looking for lines that match new_string
-        
+
         let content_lines: Vec<&str> = content.lines().collect();
         let new_lines: Vec<&str> = new_string.lines().collect();
         let old_lines: Vec<&str> = old_string.lines().collect();
-        
+
         // Find the position where new_lines start in content_lines
         if let Some(change_start_idx) = find_line_sequence(&content_lines, &new_lines) {
             // Calculate context
             let context_before = 3;
             let context_after = 3;
             let start_line = change_start_idx.saturating_sub(context_before);
-            let end_line = (change_start_idx + new_lines.len() + context_after).min(content_lines.len());
-            
+            let end_line =
+                (change_start_idx + new_lines.len() + context_after).min(content_lines.len());
+
             // Generate proper unified diff hunk header
             let old_start = start_line + 1;
-            let old_count = (end_line - start_line).saturating_sub(new_lines.len()) + old_lines.len();
+            let old_count =
+                (end_line - start_line).saturating_sub(new_lines.len()) + old_lines.len();
             let new_start = start_line + 1;
             let new_count = end_line - start_line;
-            
+
             result.push_str(&format!(
                 "@@ -{},{} +{},{} @@\n",
                 old_start, old_count, new_start, new_count
             ));
-            
+
             // Show context before change
             for i in start_line..change_start_idx {
                 if i < content_lines.len() {
                     result.push_str(&format!(" {}\n", content_lines[i]));
                 }
             }
-            
+
             // Show the actual change
             for line in old_lines.iter() {
                 result.push_str(&format!("-{}\n", line));
@@ -276,8 +278,8 @@ pub fn format_edit_as_unified_diff(
             for line in new_lines.iter() {
                 result.push_str(&format!("+{}\n", line));
             }
-            
-            // Show context after change  
+
+            // Show context after change
             let after_start = change_start_idx + new_lines.len();
             for i in after_start..end_line {
                 if i < content_lines.len() {
@@ -286,11 +288,12 @@ pub fn format_edit_as_unified_diff(
             }
         } else {
             // Fallback: couldn't find new_string, show simple diff
-            result.push_str(&format!("@@ -1,{} +1,{} @@\n", 
+            result.push_str(&format!(
+                "@@ -1,{} +1,{} @@\n",
                 old_string.lines().count().max(1),
                 new_string.lines().count().max(1)
             ));
-            
+
             for line in old_string.lines() {
                 result.push_str(&format!("-{}\n", line));
             }
@@ -300,11 +303,12 @@ pub fn format_edit_as_unified_diff(
         }
     } else {
         // No file content available, show simple diff
-        result.push_str(&format!("@@ -1,{} +1,{} @@\n", 
+        result.push_str(&format!(
+            "@@ -1,{} +1,{} @@\n",
             old_string.lines().count().max(1),
             new_string.lines().count().max(1)
         ));
-        
+
         for line in old_string.lines() {
             result.push_str(&format!("-{}\n", line));
         }
@@ -312,39 +316,35 @@ pub fn format_edit_as_unified_diff(
             result.push_str(&format!("+{}\n", line));
         }
     }
-    
+
     result
 }
 
 /// Generate clean unified diff between two contents
-pub fn format_simple_unified_diff(
-    file_path: &str,
-    old_content: &str,
-    new_content: &str,
-) -> String {
+pub fn format_simple_unified_diff(file_path: &str, old_content: &str, new_content: &str) -> String {
     use std::cmp::min;
-    
+
     let mut result = String::new();
     result.push_str(&format!("--- a/{}\n", file_path));
     result.push_str(&format!("+++ b/{}\n", file_path));
-    
+
     let old_lines: Vec<&str> = old_content.lines().collect();
     let new_lines: Vec<&str> = new_content.lines().collect();
-    
+
     // Find changes
     let mut hunks = Vec::new();
     let mut i = 0;
     let max_len = std::cmp::max(old_lines.len(), new_lines.len());
-    
+
     while i < max_len {
         let old_line = old_lines.get(i);
         let new_line = new_lines.get(i);
-        
+
         if old_line != new_line {
             // Found a difference - create hunk
             let hunk_start = i;
             let mut hunk_end = i + 1;
-            
+
             // Extend hunk to include consecutive changes
             while hunk_end < max_len {
                 let old_next = old_lines.get(hunk_end);
@@ -354,31 +354,37 @@ pub fn format_simple_unified_diff(
                 }
                 hunk_end += 1;
             }
-            
+
             hunks.push((hunk_start, hunk_end));
             i = hunk_end;
         } else {
             i += 1;
         }
     }
-    
+
     // Generate hunks
     for (hunk_start, hunk_end) in &hunks {
         let context_before = 3;
         let context_after = 3;
-        
+
         let start_line = hunk_start.saturating_sub(context_before);
         let end_line = min(max_len, hunk_end.saturating_add(context_after));
-        
+
         let old_count = min(old_lines.len(), end_line) - start_line;
         let new_count = min(new_lines.len(), end_line) - start_line;
-        
-        result.push_str(&format!("@@ -{},{} +{},{} @@\n", start_line + 1, old_count, start_line + 1, new_count));
-        
+
+        result.push_str(&format!(
+            "@@ -{},{} +{},{} @@\n",
+            start_line + 1,
+            old_count,
+            start_line + 1,
+            new_count
+        ));
+
         for line_idx in start_line..end_line {
             let old_line = old_lines.get(line_idx);
             let new_line = new_lines.get(line_idx);
-            
+
             match (old_line, new_line) {
                 (Some(old), Some(new)) if old == new => {
                     result.push_str(&format!(" {}\n", old));
@@ -397,11 +403,11 @@ pub fn format_simple_unified_diff(
             }
         }
     }
-    
+
     if hunks.is_empty() {
         result.push_str("@@ No changes @@\n");
     }
-    
+
     result
 }
 
@@ -502,22 +508,32 @@ pub fn truncate_for_display(s: &str, max_len: usize) -> String {
     }
 
     // Normal case: truncate and add ellipsis
-    let content_max_len = max_len - ELLIPSIS_LEN;
-    let mut char_count = 0;
-    let mut byte_count = 0;
+    let content_max_len = max_len.saturating_sub(ELLIPSIS_LEN);
 
-    for ch in s.chars() {
+    // Count chars that fit within the byte limit
+    let mut byte_count = 0;
+    let mut char_boundary = 0;
+
+    for (i, ch) in s.char_indices() {
         let ch_len = ch.len_utf8();
         if byte_count + ch_len > content_max_len {
+            char_boundary = i;
             break;
         }
         byte_count += ch_len;
-        char_count += 1;
+        char_boundary = i + ch_len;
     }
 
-    let mut result = s.chars().take(char_count).collect::<String>();
-    result.push_str(ELLIPSIS);
-    result
+    // Handle special case: if we have room for at least content_max_len bytes
+    // Ensure we use that space
+    if char_boundary > 0 {
+        let mut result = String::from(&s[..char_boundary]);
+        result.push_str(ELLIPSIS);
+        result
+    } else {
+        // Edge case: even first character doesn't fit
+        ELLIPSIS.to_string()
+    }
 }
 
 /// Format a single line with line number and change marker
@@ -713,6 +729,12 @@ pub fn format_multi_edit_diff(
 ) -> String {
     let mut result = String::new();
 
+    // Check if file content is available
+    if file_content.is_none() {
+        result.push_str("File content not available\n");
+        return result;
+    }
+
     // Apply edits sequentially to show cumulative changes
     let mut current_content = file_content.unwrap_or("").to_string();
 
@@ -721,9 +743,15 @@ pub fn format_multi_edit_diff(
     result.push_str(&format!("@@ {} edit operations @@\n", edits.len()));
 
     for (i, (old_str, new_str)) in edits.iter().enumerate() {
-        result.push_str(&format!("\n== Edit {} ==\n", i + 1));
+        result.push_str(&format!("\n== Edit #{} ==\n", i + 1));
 
-        if let Some(pos) = current_content.find(old_str) {
+        if old_str.is_empty() {
+            // Special case for empty old_string
+            result.push_str(&format!(
+                "  ! Edit #{} failed: empty search string\n",
+                i + 1
+            ));
+        } else if let Some(pos) = current_content.find(old_str) {
             // Show the specific change
             let line_num = current_content[..pos].lines().count() + 1;
 
@@ -734,12 +762,14 @@ pub fn format_multi_edit_diff(
             for line in new_str.lines() {
                 result.push_str(&format!("  + {}\n", line));
             }
+            result.push_str("  Applied successfully\n");
 
             // Apply the edit to current content for next iteration
             current_content.replace_range(pos..pos + old_str.len(), new_str);
         } else {
             result.push_str(&format!(
-                "  ! String not found: \"{}\"\n",
+                "  ! Edit #{} failed: String not found: \"{}\"\n",
+                i + 1,
                 truncate_for_display(old_str, 50)
             ));
         }

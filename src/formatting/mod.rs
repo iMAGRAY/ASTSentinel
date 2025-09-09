@@ -105,6 +105,10 @@ impl FormatterFactory {
             SupportedLanguage::Gleam => Err(anyhow::anyhow!(
                 "Gleam formatter not implemented yet. Please use external gleam format tool."
             )),
+            // Config languages - use built-in formatters
+            SupportedLanguage::Json => Ok(Box::new(formatters::json::JsonFormatter::new())),
+            SupportedLanguage::Yaml => Ok(Box::new(formatters::yaml::YamlFormatter::new())),
+            SupportedLanguage::Toml => Ok(Box::new(formatters::toml::TomlFormatter::new())),
         }
     }
 

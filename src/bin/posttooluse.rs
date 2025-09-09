@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde_json;
-use std::io::{self, Read};
+use std::io::{self};
 use tokio;
 
 use rust_validation_hooks::truncate_utf8_safe;
@@ -20,16 +20,72 @@ use rust_validation_hooks::validation::diff_formatter::{
 };
 // Use AST-based quality scorer for deterministic code analysis
 use rust_validation_hooks::analysis::ast::{
-    AstQualityScorer, QualityScore, SupportedLanguage, IssueSeverity,
+    AstQualityScorer, IssueSeverity, QualityScore, SupportedLanguage,
 };
 // Use duplicate detector for finding conflicting files
-use rust_validation_hooks::analysis::duplicate_detector::{
-    DuplicateDetector,
-};
+use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
 // Use code formatting service for automatic code formatting
 use rust_validation_hooks::formatting::FormattingService;
 
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
+
+/// Check if a path should be ignored based on gitignore patterns
+/// Implements proper glob-style pattern matching instead of simple string contains
+fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> bool {
+    let path_str = path.to_str().unwrap_or("");
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+    for pattern in gitignore_patterns {
+        // Handle different gitignore pattern types
+        if pattern.is_empty() || pattern.starts_with('#') {
+            continue;
+        }
+
+        let pattern = pattern.trim();
+
+        // Exact file name match
+        if pattern == file_name {
+            return true;
+        }
+
+        // Directory name match (ends with /)
+        if pattern.ends_with('/') {
+            let dir_pattern = &pattern[..pattern.len() - 1];
+            if path.is_dir()
+                && (file_name == dir_pattern || path_str.contains(&format!("/{}/", dir_pattern)))
+            {
+                return true;
+            }
+        }
+
+        // Extension match (*.ext)
+        if pattern.starts_with("*.") {
+            let ext_pattern = &pattern[2..];
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if ext == ext_pattern {
+                    return true;
+                }
+            }
+        }
+
+        // Path contains pattern (simple substring match for now)
+        if path_str.contains(pattern) {
+            return true;
+        }
+
+        // Pattern at start of path
+        if pattern.starts_with('/') && path_str.starts_with(&pattern[1..]) {
+            return true;
+        }
+
+        // Pattern anywhere in path segments
+        if path_str.split('/').any(|segment| segment == pattern) {
+            return true;
+        }
+    }
+
+    false
+}
 
 /// Validate path for security and ensure it's a directory
 fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
@@ -88,10 +144,18 @@ fn get_prompts_dir() -> PathBuf {
 
 /// Load prompt content from file in prompts directory
 async fn load_prompt_file(filename: &str) -> Result<String> {
+    use tokio::time::{timeout, Duration};
+
     let prompt_path = get_prompts_dir().join(filename);
-    tokio::fs::read_to_string(prompt_path)
-        .await
-        .with_context(|| format!("Failed to load prompt file: {}", filename))
+
+    // Add 5 second timeout for file reads
+    timeout(
+        Duration::from_secs(5),
+        tokio::fs::read_to_string(prompt_path),
+    )
+    .await
+    .context("Timeout reading prompt file")?
+    .with_context(|| format!("Failed to load prompt file: {}", filename))
 }
 
 // Constants for formatting instructions
@@ -103,7 +167,8 @@ const TEMPLATE_HEADER: &str = "=== REQUIRED OUTPUT FORMAT ===\n";
 const TEMPLATE_FOOTER: &str = "\n=== END FORMAT ===\n";
 
 // This will be dynamically constructed with language
-const FINAL_INSTRUCTION_PREFIX: &str = "\n\nOUTPUT EXACTLY AS TEMPLATE. ANY FORMAT ALLOWED IF TEMPLATE SHOWS IT.\nRESPOND IN ";
+const FINAL_INSTRUCTION_PREFIX: &str =
+    "\n\nOUTPUT EXACTLY AS TEMPLATE. ANY FORMAT ALLOWED IF TEMPLATE SHOWS IT.\nRESPOND IN ";
 
 /// Format the analysis prompt with instructions, project context and conversation
 /// Currently unused but kept for future API compatibility
@@ -114,7 +179,14 @@ async fn format_analysis_prompt(
     diff_context: Option<&str>,
     transcript_context: Option<&str>,
 ) -> Result<String> {
-    format_analysis_prompt_with_ast(prompt, project_context, diff_context, transcript_context, None).await
+    format_analysis_prompt_with_ast(
+        prompt,
+        project_context,
+        diff_context,
+        transcript_context,
+        None,
+    )
+    .await
 }
 
 /// Format the analysis prompt with instructions, project context, conversation, and AST analysis
@@ -127,12 +199,17 @@ async fn format_analysis_prompt_with_ast(
 ) -> Result<String> {
     // Load output template from file
     let output_template = load_prompt_file("output_template.txt").await?;
-    
+
+    // Load anti-patterns for comprehensive validation
+    let anti_patterns = load_prompt_file("anti_patterns.txt")
+        .await
+        .unwrap_or_else(|_| String::new());
+
     // Load context7 documentation recommendation engine
     let context7_docs = load_prompt_file("context7_docs.txt")
         .await
         .unwrap_or_else(|_| String::new());
-    
+
     // Load language preference with fallback to RUSSIAN
     let language = load_prompt_file("language.txt")
         .await
@@ -159,7 +236,10 @@ async fn format_analysis_prompt_with_ast(
     };
 
     let context7_section = if !context7_docs.is_empty() {
-        format!("\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{}\n", context7_docs)
+        format!(
+            "\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{}\n",
+            context7_docs
+        )
     } else {
         String::new()
     };
@@ -173,6 +253,7 @@ async fn format_analysis_prompt_with_ast(
     // Build prompt with pre-allocated capacity for better performance
     let estimated_capacity = prompt.len()
         + output_template.len()
+        + anti_patterns.len()
         + transcript_section.len()
         + context_section.len()
         + diff_section.len()
@@ -184,7 +265,7 @@ async fn format_analysis_prompt_with_ast(
         + TEMPLATE_FOOTER.len()
         + FINAL_INSTRUCTION_PREFIX.len()
         + language.len()
-        + 20; // buffer for separators and " LANGUAGE."
+        + 50; // buffer for separators, anti-patterns section and " LANGUAGE."
 
     let mut result = String::with_capacity(estimated_capacity);
 
@@ -202,14 +283,20 @@ async fn format_analysis_prompt_with_ast(
     if !diff_section.is_empty() {
         result.push_str(&diff_section);
     }
-    
+
     // Add AST analysis results BEFORE AI analysis for deterministic context
     if !ast_section.is_empty() {
         result.push_str(&ast_section);
     }
-    
+
     if !context7_section.is_empty() {
         result.push_str(&context7_section);
+    }
+
+    // Add anti-patterns reference if loaded
+    if !anti_patterns.is_empty() {
+        result.push_str("\n\nANTI-PATTERNS REFERENCE:\n");
+        result.push_str(&anti_patterns);
     }
 
     // Critical formatting instruction
@@ -235,22 +322,86 @@ async fn format_analysis_prompt_with_ast(
 
 /// Simple file path validation - AI will handle security checks
 fn validate_file_path(path: &str) -> Result<PathBuf> {
-    // Just basic sanity checks, AI handles real validation
+    use std::path::Path;
+
+    // Check for empty path
     if path.is_empty() {
         anyhow::bail!("Invalid file path: empty path");
     }
 
-    // Check for null bytes
+    // Check for null bytes which are always invalid
     if path.contains('\0') {
         anyhow::bail!("Invalid file path: contains null byte");
     }
 
-    // Convert to PathBuf and return - Claude Code already validates paths
+    // Check for URL encoding attempts that could bypass validation
+    if path.contains('%') {
+        const SUSPICIOUS_ENCODINGS: &[&str] = &[
+            "%2e", "%2E", // encoded dots
+            "%2f", "%2F", // encoded slashes
+            "%5c", "%5C", // encoded backslashes
+            "%00", // null byte
+            "%252e", "%252E", // double encoded dots
+        ];
+
+        for encoding in SUSPICIOUS_ENCODINGS {
+            if path.contains(encoding) {
+                anyhow::bail!(
+                    "Invalid file path: contains suspicious URL encoding: {}",
+                    encoding
+                );
+            }
+        }
+    }
+
+    // Check for path traversal patterns
+    const TRAVERSAL_PATTERNS: &[&str] = &[
+        "..", // parent directory
+        "~",  // home directory expansion
+        "$",  // variable expansion
+    ];
+
+    for pattern in TRAVERSAL_PATTERNS {
+        if path.contains(pattern) {
+            anyhow::bail!(
+                "Invalid file path: contains potential traversal pattern: {}",
+                pattern
+            );
+        }
+    }
+
+    let path_obj = Path::new(path);
+
+    // If path exists, validate it's within allowed directories
+    if path_obj.exists() {
+        // Get current working directory as the base allowed directory
+        let cwd = std::env::current_dir()
+            .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
+
+        // Canonicalize to resolve symlinks and relative paths
+        let canonical = path_obj
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("Failed to canonicalize path: {}", e))?;
+
+        // Ensure the canonical path is within the current working directory
+        if !canonical.starts_with(&cwd) {
+            anyhow::bail!(
+                "Invalid file path: path is outside working directory. Path: {:?}, CWD: {:?}",
+                canonical,
+                cwd
+            );
+        }
+    }
+
     Ok(PathBuf::from(path))
 }
 
-/// Safely read file content with proper error handling
+/// Safely read file content with proper error handling, size limits and timeout
 async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
+    use tokio::time::{timeout, Duration};
+
+    const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB limit
+
     let validated_path = match validate_file_path(path) {
         Ok(p) => p,
         Err(e) => {
@@ -259,17 +410,64 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
         }
     };
 
-    match tokio::fs::read_to_string(&validated_path).await {
-        Ok(content) => Ok(Some(content)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+    // Add configurable timeout for file reads (default 10 seconds)
+    let timeout_secs = std::env::var("FILE_READ_TIMEOUT")
+        .unwrap_or_else(|_| "10".to_string())
+        .parse::<u64>()
+        .unwrap_or(10);
+
+    // Use streaming read to prevent TOCTOU race condition
+    match timeout(Duration::from_secs(timeout_secs), async {
+        use tokio::fs::File;
+        use tokio::io::{AsyncReadExt, BufReader};
+
+        let file = File::open(&validated_path).await?;
+        let mut reader = BufReader::new(file);
+        let mut content = String::new();
+        let mut buffer = [0; 8192]; // 8KB chunks
+        let mut total_size = 0u64;
+
+        loop {
+            match reader.read(&mut buffer).await? {
+                0 => break, // EOF
+                n => {
+                    total_size += n as u64;
+                    if total_size > MAX_FILE_SIZE {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            format!(
+                                "File exceeds {}MB limit during read",
+                                MAX_FILE_SIZE / (1024 * 1024)
+                            ),
+                        ));
+                    }
+                    content.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                }
+            }
+        }
+
+        Ok::<String, std::io::Error>(content)
+    })
+    .await
+    {
+        Ok(Ok(content)) => Ok(Some(content)),
+        Ok(Err(e)) if e.kind() == std::io::ErrorKind::NotFound => {
             // File doesn't exist yet - this is normal for new files
             Ok(None)
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             eprintln!(
                 "Warning: Failed to read file '{}': {}",
                 validated_path.display(),
                 e
+            );
+            Ok(None)
+        }
+        Err(_) => {
+            eprintln!(
+                "Warning: Timeout reading file '{}' after {} seconds",
+                validated_path.display(),
+                timeout_secs
             );
             Ok(None)
         }
@@ -308,22 +506,22 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
             let mut result = String::new();
             result.push_str(&format!("--- a/{}\n", display_path));
             result.push_str(&format!("+++ b/{}\n", display_path));
-            
+
             let old_lines = old_string.lines().count().max(1);
             let new_lines = new_string.lines().count().max(1);
-            
+
             result.push_str(&format!("@@ -1,{} +1,{} @@\n", old_lines, new_lines));
-            
+
             // Show removed lines
             for line in old_string.lines() {
                 result.push_str(&format!("-{}\n", line));
             }
-            
-            // Show added lines  
+
+            // Show added lines
             for line in new_string.lines() {
                 result.push_str(&format!("+{}\n", line));
             }
-            
+
             Ok(result)
         }
 
@@ -393,19 +591,160 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
     }
 }
 
-/// Validate transcript path for security
-fn validate_transcript_path(path: &str) -> bool {
-    // Check for path traversal attempts
-    if path.contains("..") || path.contains("~") || path.contains("\\\\") {
-        return false;
+/// Validate transcript path for security with strict directory restrictions
+fn validate_transcript_path(path: &str) -> Result<()> {
+    use std::path::Path;
+
+    // Check for null bytes which are always invalid in paths
+    if path.contains('\0') {
+        anyhow::bail!("Path contains null bytes");
     }
 
-    // Check for suspicious patterns
-    if path.contains("%") || path.contains('\0') {
-        return false;
+    // Check for various URL encoding attempts that could bypass validation
+    const SUSPICIOUS_ENCODINGS: &[&str] = &[
+        "%2e", "%2E", // encoded dots
+        "%2f", "%2F", // encoded slashes
+        "%5c", "%5C", // encoded backslashes
+        "%00", // null byte
+        "%252e", "%252E", // double encoded dots
+    ];
+
+    if path.contains('%') {
+        for encoding in SUSPICIOUS_ENCODINGS {
+            if path.contains(encoding) {
+                anyhow::bail!("Path contains suspicious URL encoding: {}", encoding);
+            }
+        }
     }
 
-    true
+    // Check for various path traversal patterns
+    const TRAVERSAL_PATTERNS: &[&str] = &[
+        "..", // parent directory
+        "~",  // home directory expansion
+        "$",  // variable expansion
+        "./", ".\\", // current directory traversal
+        "../", "..\\", // parent directory traversal
+        "\\\\", // UNC path
+    ];
+
+    for pattern in TRAVERSAL_PATTERNS {
+        if path.contains(pattern) {
+            anyhow::bail!("Path contains potential traversal pattern: {}", pattern);
+        }
+    }
+
+    let path_obj = Path::new(path);
+
+    // Get allowed base directories for transcript files
+    // These are typically temp directories and the current working directory
+    let allowed_dirs = get_allowed_transcript_directories()?;
+
+    // If path exists, perform strict canonicalization and directory checks
+    if path_obj.exists() {
+        // Canonicalize to resolve all symlinks and relative paths
+        let canonical = path_obj
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("Failed to canonicalize path: {}", e))?;
+
+        // Verify the canonical path is within allowed directories
+        let mut is_allowed = false;
+        for allowed_dir in &allowed_dirs {
+            if let Ok(allowed_canonical) = allowed_dir.canonicalize() {
+                if canonical.starts_with(&allowed_canonical) {
+                    is_allowed = true;
+                    break;
+                }
+            }
+        }
+
+        if !is_allowed {
+            anyhow::bail!(
+                "Path is outside allowed directories. Path: {:?}, Allowed: {:?}",
+                canonical,
+                allowed_dirs
+            );
+        }
+
+        // Ensure the canonical path doesn't contain any remaining suspicious patterns
+        let canonical_str = canonical
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Path contains invalid UTF-8"))?;
+
+        // Final sanity checks on the canonical path
+        if canonical_str.contains("\\\\") && !cfg!(windows) {
+            anyhow::bail!("Path contains UNC pattern on non-Windows system");
+        }
+    } else {
+        // For non-existent paths (like in tests), ensure they would be within allowed directories
+        // Check if the parent directory exists and is allowed
+        if let Some(parent) = path_obj.parent() {
+            if parent.exists() {
+                let parent_canonical = parent
+                    .canonicalize()
+                    .map_err(|e| anyhow::anyhow!("Failed to canonicalize parent path: {}", e))?;
+
+                let mut is_allowed = false;
+                for allowed_dir in &allowed_dirs {
+                    if let Ok(allowed_canonical) = allowed_dir.canonicalize() {
+                        if parent_canonical.starts_with(&allowed_canonical) {
+                            is_allowed = true;
+                            break;
+                        }
+                    }
+                }
+
+                if !is_allowed {
+                    anyhow::bail!(
+                        "Parent directory is outside allowed directories: {:?}",
+                        parent_canonical
+                    );
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Get allowed base directories for transcript files
+fn get_allowed_transcript_directories() -> Result<Vec<PathBuf>> {
+    use std::env;
+    use std::path::PathBuf;
+
+    let mut allowed = Vec::new();
+
+    // Allow system temp directory
+    allowed.push(env::temp_dir());
+
+    // Allow current working directory (for development/testing)
+    if let Ok(cwd) = env::current_dir() {
+        allowed.push(cwd);
+    }
+
+    // Allow user's temp directory variations
+    if let Ok(temp) = env::var("TEMP") {
+        allowed.push(PathBuf::from(temp));
+    }
+    if let Ok(tmp) = env::var("TMP") {
+        allowed.push(PathBuf::from(tmp));
+    }
+    if let Ok(tmpdir) = env::var("TMPDIR") {
+        allowed.push(PathBuf::from(tmpdir));
+    }
+
+    // For tests, also allow cargo's target directory
+    if cfg!(test) {
+        if let Ok(cargo_target) = env::var("CARGO_TARGET_DIR") {
+            allowed.push(PathBuf::from(cargo_target));
+        } else {
+            // Default target directory
+            if let Ok(cwd) = env::current_dir() {
+                allowed.push(cwd.join("target"));
+            }
+        }
+    }
+
+    Ok(allowed)
 }
 
 /// Read and format transcript for AI context (without tool content)
@@ -414,10 +753,8 @@ async fn read_transcript_summary(
     max_messages: usize,
     max_chars: usize,
 ) -> Result<String> {
-    // Security check
-    if !validate_transcript_path(path) {
-        anyhow::bail!("Invalid transcript path: potential security risk");
-    }
+    // Security check with improved validation
+    validate_transcript_path(path)?;
 
     use tokio::fs::File;
     use tokio::io::{AsyncBufReadExt, BufReader};
@@ -450,9 +787,11 @@ async fn read_transcript_summary(
     let mut lines = reader.lines();
 
     // Collect lines into buffer
+    let mut skipped_first = false;
     while let Some(line) = lines.next_line().await? {
-        if start_pos > 0 && lines_buffer.is_empty() {
+        if start_pos > 0 && !skipped_first {
             // Skip potentially partial first line when reading from middle
+            skipped_first = true;
             continue;
         }
         lines_buffer.push(line);
@@ -526,9 +865,9 @@ async fn read_transcript_summary(
                             most_recent_user_message = content.clone();
                             found_first_user_message = true;
                         }
-                        format!("[user]: {}", truncate_utf8_safe(&content, 150))
+                        format!("user: {}", truncate_utf8_safe(&content, 150))
                     } else if role == "assistant" {
-                        format!("[ai-assistant]: {}", truncate_utf8_safe(&content, 150))
+                        format!("assistant: {}", truncate_utf8_safe(&content, 150))
                     } else {
                         continue;
                     };
@@ -560,10 +899,19 @@ async fn read_transcript_summary(
         String::new()
     };
 
-    Ok(format!("{}conversation:\n{}", current_task, conversation))
+    let result = format!("{}conversation:\n{}", current_task, conversation);
+
+    // Ensure we respect the max_chars limit for the entire output
+    if result.len() > max_chars {
+        // Truncate to fit within limit
+        let truncated = truncate_utf8_safe(&result, max_chars);
+        Ok(truncated)
+    } else {
+        Ok(result)
+    }
 }
 
-/// Perform AST-based quality analysis on code
+/// Perform AST-based quality analysis on code with a hard timeout
 async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityScore> {
     // Detect language from file extension
     let extension = file_path.split('.').last().unwrap_or("");
@@ -574,25 +922,38 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
             return None;
         }
     };
-    
-    // Special handling for Rust - use syn crate
-    if language == SupportedLanguage::Rust {
-        // For now, skip Rust AST analysis (requires syn integration)
-        eprintln!("AST Analysis: Rust analysis via syn not yet integrated");
-        return None;
-    }
-    
-    // Create AST quality scorer
-    let scorer = AstQualityScorer::new();
-    
-    // Perform analysis
-    match scorer.analyze(content, language) {
-        Ok(score) => {
-            // Return score for JSON output (don't log to stderr)
-            Some(score)
-        }
-        Err(e) => {
-            eprintln!("AST Analysis Error: {}", e);
+
+    // Timeout configuration (env overrideable)
+    let timeout_secs: u64 = std::env::var("AST_ANALYSIS_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8)
+        .clamp(1, 30);
+
+    // Run CPU-bound analysis off the async runtime and enforce timeout
+    let code = content.to_string();
+    let handle = tokio::task::spawn_blocking(move || {
+        let scorer = AstQualityScorer::new();
+        scorer.analyze(&code, language)
+    });
+
+    match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), handle).await {
+        Ok(join_res) => match join_res {
+            Ok(Ok(score)) => Some(score),
+            Ok(Err(e)) => {
+                eprintln!("AST Analysis Error: {}", e);
+                None
+            }
+            Err(join_err) => {
+                eprintln!("AST Analysis Join Error: {}", join_err);
+                None
+            }
+        },
+        Err(_) => {
+            eprintln!(
+                "AST Analysis timeout: exceeded {}s for {}",
+                timeout_secs, file_path
+            );
             None
         }
     }
@@ -601,80 +962,424 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
 /// Format AST analysis results for AI context (without scores to avoid duplication)
 fn format_ast_results(score: &QualityScore) -> String {
     let mut result = String::with_capacity(2000);
-    
+
     // Only pass concrete issues to AI, not scores (to avoid duplication)
-    if !score.concrete_issues.is_empty() {
-        result.push_str("\n\nAST DETECTED ISSUES (Automated):\n");
-        
-        // Group by severity
-        let mut critical_issues = Vec::new();
-        let mut major_issues = Vec::new();
-        let mut minor_issues = Vec::new();
-        
-        for issue in &score.concrete_issues {
-            match issue.severity {
-                IssueSeverity::Critical => critical_issues.push(issue),
-                IssueSeverity::Major => major_issues.push(issue),
-                IssueSeverity::Minor => minor_issues.push(issue),
-            }
-        }
-        
-        if !critical_issues.is_empty() {
-            result.push_str("\n🔴 CRITICAL (P1 - Fix immediately):\n");
-            for issue in critical_issues {
-                result.push_str(&format!(
-                    "  Line {}: {} [{}] (-{} points)\n",
-                    issue.line, issue.message, issue.rule_id, issue.points_deducted
-                ));
-            }
-        }
-        
-        if !major_issues.is_empty() {
-            result.push_str("\n🟡 MAJOR (P2 - Fix soon):\n");
-            for issue in major_issues {
-                result.push_str(&format!(
-                    "  Line {}: {} [{}] (-{} points)\n",
-                    issue.line, issue.message, issue.rule_id, issue.points_deducted
-                ));
-            }
-        }
-        
-        if !minor_issues.is_empty() {
-            result.push_str("\n🟢 MINOR (P3 - Nice to fix):\n");
-            for issue in minor_issues {
-                result.push_str(&format!(
-                    "  Line {}: {} [{}] (-{} points)\n",
-                    issue.line, issue.message, issue.rule_id, issue.points_deducted
-                ));
-            }
-        }
-    } else {
-        // No issues detected - return empty string to not add unnecessary context
+    if score.concrete_issues.is_empty() {
         return String::new();
     }
-    
+
+    // Determine limit for issues
+    let max_issues: usize = std::env::var("AST_MAX_ISSUES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100)
+        .clamp(10, 500);
+
+    // Copy and sort deterministically: severity -> line -> rule_id
+    let mut issues = score.concrete_issues.clone();
+    let sev_key = |s: IssueSeverity| match s {
+        IssueSeverity::Critical => 0,
+        IssueSeverity::Major => 1,
+        IssueSeverity::Minor => 2,
+    };
+    issues.sort_by(|a, b| {
+        sev_key(a.severity)
+            .cmp(&sev_key(b.severity))
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.rule_id.cmp(&b.rule_id))
+    });
+
+    // Take top-K
+    let total = issues.len();
+    issues.truncate(max_issues);
+
+    result.push_str("\n\nAST DETECTED ISSUES (Automated, top sorted):\n");
+
+    // Grouped printing preserving sorted order
+    let mut print_group = |title: &str, sev: IssueSeverity| {
+        let group: Vec<_> = issues
+            .iter()
+            .filter(|i| i.severity == sev)
+            .collect();
+        if !group.is_empty() {
+            result.push_str(title);
+            result.push('\n');
+            for issue in group {
+                result.push_str(&format!(
+                    "  Line {}: {} [{}] (-{} points)\n",
+                    issue.line, issue.message, issue.rule_id, issue.points_deducted
+                ));
+            }
+        }
+    };
+
+    print_group("\n🔴 CRITICAL (P1 - Fix immediately):", IssueSeverity::Critical);
+    print_group("\n🟡 MAJOR (P2 - Fix soon):", IssueSeverity::Major);
+    print_group("\n🟢 MINOR (P3 - Nice to fix):", IssueSeverity::Minor);
+
+    if total > issues.len() {
+        result.push_str(&format!(
+            "\n… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
+            issues.len(), total
+        ));
+    }
+
     result.push_str("\nNote: Use AST issues as baseline. Add context-aware insights.\n");
-    
+
     result
+}
+
+/// Perform project-wide AST analysis excluding non-code files and .gitignore entries
+async fn perform_project_ast_analysis(working_dir: &str) -> String {
+    let mut results = Vec::new();
+    let mut total_issues = 0;
+    let mut total_files_analyzed = 0;
+    let mut critical_issues = Vec::new();
+    let mut skipped_large_files = 0;
+    let mut skipped_error_files = 0;
+
+    // Optional timings collection
+    let timings_enabled = std::env::var("AST_TIMINGS").is_ok();
+    let mut durations_ms: Vec<u128> = Vec::new();
+
+    // Read .gitignore patterns if available
+    let gitignore_path = std::path::Path::new(working_dir).join(".gitignore");
+    let gitignore_patterns = if gitignore_path.exists() {
+        std::fs::read_to_string(&gitignore_path)
+            .ok()
+            .map(|content| {
+                content
+                    .lines()
+                    .filter(|line| !line.trim().is_empty() && !line.starts_with('#'))
+                    .map(|line| line.trim().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Analyze all files in the project
+    if let Ok(entries) = std::fs::read_dir(working_dir) {
+        for entry in entries.flatten() {
+            if let Err(e) = analyze_directory_recursive(
+                &entry.path(),
+                &mut results,
+                &mut total_issues,
+                &mut total_files_analyzed,
+                &mut critical_issues,
+                &gitignore_patterns,
+                0,
+                &mut skipped_large_files,
+                &mut skipped_error_files,
+                timings_enabled,
+                &mut durations_ms,
+            )
+            .await
+            {
+                if std::env::var("DEBUG_HOOKS").is_ok() {
+                    eprintln!(
+                        "DEBUG: Failed to analyze path {}: {}",
+                        entry.path().display(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    if total_files_analyzed == 0 && skipped_large_files == 0 && skipped_error_files == 0 {
+        return String::new();
+    }
+
+    let mut analysis = format!(
+        "\n## PROJECT-WIDE AST ANALYSIS\n\
+        - Files analyzed: {}\n\
+        - Total issues found: {}\n\
+        - Critical issues: {}\n\
+        - Skipped (too large): {}\n\
+        - Skipped (errors): {}\n",
+        total_files_analyzed,
+        total_issues,
+        critical_issues.len(),
+        skipped_large_files,
+        skipped_error_files
+    );
+
+    if !critical_issues.is_empty() {
+        // Deterministic ordering for critical issues list
+        critical_issues.sort();
+        analysis.push_str("\n### Critical Issues in Project:\n");
+        for (i, issue) in critical_issues.iter().take(5).enumerate() {
+            analysis.push_str(&format!("{}. {}\n", i + 1, issue));
+        }
+        if critical_issues.len() > 5 {
+            analysis.push_str(&format!(
+                "... and {} more critical issues\n",
+                critical_issues.len() - 5
+            ));
+        }
+    }
+
+    if !results.is_empty() {
+        // Deterministic ordering for files with issues: by count desc, then path asc
+        results.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        analysis.push_str("\n### Files with Issues:\n");
+        for (path, issues_count, _) in results.iter().take(10) {
+            analysis.push_str(&format!("- `{}`: {} issues\n", path, issues_count));
+        }
+        if results.len() > 10 {
+            analysis.push_str(&format!(
+                "... and {} more files with issues\n",
+                results.len() - 10
+            ));
+        }
+    }
+
+    // Timings summary (optional)
+    if timings_enabled && !durations_ms.is_empty() {
+        let mut v = durations_ms;
+        v.sort_unstable();
+        let idx = |pct: f64| -> usize {
+            let n = v.len();
+            let pos = (pct * (n.saturating_sub(1)) as f64).round() as usize;
+            pos.min(n - 1)
+        };
+        let p50 = v[idx(0.50)];
+        let p95 = v[idx(0.95)];
+        let p99 = v[idx(0.99)];
+        let mean: f64 = v.iter().copied().map(|x| x as f64).sum::<f64>() / v.len() as f64;
+        analysis.push_str(&format!(
+            "\nTimings (per-file AST analysis): p50={}ms, p95={}ms, p99={}ms, mean={:.1}ms, n={}\n",
+            p50, p95, p99, mean, v.len()
+        ));
+    }
+
+    analysis
+}
+
+/// Recursively analyze directory for code files  
+async fn analyze_directory_recursive(
+    path: &std::path::Path,
+    results: &mut Vec<(String, usize, Vec<String>)>,
+    total_issues: &mut usize,
+    total_files: &mut usize,
+    critical_issues: &mut Vec<String>,
+    gitignore_patterns: &[String],
+    depth: usize,
+    skipped_large_files: &mut usize,
+    skipped_error_files: &mut usize,
+    timings_enabled: bool,
+    timings_ms: &mut Vec<u128>,
+) -> Result<()> {
+    // Depth limit to prevent infinite recursion - properly enforced
+    const MAX_DEPTH: usize = 10;
+    if depth >= MAX_DEPTH {
+        if std::env::var("DEBUG_HOOKS").is_ok() {
+            eprintln!(
+                "DEBUG: Max depth {} reached at path: {}",
+                MAX_DEPTH,
+                path.display()
+            );
+        }
+        return Ok(());
+    }
+
+    // Check if path should be ignored using proper gitignore pattern matching
+    if should_ignore_path(path, gitignore_patterns) {
+        return Ok(());
+    }
+
+    if path.is_file() {
+        // Skip only truly non-code files (images, binaries, etc.)
+        // Keep configuration files as they may contain security issues
+        let extension = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if matches!(
+            extension,
+            "md" | "txt"
+                | "lock"  // lock files are auto-generated
+                | "png"
+                | "jpg"
+                | "jpeg"
+                | "gif"
+                | "svg"
+                | "ico"
+                | "pdf"
+                | "zip"
+                | "tar"
+                | "gz"
+                | "exe"
+                | "dll"
+                | "so"
+        ) {
+            return Ok(());
+        }
+
+        // Try to analyze the file
+        if let Some(language) = SupportedLanguage::from_extension(extension) {
+            match std::fs::read_to_string(path) {
+                Ok(content) => {
+                    // Skip very large files but track them
+                    if content.len() > 500_000 {
+                        *skipped_large_files += 1;
+                        if std::env::var("DEBUG_HOOKS").is_ok() {
+                            eprintln!(
+                                "Skipped large file ({}B): {}",
+                                content.len(),
+                                path.display()
+                            );
+                        }
+                        return Ok(());
+                    }
+
+                    // Enforce per-file AST analysis timeout
+                    let timeout_secs: u64 = std::env::var("AST_ANALYSIS_TIMEOUT_SECS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(8)
+                        .clamp(1, 30);
+
+                    let start = std::time::Instant::now();
+                    let analysis = tokio::time::timeout(
+                        std::time::Duration::from_secs(timeout_secs),
+                        tokio::task::spawn_blocking({
+                            let content = content.clone();
+                            move || {
+                                let scorer = AstQualityScorer::new();
+                                scorer.analyze(&content, language)
+                            }
+                        }),
+                    )
+                    .await;
+
+                    if let Ok(Ok(Ok(quality_score))) = analysis {
+                        if timings_enabled {
+                            let elapsed = start.elapsed().as_millis();
+                            timings_ms.push(elapsed);
+                        }
+                        *total_files += 1;
+                        let issues_count = quality_score.concrete_issues.len();
+                        *total_issues += issues_count;
+
+                        if issues_count > 0 {
+                            let path_str = path.display().to_string();
+                            let sample_issues: Vec<String> = quality_score
+                                .concrete_issues
+                                .iter()
+                                .take(3)
+                                .map(|issue| format!("{:?}", issue.category))
+                                .collect();
+
+                            // Collect critical issues
+                            for issue in &quality_score.concrete_issues {
+                                if issue.severity == IssueSeverity::Critical {
+                                    critical_issues.push(format!(
+                                        "{}: {} (line {})",
+                                        path_str, issue.message, issue.line
+                                    ));
+                                }
+                            }
+
+                            results.push((path_str, issues_count, sample_issues));
+                        }
+                    } else if let Ok(Err(join_err)) = analysis {
+                        *skipped_error_files += 1;
+                        if std::env::var("DEBUG_HOOKS").is_ok() {
+                            eprintln!("AST analysis join error for {}: {}", path.display(), join_err);
+                        }
+                    } else if analysis.is_err() {
+                        if std::env::var("DEBUG_HOOKS").is_ok() {
+                            eprintln!(
+                                "AST analysis timeout ({}s) for {}",
+                                timeout_secs,
+                                path.display()
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
+                    *skipped_error_files += 1;
+                    if std::env::var("DEBUG_HOOKS").is_ok() {
+                        eprintln!("Error reading file {}: {}", path.display(), e);
+                    }
+                }
+            }
+        }
+    } else if path.is_dir() {
+        // Skip common non-source directories
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            if name.starts_with('.')
+                || name == "node_modules"
+                || name == "target"
+                || name == "dist"
+                || name == "build"
+                || name == "vendor"
+                || name == "__pycache__"
+                || name == ".git"
+            {
+                return Ok(());
+            }
+        }
+
+        if let Ok(entries) = std::fs::read_dir(path) {
+            for entry in entries.flatten() {
+                Box::pin(analyze_directory_recursive(
+                    &entry.path(),
+                    results,
+                    total_issues,
+                    total_files,
+                    critical_issues,
+                    gitignore_patterns,
+                    depth + 1,
+                    skipped_large_files,
+                    skipped_error_files,
+                    timings_enabled,
+                    timings_ms,
+                ))
+                .await?;
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Main function for the PostToolUse hook
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Read hook input from stdin
+    // Limit stdin input size to prevent DoS attacks
+    const MAX_INPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
+
+    // Read hook input from stdin with size limit
     let mut buffer = String::new();
-    io::stdin()
+    let stdin = io::stdin();
+    let handle = stdin.lock();
+
+    // Use take() to limit the amount of data read
+    use std::io::Read;
+    let mut limited_reader = handle.take(MAX_INPUT_SIZE as u64);
+    limited_reader
         .read_to_string(&mut buffer)
         .context("Failed to read stdin")?;
+
+    // Check if we hit the size limit
+    if buffer.len() >= MAX_INPUT_SIZE {
+        anyhow::bail!(
+            "Input exceeds maximum size of {}MB",
+            MAX_INPUT_SIZE / 1024 / 1024
+        );
+    }
 
     // Parse the input
     let hook_input: HookInput =
         serde_json::from_str(&buffer).context("Failed to parse input JSON")?;
-    
+
     // DEBUG: Write the exact hook input to a file for inspection
     if let Ok(mut debug_file) = tokio::fs::File::create("hook-input-debug.json").await {
         use tokio::io::AsyncWriteExt;
-        let _ = debug_file.write_all(buffer.as_bytes()).await;
+        if let Err(e) = debug_file.write_all(buffer.as_bytes()).await {
+            eprintln!("DEBUG: Failed to write hook input: {}", e);
+        }
         eprintln!("DEBUG: Full hook input written to hook-input-debug.json");
     }
 
@@ -726,36 +1431,92 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Extract content based on tool type
-    let content = match hook_input.tool_name.as_str() {
-        "Write" => hook_input
-            .tool_input
-            .get("content")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        "Edit" => hook_input
-            .tool_input
-            .get("new_string")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string(),
-        "MultiEdit" => {
-            // For MultiEdit, aggregate all new_strings
-            hook_input
-                .tool_input
-                .get("edits")
-                .and_then(|v| v.as_array())
-                .map(|edits| {
-                    edits
-                        .iter()
-                        .filter_map(|edit| edit.get("new_string").and_then(|v| v.as_str()))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                })
-                .unwrap_or_default()
+    // For AST analysis, we need the COMPLETE file content after the operation
+    // Since PostToolUse runs AFTER the operation, read the actual file from disk
+    let content = match read_file_content_safe(file_path).await? {
+        Some(file_content) => {
+            if std::env::var("DEBUG_HOOKS").is_ok() {
+                eprintln!(
+                    "DEBUG: Read {} bytes from file: {}",
+                    file_content.len(),
+                    file_path
+                );
+            }
+            file_content
         }
-        _ => String::new(),
+        None => {
+            if std::env::var("DEBUG_HOOKS").is_ok() {
+                eprintln!("DEBUG: Could not read file content for: {}", file_path);
+            }
+            // Fallback to extracting partial content from tool_input if file read fails
+            match hook_input.tool_name.as_str() {
+                "Write" => hook_input
+                    .tool_input
+                    .get("content")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                "Edit" => hook_input
+                    .tool_input
+                    .get("new_string")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                "MultiEdit" => {
+                    // For MultiEdit, try to aggregate all new_strings for partial analysis
+                    // This gives us at least some content to analyze, even if not the full file
+                    // Note: We preserve order of edits and limit memory usage
+                    if let Some(edits) = hook_input
+                        .tool_input
+                        .get("edits")
+                        .and_then(|v| v.as_array())
+                    {
+                        // Pre-calculate capacity to avoid multiple allocations
+                        let estimated_capacity: usize = edits
+                            .iter()
+                            .filter_map(|edit| {
+                                edit.get("new_string")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.len())
+                            })
+                            .sum::<usize>()
+                            + (edits.len() * 2); // Add space for separators
+
+                        let mut aggregated =
+                            String::with_capacity(estimated_capacity.min(1024 * 1024)); // Cap at 1MB
+                        let mut valid_edits = 0;
+
+                        for edit in edits.iter().take(1000) {
+                            // Limit to prevent DoS
+                            if let Some(new_string) =
+                                edit.get("new_string").and_then(|v| v.as_str())
+                            {
+                                if !new_string.is_empty() {
+                                    if valid_edits > 0 {
+                                        aggregated.push('\n');
+                                    }
+                                    aggregated.push_str(new_string);
+                                    valid_edits += 1;
+                                }
+                            }
+                        }
+
+                        if std::env::var("DEBUG_HOOKS").is_ok() {
+                            eprintln!(
+                                "DEBUG: MultiEdit fallback - aggregated {} bytes from {} valid edits (of {})",
+                                aggregated.len(),
+                                valid_edits,
+                                edits.len()
+                            );
+                        }
+                        aggregated
+                    } else {
+                        String::new()
+                    }
+                }
+                _ => String::new(),
+            }
+        }
     };
 
     // Skip if no content to analyze
@@ -774,9 +1535,13 @@ async fn main() -> Result<()> {
     }
 
     // Perform AST-based quality analysis for deterministic scoring
-    eprintln!("DEBUG: Starting AST analysis for file: {}", file_path);
+    if std::env::var("DEBUG_HOOKS").is_ok() {
+        eprintln!("DEBUG: Starting AST analysis for file: {}", file_path);
+    }
     let ast_analysis = perform_ast_analysis(&content, file_path).await;
-    eprintln!("DEBUG: AST analysis result: {:?}", ast_analysis.is_some());
+    if std::env::var("DEBUG_HOOKS").is_ok() {
+        eprintln!("DEBUG: AST analysis result: {:?}", ast_analysis.is_some());
+    }
 
     // Perform code formatting after AST analysis and ACTUALLY APPLY IT TO THE FILE
     let formatting_result = match validate_file_path(file_path) {
@@ -814,8 +1579,8 @@ async fn main() -> Result<()> {
         }
     };
 
-    // Load configuration from environment
-    let config = Config::from_env().context("Failed to load configuration")?;
+    // Load configuration from environment with graceful degradation
+    let config = Config::from_env_graceful().context("Failed to load configuration")?;
 
     // Load the analysis prompt
     let prompt = load_prompt_file("post_edit_validation.txt")
@@ -826,8 +1591,9 @@ async fn main() -> Result<()> {
     let cache_path = PathBuf::from(".claude_project_cache.json");
     let project_context = match scan_project_with_cache(".", Some(&cache_path), None) {
         Ok((structure, metrics, incremental)) => {
-            // Use compressed format for large projects
-            let use_compression = structure.files.len() > 100;
+            // NEVER compress - always pass full structure to AI validator
+            // Compression was causing truncated structure in context
+            let use_compression = false; // Changed: Always pass full structure
             let mut formatted = format_project_structure_for_ai_with_metrics(
                 &structure,
                 Some(&metrics),
@@ -876,11 +1642,18 @@ async fn main() -> Result<()> {
     };
 
     // Analyze project dependencies for AI context
-    let dependencies_context = match analyze_project_dependencies(&std::path::Path::new(".")).await {
+    let dependencies_context = match analyze_project_dependencies(&std::path::Path::new(".")).await
+    {
         Ok(deps) => {
-            eprintln!("Dependencies analysis: {} total dependencies", deps.total_count);
+            eprintln!(
+                "Dependencies analysis: {} total dependencies",
+                deps.total_count
+            );
             if deps.outdated_count > 0 {
-                eprintln!("Found {} potentially outdated dependencies", deps.outdated_count);
+                eprintln!(
+                    "Found {} potentially outdated dependencies",
+                    deps.outdated_count
+                );
             }
             Some(deps.format_for_ai())
         }
@@ -917,10 +1690,12 @@ async fn main() -> Result<()> {
     let transcript_context = if let Some(transcript_path) = &hook_input.transcript_path {
         match read_transcript_summary(transcript_path, 10, 2000).await {
             Ok(summary) => {
-                eprintln!("DEBUG: Transcript summary read successfully:");
-                // Safe UTF-8 truncation using standard library
-                let truncated: String = summary.chars().take(500).collect();
-                eprintln!("DEBUG: First ~500 chars: {}", truncated);
+                if std::env::var("DEBUG_HOOKS").is_ok() {
+                    eprintln!("DEBUG: Transcript summary read successfully:");
+                    // Safe UTF-8 truncation using standard library
+                    let truncated: String = summary.chars().take(500).collect();
+                    eprintln!("DEBUG: First ~500 chars: {}", truncated);
+                }
                 Some(summary)
             }
             Err(e) => {
@@ -929,30 +1704,40 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        eprintln!("DEBUG: No transcript_path provided");
+        if std::env::var("DEBUG_HOOKS").is_ok() {
+            eprintln!("DEBUG: No transcript_path provided");
+        }
         None
     };
 
     // Include AST analysis results in context if available
     let ast_context = ast_analysis.as_ref().map(format_ast_results);
-    
+
+    // Perform project-wide AST analysis for comprehensive context
+    let project_ast_analysis = perform_project_ast_analysis(".").await;
+
     // Combine project context with dependencies analysis and duplicate report
     let combined_project_context = {
         let mut context_parts = Vec::new();
-        
+
         if let Some(project) = project_context.as_deref() {
             context_parts.push(project.to_string());
         }
-        
+
         if let Some(deps) = dependencies_context.as_deref() {
             context_parts.push(deps.to_string());
         }
-        
+
         // Add duplicate report as critical context if found
         if let Some(duplicates) = duplicate_report.as_deref() {
             context_parts.push(duplicates.to_string());
         }
-        
+
+        // Add project-wide AST analysis if available
+        if !project_ast_analysis.is_empty() {
+            context_parts.push(project_ast_analysis);
+        }
+
         if !context_parts.is_empty() {
             Some(context_parts.join("\n"))
         } else {
@@ -971,11 +1756,13 @@ async fn main() -> Result<()> {
     .await?;
 
     // DEBUG: Write the exact prompt to a file for inspection
-    if let Ok(mut debug_file) = tokio::fs::File::create("post-context.txt").await {
-        use tokio::io::AsyncWriteExt;
-        let _ = debug_file.write_all(formatted_prompt.as_bytes()).await;
-        let _ = debug_file.write_all(b"\n\n=== END OF PROMPT ===\n").await;
-        eprintln!("DEBUG: Full prompt written to post-context.txt");
+    if std::env::var("DEBUG_HOOKS").is_ok() {
+        if let Ok(mut debug_file) = tokio::fs::File::create("post-context.txt").await {
+            use tokio::io::AsyncWriteExt;
+            let _ = debug_file.write_all(formatted_prompt.as_bytes()).await;
+            let _ = debug_file.write_all(b"\n\n=== END OF PROMPT ===\n").await;
+            eprintln!("DEBUG: Full prompt written to post-context.txt");
+        }
     }
 
     // Create AI client and perform analysis
@@ -989,17 +1776,51 @@ async fn main() -> Result<()> {
         Ok(ai_response) => {
             // Combine AST results with AI response for full visibility
             let mut final_response = String::new();
-            
+
             // Add AST results first if available
             if let Some(ast_score) = &ast_analysis {
-                final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
-                
+                final_response.push_str(&format!(
+                    "<Deterministic Score: {}/1000>\n",
+                    ast_score.total_score
+                ));
+
                 if !ast_score.concrete_issues.is_empty() {
-                    final_response.push_str("Concrete Issues Found:\n");
-                    for issue in &ast_score.concrete_issues {
+                    // Determine limit for issues
+                    let max_issues: usize = std::env::var("AST_MAX_ISSUES")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(100)
+                        .clamp(10, 500);
+
+                    // Sort deterministically: severity -> line -> rule_id
+                    let sev_key = |s: IssueSeverity| match s {
+                        IssueSeverity::Critical => 0,
+                        IssueSeverity::Major => 1,
+                        IssueSeverity::Minor => 2,
+                    };
+                    let mut issues = ast_score.concrete_issues.clone();
+                    issues.sort_by(|a, b| {
+                        sev_key(a.severity)
+                            .cmp(&sev_key(b.severity))
+                            .then_with(|| a.line.cmp(&b.line))
+                            .then_with(|| a.rule_id.cmp(&b.rule_id))
+                    });
+
+                    let total = issues.len();
+                    issues.truncate(max_issues);
+
+                    final_response.push_str("Concrete Issues Found (sorted):\n");
+                    for issue in &issues {
                         final_response.push_str(&format!(
-                            "• Line {}: {} (-{} pts)\n",
-                            issue.line, issue.message, issue.points_deducted
+                            "• Line {}: {} [{}] (-{} pts)\n",
+                            issue.line, issue.message, issue.rule_id, issue.points_deducted
+                        ));
+                    }
+
+                    if total > issues.len() {
+                        final_response.push_str(&format!(
+                            "… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
+                            issues.len(), total
                         ));
                     }
                 } else {
@@ -1007,11 +1828,13 @@ async fn main() -> Result<()> {
                 }
                 final_response.push_str("\n");
             }
-            
+
             // Add formatting results if available
             if let Some(format_result) = &formatting_result {
                 if format_result.changed {
-                    final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
+                    final_response.push_str(
+                        "[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n",
+                    );
                 } else if !format_result.messages.is_empty() {
                     final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
                     for message in &format_result.messages {
@@ -1020,14 +1843,14 @@ async fn main() -> Result<()> {
                     final_response.push_str("\n\n");
                 }
             }
-            
+
             // Add AI response
             final_response.push_str(&ai_response);
-            
+
             let output = PostToolUseOutput {
                 hook_specific_output: PostToolUseHookOutput {
                     hook_event_name: "PostToolUse".to_string(),
-                    additional_context: final_response,
+                    additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) },
                 },
             };
 
@@ -1193,30 +2016,48 @@ mod tests {
 
         // Should identify the most recent user message
         assert!(summary.contains("Current user task: Most recent message"));
-        // Messages should appear in order
-        if let (Some(first_pos), Some(second_pos), Some(recent_pos)) = (
-            summary.find("First message"),
-            summary.find("Second message"),
-            summary.find("Most recent message"),
+        // Messages should appear in order in conversation
+        // Note: "Most recent message" appears in header, so we check just First and Second in conversation
+        if let (Some(first_pos), Some(second_pos)) = (
+            summary.find("user: First message"),
+            summary.find("user: Second message"),
         ) {
-            assert!(first_pos < second_pos);
-            assert!(second_pos < recent_pos);
+            assert!(
+                first_pos < second_pos,
+                "Messages not in chronological order"
+            );
         } else {
             panic!("Expected messages not found in summary");
         }
+        // The most recent message should be in the header
+        assert!(summary.starts_with("Current user task: Most recent message"));
     }
 
     #[tokio::test]
     async fn test_validate_transcript_path() {
-        assert!(!validate_transcript_path("../../etc/passwd"));
-        assert!(!validate_transcript_path("~/secrets"));
-        assert!(!validate_transcript_path("\\\\server\\share"));
-        assert!(!validate_transcript_path("file%20with%20encoding"));
-        assert!(!validate_transcript_path("file\0with\0nulls"));
-        assert!(validate_transcript_path("/valid/path/transcript.jsonl"));
-        assert!(validate_transcript_path(
-            "C:/Users/1/Documents/transcript.jsonl"
-        ));
+        // These should fail validation
+        assert!(validate_transcript_path("../../etc/passwd").is_err());
+        assert!(validate_transcript_path("~/secrets").is_err());
+        assert!(validate_transcript_path("\\\\server\\share").is_err());
+        assert!(validate_transcript_path("file%2e%2e/secrets").is_err());
+        assert!(validate_transcript_path("file\0with\0nulls").is_err());
+
+        // These paths would need to exist and be in allowed directories to pass
+        // For test purposes, we test with temp directory paths
+        let temp_dir = std::env::temp_dir();
+        let valid_path = temp_dir.join("transcript.jsonl");
+
+        // Create a test file in temp directory
+        if let Ok(mut file) = std::fs::File::create(&valid_path) {
+            use std::io::Write;
+            let _ = writeln!(file, "{{}}");
+
+            // This should pass validation as it's in temp directory
+            assert!(validate_transcript_path(valid_path.to_str().unwrap()).is_ok());
+
+            // Clean up
+            let _ = std::fs::remove_file(&valid_path);
+        }
     }
 
     #[tokio::test]
@@ -1237,7 +2078,7 @@ mod tests {
 
         // Should only contain 5 messages even though char limit not reached
         let message_count =
-            summary.matches("[user]:").count() + summary.matches("[ai-assistant]:").count();
+            summary.matches("user:").count() + summary.matches("assistant:").count();
         assert_eq!(message_count, 5);
     }
 
@@ -1267,7 +2108,7 @@ mod tests {
         // The limit is 500 chars, but we need to be precise
         assert!(summary.len() <= 550); // Allow small buffer for headers/formatting
         assert!(summary.len() >= 450); // Should be close to the limit
-        let message_count = summary.matches("[user]:").count();
+        let message_count = summary.matches("user:").count();
         assert!(message_count < 10);
         assert!(message_count > 0); // Should have at least one message
     }
@@ -1372,8 +2213,11 @@ mod tests {
             .await
             .unwrap();
 
+        // Debug output to understand what we're getting
+        println!("Summary for large file: {}", summary);
+
         // Should contain recent messages, not old ones from beginning
-        assert!(summary.contains("Recent message"));
+        assert!(summary.contains("Recent message") || summary.contains("user: Recent message"));
         assert!(summary.contains("Most recent message"));
         assert!(summary.contains("Current user task: Most recent message"));
         // Should NOT contain very old messages
@@ -1482,6 +2326,8 @@ mod tests {
         // Test with surrogate pairs edge case
         let text = "𝄞𝄞𝄞𝄞𝄞"; // Musical symbols (4 bytes each)
         let result = truncate_for_display(text, 10);
-        assert_eq!(result, "𝄞𝄞...");
+        // 𝄞 is 4 bytes, so with 10 byte limit: 4 bytes (𝄞) + 3 bytes (...) = 7 bytes, fits one symbol
+        assert_eq!(result, "𝄞...");
     }
 }
+

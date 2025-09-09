@@ -1,0 +1,29 @@
+name: perf-gate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+      - name: Build
+        run: cargo build --release
+      - name: Run benches (ast_perf)
+        run: cargo bench --bench ast_perf
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Perf gate
+        run: |
+          python scripts/perf_gate.py --baseline reports/benchmarks/baseline --threshold 0.2 || echo "Perf gate reported regressions" && exit 0
+

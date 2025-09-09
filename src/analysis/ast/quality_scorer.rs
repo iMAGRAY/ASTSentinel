@@ -1,6 +1,18 @@
 /// Automated Code Quality Scorer using AST analysis
+
+
+
+/// Automated Code Quality Scorer using AST analysis
+
+
+// helper removed (duplicate)
+
+/// Automated Code Quality Scorer using AST analysis
 /// Provides concrete, deterministic scoring from 0-1000 based on AST patterns
 use anyhow::Result;
+use crate::analysis::ast::languages::LanguageCache;
+#[cfg(feature = "ast_fastpath")]
+use crate::analysis::ast::single_pass::SinglePassEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -96,6 +108,10 @@ impl AstQualityScorer {
             rules: HashMap::new(),
         };
         scorer.register_default_rules();
+        // Optional pre-warm of tree-sitter languages to avoid first-call latency
+        if std::env::var("AST_PREWARM").is_ok() {
+            let _ = LanguageCache::initialize_all_languages();
+        }
         scorer
     }
     
@@ -125,18 +141,85 @@ impl AstQualityScorer {
             concrete_issues: Vec::new(),
         };
         
-        // Parse AST
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&language.get_tree_sitter_language()?)?;
-        
-        let tree = parser.parse(source, None)
+                // Config languages: parse with serde and apply security overlay (no panics)
+        match language {
+            SupportedLanguage::Json => {
+                let mut issues = Vec::new();
+                match serde_json::from_str::<serde_json::Value>(source) {
+                    Ok(_v) => {
+                        issues.extend(security_overlay_scan(source, "json"));
+                    }
+                    Err(e) => {
+                        issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::NamingConvention, message: format!("JSON parse error: {}", e), file: String::new(), line: 1, column: 1, rule_id: "CFG001".to_string(), points_deducted: 5, });
+                    }
+                }
+                for issue in issues { match issue.category { IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50), _ => {} } score.concrete_issues.push(issue); }
+                score.total_score = score.functionality_score + score.reliability_score + score.maintainability_score + score.performance_score + score.security_score + score.standards_score;
+                return Ok(score);
+            }
+            SupportedLanguage::Yaml => {
+                let mut issues = Vec::new();
+                match serde_yaml::from_str::<serde_yaml::Value>(source) {
+                    Ok(_v) => {
+                        issues.extend(security_overlay_scan(source, "yaml"));
+                    }
+                    Err(e) => {
+                        issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::NamingConvention, message: format!("YAML parse error: {}", e), file: String::new(), line: 1, column: 1, rule_id: "CFG001".to_string(), points_deducted: 5, });
+                    }
+                }
+                for issue in issues { match issue.category { IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50), _ => {} } score.concrete_issues.push(issue); }
+                score.total_score = score.functionality_score + score.reliability_score + score.maintainability_score + score.performance_score + score.security_score + score.standards_score;
+                return Ok(score);
+            }
+            SupportedLanguage::Toml => {
+                let mut issues = Vec::new();
+                match toml::from_str::<toml::Table>(source) {
+                    Ok(_v) => {
+                        issues.extend(security_overlay_scan(source, "toml"));
+                    }
+                    Err(e) => {
+                        issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::NamingConvention, message: format!("TOML parse error: {}", e), file: String::new(), line: 1, column: 1, rule_id: "CFG001".to_string(), points_deducted: 5, });
+                    }
+                }
+                for issue in issues { match issue.category { IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50), _ => {} } score.concrete_issues.push(issue); }
+                score.total_score = score.functionality_score + score.reliability_score + score.maintainability_score + score.performance_score + score.security_score + score.standards_score;
+                return Ok(score);
+            }
+            _ => {}
+        }// Parse AST (use cached Tree-sitter language for performance)
+        let mut parser = LanguageCache::create_parser_with_language(language)?;
+        let tree = parser
+            .parse(source, None)
             .ok_or_else(|| anyhow::anyhow!("Failed to parse AST"))?;
         
-        // Run all rules
-        for rule in self.rules.values() {
-            let issues = rule.check(&tree, source, language);
+        // Run rules
+        #[cfg(not(feature = "ast_fastpath"))]
+        {
+            // Default multi-pass rules
+            for rule in self.rules.values() {
+                let issues = rule.check(&tree, source, language);
+                for issue in issues {
+                    match issue.category {
+                        IssueCategory::UnhandledError => score.functionality_score = score.functionality_score.saturating_sub(50),
+                        IssueCategory::InfiniteLoop => score.functionality_score = score.functionality_score.saturating_sub(60),
+                        IssueCategory::DeadCode => score.functionality_score = score.functionality_score.saturating_sub(20),
+                        IssueCategory::NullPointerRisk => score.reliability_score = score.reliability_score.saturating_sub(40),
+                        IssueCategory::ResourceLeak => score.reliability_score = score.reliability_score.saturating_sub(50),
+                        IssueCategory::HighComplexity => score.maintainability_score = score.maintainability_score.saturating_sub(issue.points_deducted),
+                        IssueCategory::SqlInjection => score.security_score = score.security_score.saturating_sub(50),
+                        IssueCategory::HardcodedCredentials => score.security_score = score.security_score.saturating_sub(50),
+                        _ => {}
+                    }
+                    score.concrete_issues.push(issue);
+                }
+            }
+        }
+
+        #[cfg(feature = "ast_fastpath")]
+        {
+            // Single-pass fast engine for selected languages
+            let issues = SinglePassEngine::analyze(&tree, source, language);
             for issue in issues {
-                // Deduct points based on category
                 match issue.category {
                     IssueCategory::UnhandledError => score.functionality_score = score.functionality_score.saturating_sub(50),
                     IssueCategory::InfiniteLoop => score.functionality_score = score.functionality_score.saturating_sub(60),
@@ -202,7 +285,25 @@ impl UnhandledErrorRule {
     }
 }
 
-impl AstRule for UnhandledErrorRule {
+
+fn security_overlay_scan(source: &str, _kind: &str) -> Vec<ConcreteIssue> {
+    let mut issues = Vec::new();
+    // Raw string regex for easier escaping
+    let re = regex::Regex::new(r#"(?i)(password|api_key|secret|token)\s*[:=]\s*[^\s#\n]+"#).unwrap();
+    if re.is_match(source) {
+        issues.push(ConcreteIssue {
+            severity: IssueSeverity::Critical,
+            category: IssueCategory::HardcodedCredentials,
+            message: "Potential hardcoded credentials in config".to_string(),
+            file: String::new(),
+            line: 1,
+            column: 1,
+            rule_id: "CFGSEC001".to_string(),
+            points_deducted: 50,
+        });
+    }
+    issues
+}impl AstRule for UnhandledErrorRule {
     fn check(&self, ast: &tree_sitter::Tree, source: &str, language: SupportedLanguage) -> Vec<ConcreteIssue> {
         let mut issues = Vec::new();
         
@@ -436,8 +537,7 @@ impl AstRule for SecurityPatternRule {
         let mut issues = Vec::new();
         
         // Only apply to Python language (patterns are Python-specific)
-        if language != SupportedLanguage::Python {
-            eprintln!("DEBUG: SecurityPatternRule skipped - not Python language: {:?}", language);
+        if language != SupportedLanguage::Python { if std::env::var("DEBUG_HOOKS").is_ok() { eprintln!("DEBUG: SecurityPatternRule skipped - not Python language: {:?}", language); }
             return issues;
         }
         
@@ -533,3 +633,6 @@ fn calculate_complexity(node: &tree_sitter::Node, source: &str) -> u32 {
     
     complexity
 }
+
+
+

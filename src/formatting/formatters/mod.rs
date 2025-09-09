@@ -1,25 +1,27 @@
-/// Language-specific formatter implementations
-/// 
-/// This module provides secure, sandboxed access to external formatting tools
-/// with comprehensive security measures and resource limits.
-
-pub mod rust;
-pub mod python;  
-pub mod javascript;
-pub mod typescript;
-pub mod java;
-pub mod csharp;
-pub mod go;
 pub mod c;
 pub mod cpp;
+pub mod csharp;
+pub mod go;
+pub mod java;
+pub mod javascript;
+pub mod json;
 pub mod php;
+pub mod python;
 pub mod ruby;
+/// Language-specific formatter implementations
+///
+/// This module provides secure, sandboxed access to external formatting tools
+/// with comprehensive security measures and resource limits.
+pub mod rust;
+pub mod toml;
+pub mod typescript;
+pub mod yaml;
 
+use anyhow::Result;
+use std::collections::HashSet;
+use std::io::Write;
 use std::process::{Command, Stdio};
 use std::time::Duration;
-use std::collections::HashSet;
-use anyhow::Result;
-use std::io::Write;
 
 /// Security configuration for command execution
 #[derive(Debug, Clone)]
@@ -51,12 +53,12 @@ impl Default for SecurityConfig {
         allowed_commands.insert("java".to_string());
         allowed_commands.insert("php-cs-fixer".to_string());
         allowed_commands.insert("rubocop".to_string());
-        
+
         Self {
-            max_execution_time: 30, // 30 seconds max
+            max_execution_time: 30,              // 30 seconds max
             max_memory_bytes: 100 * 1024 * 1024, // 100MB max
-            max_input_bytes: 5 * 1024 * 1024, // 5MB max input
-            max_output_bytes: 10 * 1024 * 1024, // 10MB max output
+            max_input_bytes: 5 * 1024 * 1024,    // 5MB max input
+            max_output_bytes: 10 * 1024 * 1024,  // 10MB max output
             allowed_commands,
             allowed_working_dirs: HashSet::new(), // Will be set dynamically
         }
@@ -87,7 +89,7 @@ impl SecureCommandExecutor {
     /// Safe implementation of 'which' command check
     fn safe_which_check(&self, command: &str) -> bool {
         let which_cmd = if cfg!(windows) { "where" } else { "which" };
-        
+
         let output = Command::new(which_cmd)
             .arg(command)
             .stdin(Stdio::null())
@@ -102,7 +104,12 @@ impl SecureCommandExecutor {
     }
 
     /// Execute a formatter command with full security measures
-    pub fn execute_formatter(&self, command: &str, args: &[String], input: Option<&str>) -> Result<String> {
+    pub fn execute_formatter(
+        &self,
+        command: &str,
+        args: &[String],
+        input: Option<&str>,
+    ) -> Result<String> {
         // Security validation
         self.validate_command_security(command, args)?;
 
@@ -131,10 +138,8 @@ impl SecureCommandExecutor {
 
     fn contains_dangerous_patterns(&self, input: &str) -> bool {
         let dangerous_patterns = [
-            ";", "&&", "||", "|", "`", "$", 
-            "$(", "${", "../", "~/", "/etc/",
-            "&", ">", "<", ">>", "<<",
-            "\n", "\r", "\0"
+            ";", "&&", "||", "|", "`", "$", "$(", "${", "../", "~/", "/etc/", "&", ">", "<", ">>",
+            "<<", "\n", "\r", "\0",
         ];
 
         for pattern in &dangerous_patterns {
@@ -156,7 +161,7 @@ impl SecureCommandExecutor {
 
     fn create_secure_command(&self, command: &str, args: &[String]) -> Result<Command> {
         let mut cmd = Command::new(command);
-        
+
         // Add validated arguments
         for arg in args {
             cmd.arg(arg);
@@ -164,31 +169,37 @@ impl SecureCommandExecutor {
 
         // Secure the process environment
         cmd.stdin(Stdio::piped())
-           .stdout(Stdio::piped())
-           .stderr(Stdio::piped());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
         // Set resource limits if on Unix-like system
         #[cfg(unix)]
         {
             use std::os::unix::process::CommandExt;
-            
+
             unsafe {
                 cmd.pre_exec(|| {
                     // Set CPU time limit (SIGXCPU after soft limit)
-                    libc::setrlimit(libc::RLIMIT_CPU, &libc::rlimit {
-                        rlim_cur: 30, // 30 seconds
-                        rlim_max: 60, // 60 seconds hard limit
-                    });
-                    
+                    libc::setrlimit(
+                        libc::RLIMIT_CPU,
+                        &libc::rlimit {
+                            rlim_cur: 30, // 30 seconds
+                            rlim_max: 60, // 60 seconds hard limit
+                        },
+                    );
+
                     // Set memory limit (if available)
                     #[cfg(target_os = "linux")]
                     {
-                        libc::setrlimit(libc::RLIMIT_AS, &libc::rlimit {
-                            rlim_cur: 100 * 1024 * 1024, // 100MB
-                            rlim_max: 200 * 1024 * 1024, // 200MB hard limit
-                        });
+                        libc::setrlimit(
+                            libc::RLIMIT_AS,
+                            &libc::rlimit {
+                                rlim_cur: 100 * 1024 * 1024, // 100MB
+                                rlim_max: 200 * 1024 * 1024, // 200MB hard limit
+                            },
+                        );
                     }
-                    
+
                     Ok(())
                 });
             }
@@ -197,7 +208,11 @@ impl SecureCommandExecutor {
         Ok(cmd)
     }
 
-    fn execute_with_security_limits(&self, mut cmd: Command, input: Option<&str>) -> Result<String> {
+    fn execute_with_security_limits(
+        &self,
+        mut cmd: Command,
+        input: Option<&str>,
+    ) -> Result<String> {
         use std::sync::mpsc;
         use std::thread;
         use std::time::Instant;
@@ -214,8 +229,11 @@ impl SecureCommandExecutor {
                 // Validate input size
                 if stdin_data.len() > self.config.max_input_bytes {
                     let _ = child.kill();
-                    anyhow::bail!("Input too large: {} bytes (max: {})", 
-                                stdin_data.len(), self.config.max_input_bytes);
+                    anyhow::bail!(
+                        "Input too large: {} bytes (max: {})",
+                        stdin_data.len(),
+                        self.config.max_input_bytes
+                    );
                 }
 
                 // Write input in a separate thread to avoid blocking
@@ -230,7 +248,7 @@ impl SecureCommandExecutor {
         // Wait for completion with timeout
         let (tx, rx) = mpsc::channel();
         let child_id = child.id();
-        
+
         thread::spawn(move || {
             let result = child.wait_with_output();
             let _ = tx.send(result);
@@ -240,7 +258,7 @@ impl SecureCommandExecutor {
         match rx.recv_timeout(timeout) {
             Ok(Ok(output)) => {
                 let elapsed = start_time.elapsed();
-                
+
                 // Check execution time
                 if elapsed > timeout {
                     anyhow::bail!("Command execution timeout: {:?}", elapsed);
@@ -248,8 +266,11 @@ impl SecureCommandExecutor {
 
                 // Check output size
                 if output.stdout.len() > self.config.max_output_bytes {
-                    anyhow::bail!("Output too large: {} bytes (max: {})", 
-                                output.stdout.len(), self.config.max_output_bytes);
+                    anyhow::bail!(
+                        "Output too large: {} bytes (max: {})",
+                        output.stdout.len(),
+                        self.config.max_output_bytes
+                    );
                 }
 
                 if output.status.success() {
@@ -259,10 +280,10 @@ impl SecureCommandExecutor {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     anyhow::bail!("Formatter failed: {}", stderr);
                 }
-            },
+            }
             Ok(Err(e)) => {
                 anyhow::bail!("Process execution error: {}", e)
-            },
+            }
             Err(_) => {
                 // Timeout - try to kill the process
                 #[cfg(unix)]
@@ -273,14 +294,14 @@ impl SecureCommandExecutor {
                         libc::kill(child_id as i32, libc::SIGKILL);
                     }
                 }
-                
+
                 #[cfg(windows)]
                 {
                     let _ = Command::new("taskkill")
                         .args(&["/PID", &child_id.to_string(), "/F"])
                         .output();
                 }
-                
+
                 anyhow::bail!("Command timeout after {:?}", timeout)
             }
         }
@@ -293,7 +314,7 @@ impl SecureCommandExecutor {
         }
 
         let version_args = self.get_version_args(command);
-        
+
         match self.execute_formatter(command, &version_args, None) {
             Ok(output) => {
                 // Clean and truncate output
@@ -305,10 +326,10 @@ impl SecureCommandExecutor {
                     .chars()
                     .take(200) // Limit length
                     .collect();
-                
+
                 format!("{} {}", command, clean_output)
-            },
-            Err(_) => format!("{} (version check failed)", command)
+            }
+            Err(_) => format!("{} (version check failed)", command),
         }
     }
 
@@ -350,13 +371,13 @@ mod tests {
     #[test]
     fn test_dangerous_patterns_detection() {
         let executor = SecureCommandExecutor::default();
-        
+
         assert!(executor.contains_dangerous_patterns("file.txt; rm -rf /"));
         assert!(executor.contains_dangerous_patterns("$(malicious)"));
         assert!(executor.contains_dangerous_patterns("file && rm file"));
         assert!(executor.contains_dangerous_patterns("../../../etc/passwd"));
         assert!(executor.contains_dangerous_patterns("file.exe"));
-        
+
         assert!(!executor.contains_dangerous_patterns("normal_file.rs"));
         assert!(!executor.contains_dangerous_patterns("--indent=4"));
         assert!(!executor.contains_dangerous_patterns("output.json"));
@@ -365,29 +386,37 @@ mod tests {
     #[test]
     fn test_command_whitelist_validation() {
         let executor = SecureCommandExecutor::default();
-        
-        assert!(executor.execute_formatter("rm", &["-rf".to_string(), "/".to_string()], None).is_err());
-        assert!(executor.execute_formatter("curl", &["http://evil.com".to_string()], None).is_err());
-        assert!(executor.execute_formatter("bash", &["-c".to_string(), "echo hi".to_string()], None).is_err());
+
+        assert!(executor
+            .execute_formatter("rm", &["-rf".to_string(), "/".to_string()], None)
+            .is_err());
+        assert!(executor
+            .execute_formatter("curl", &["http://evil.com".to_string()], None)
+            .is_err());
+        assert!(executor
+            .execute_formatter("bash", &["-c".to_string(), "echo hi".to_string()], None)
+            .is_err());
     }
 
     #[test]
     fn test_argument_injection_protection() {
         let executor = SecureCommandExecutor::default();
-        
+
         let dangerous_args = vec![
             "file.txt; rm -rf /".to_string(),
             "--option=$(malicious)".to_string(),
             "file && rm file".to_string(),
         ];
-        
-        assert!(executor.execute_formatter("rustfmt", &dangerous_args, None).is_err());
+
+        assert!(executor
+            .execute_formatter("rustfmt", &dangerous_args, None)
+            .is_err());
     }
 
     #[test]
     fn test_safe_which_check() {
         let executor = SecureCommandExecutor::default();
-        
+
         // Test that the check doesn't throw errors or panic
         let _exists = executor.safe_which_check("rustfmt");
         let _not_exists = executor.safe_which_check("definitely-not-a-real-command-12345");

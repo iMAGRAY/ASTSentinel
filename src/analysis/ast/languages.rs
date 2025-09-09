@@ -43,6 +43,12 @@ pub enum SupportedLanguage {
     /// Gleam - Tree-sitter based (type-safe functional language)
     /// Docs: https://gleam.run/book/
     Gleam,
+    /// JSON - Configuration files that may contain security issues
+    Json,
+    /// YAML - Configuration files that may contain security issues  
+    Yaml,
+    /// TOML - Configuration files that may contain security issues
+    Toml,
 }
 
 impl SupportedLanguage {
@@ -63,13 +69,16 @@ impl SupportedLanguage {
             "zig" => Some(Self::Zig),
             "v" => Some(Self::V),
             "gleam" => Some(Self::Gleam),
+            "json" => Some(Self::Json),
+            "yml" | "yaml" => Some(Self::Yaml),
+            "toml" => Some(Self::Toml),
             _ => None,
         }
     }
 
     pub fn get_tree_sitter_language(self) -> Result<Language> {
         match self {
-            Self::Rust => anyhow::bail!("Rust uses syn crate, not tree-sitter"),
+            Self::Rust => anyhow::bail!("Rust uses regex-based analysis, not tree-sitter"),
             Self::Python => Ok(tree_sitter_python::language()),
             Self::JavaScript => Ok(tree_sitter_javascript::language()),
             Self::TypeScript => Ok(tree_sitter_typescript::language_typescript()),
@@ -87,16 +96,19 @@ impl SupportedLanguage {
                 "V Lang tree-sitter support requires implementation - no stable tree-sitter-v crate available. See https://vlang.io/docs for language info."
             )),
             Self::Gleam => {
-                #[cfg(feature = "gleam-support")]
+                #[cfg(feature = "tree-sitter-gleam")]
                 {
                     // tree_sitter_gleam::LANGUAGE is a LanguageFn, call it to get Language
                     Ok(tree_sitter_gleam::LANGUAGE.call())
                 }
-                #[cfg(not(feature = "gleam-support"))]
+                #[cfg(not(feature = "tree-sitter-gleam"))]
                 Err(anyhow::anyhow!(
                     "Gleam tree-sitter support not compiled in - enable 'gleam-support' feature. See https://gleam.run/book/ for language info."
                 ))
             },
+            Self::Json => anyhow::bail!("JSON uses regex-based analysis for security patterns, not tree-sitter"),
+            Self::Yaml => anyhow::bail!("YAML uses regex-based analysis for security patterns, not tree-sitter"),
+            Self::Toml => anyhow::bail!("TOML uses regex-based analysis for security patterns, not tree-sitter"),
         }
     }
 }
@@ -118,6 +130,9 @@ impl std::fmt::Display for SupportedLanguage {
             Self::Zig => write!(f, "Zig"),
             Self::V => write!(f, "V Lang"),
             Self::Gleam => write!(f, "Gleam"),
+            Self::Json => write!(f, "JSON"),
+            Self::Yaml => write!(f, "YAML"),
+            Self::Toml => write!(f, "TOML"),
         }
     }
 }
@@ -679,6 +694,13 @@ impl MultiLanguageAnalyzer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Test lock to ensure cache tests run sequentially
+    // This prevents race conditions in tests that manipulate the global cache
+    lazy_static! {
+        static ref CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
+    }
 
     #[test]
     fn test_supported_language_from_extension() {
@@ -760,6 +782,9 @@ mod tests {
 
     #[test]
     fn test_language_cache() {
+        // Lock to prevent race conditions with other cache tests
+        let _lock = CACHE_TEST_LOCK.lock().unwrap();
+
         // Clear cache to start fresh
         let _ = LanguageCache::clear_cache();
 
@@ -792,6 +817,9 @@ mod tests {
 
     #[test]
     fn test_language_cache_direct() {
+        // Lock to prevent race conditions with other cache tests
+        let _lock = CACHE_TEST_LOCK.lock().unwrap();
+
         // Test direct language cache methods in isolation
         let _ = LanguageCache::clear_cache();
 
@@ -841,6 +869,9 @@ mod tests {
 
     #[test]
     fn test_language_cache_initialization() {
+        // Lock to prevent race conditions with other cache tests
+        let _lock = CACHE_TEST_LOCK.lock().unwrap();
+
         let _ = LanguageCache::clear_cache();
 
         // Test initializing all languages

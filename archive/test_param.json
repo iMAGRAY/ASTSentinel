@@ -1,9 +1,0 @@
-{
-  "id": "test123",
-  "tool_name": "Edit",
-  "parameters": {
-    "file_path": "test_param.js",
-    "old_string": "",
-    "new_string": "function test(a, b, c) {\n    if (a > b) {\n        return a + b + c;\n    } else {\n        return a - b;\n    }\n}"
-  }
-}

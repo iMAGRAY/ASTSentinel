@@ -22,6 +22,8 @@ path = "test_data/rust/test_unified_diff.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
+toml = "0.8"
 quick-xml = { version = "0.36", features = ["serialize"] }
 tokio = { version = "1.0", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
@@ -43,6 +45,7 @@ lru = "0.12"
 uuid = { version = "1.0", features = ["v4", "serde"] }
 url = "2.5"
 rand = "0.8"
+libc = "0.2"
 
 # AST parsers for multiple languages
 tree-sitter = "0.22"
@@ -59,8 +62,10 @@ tree-sitter-ruby = "0.21"
 tree-sitter-gleam = { git = "https://github.com/gleam-lang/tree-sitter-gleam", optional = true }
 
 [features]
-default = []
+default = ["ast_fastpath"]
+
 gleam-support = ["tree-sitter-gleam"]
+ast_fastpath = []
 
 [dev-dependencies]
 tempfile = "3.8"
@@ -70,9 +75,14 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "performance"
 harness = false
 
+[[bench]]
+name = "ast_perf"
+harness = false
+
 [profile.release]
 lto = true
 codegen-units = 1
-panic = "unwind"  # Changed from "abort" to see real errors
-strip = false     # Changed to keep debug symbols
-opt-level = 2     # Reduced optimization for stability
+panic = "unwind"
+strip = false
+opt-level = 2
+

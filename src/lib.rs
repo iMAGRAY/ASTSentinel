@@ -64,8 +64,8 @@ pub use analysis::{
     ScanConfig,
 };
 pub use cache::ProjectCache;
-pub use providers::{AIProvider, UniversalAIClient};
 pub use formatting::{CodeFormatter, FormatResult, FormattingService};
+pub use providers::{AIProvider, UniversalAIClient};
 
 /// Claude Code Hook input data structure - actual fields from Claude Code
 #[derive(Debug, Deserialize)]
@@ -608,6 +608,158 @@ impl Config {
         config
             .validate()
             .with_context(|| "Configuration validation failed")?;
+
+        Ok(config)
+    }
+
+    /// Load configuration from environment with graceful degradation
+    /// Returns config even if API keys are missing, allowing AST-only mode
+    pub fn from_env_graceful() -> Result<Self> {
+        // Try to load .env from the same directory as the executable
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(exe_dir) = exe_path.parent() {
+                // Load .env (production) and optionally override with .env.local (development)
+                let env_file = exe_dir.join(".env");
+                if env_file.exists() {
+                    // Clear existing API keys to ensure .env takes priority
+                    std::env::remove_var("OPENAI_API_KEY");
+                    std::env::remove_var("ANTHROPIC_API_KEY");
+                    std::env::remove_var("GOOGLE_API_KEY");
+                    std::env::remove_var("XAI_API_KEY");
+
+                    if let Err(e) = dotenv::from_path(&env_file) {
+                        eprintln!("Warning: Failed to load .env: {e}");
+                    }
+                }
+
+                // Additionally check for .env.local to override settings in development
+                let env_local = exe_dir.join(".env.local");
+                if env_local.exists() {
+                    if let Err(e) = dotenv::from_path(&env_local) {
+                        eprintln!("Warning: Failed to load .env.local: {e}");
+                    }
+                }
+            }
+        }
+
+        // Load all API keys from environment (graceful - empty if not found)
+        let openai_api_key = std::env::var("OPENAI_API_KEY").unwrap_or_default();
+        let anthropic_api_key = std::env::var("ANTHROPIC_API_KEY").unwrap_or_default();
+        let google_api_key = std::env::var("GOOGLE_API_KEY").unwrap_or_default();
+        let xai_api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
+
+        // Parse provider selections with validation (but don't fail on missing keys)
+        let pretool_provider_str =
+            std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let posttool_provider_str =
+            std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+
+        let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>()
+            .with_context(|| format!("Invalid PRETOOL_PROVIDER: {pretool_provider_str}. Supported: openai, anthropic, google, xai"))?;
+        let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>()
+            .with_context(|| format!("Invalid POSTTOOL_PROVIDER: {posttool_provider_str}. Supported: openai, anthropic, google, xai"))?;
+
+        // Parse and validate configurable values with proper bounds
+        let max_tokens = std::env::var("MAX_TOKENS")
+            .unwrap_or_else(|_| "4000".to_string())
+            .parse::<u32>()
+            .unwrap_or(4000)
+            .clamp(100, 100_000);
+
+        let temperature = std::env::var("TEMPERATURE")
+            .unwrap_or_else(|_| "0.1".to_string())
+            .parse::<f32>()
+            .unwrap_or(0.1)
+            .clamp(0.0, 2.0);
+
+        let max_issues = std::env::var("MAX_ISSUES")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse::<usize>()
+            .unwrap_or(10)
+            .clamp(1, 50);
+
+        let request_timeout_secs = std::env::var("REQUEST_TIMEOUT_SECS")
+            .unwrap_or_else(|_| "60".to_string())
+            .parse::<u64>()
+            .unwrap_or(60)
+            .clamp(10, 600);
+
+        let connect_timeout_secs = std::env::var("CONNECT_TIMEOUT_SECS")
+            .unwrap_or_else(|_| "30".to_string())
+            .parse::<u64>()
+            .unwrap_or(30)
+            .clamp(5, 120);
+
+        // Create configuration with all providers supported
+        let config = Config {
+            openai_api_key,
+            anthropic_api_key,
+            google_api_key,
+            xai_api_key,
+
+            // Load custom base URLs or use defaults
+            openai_base_url: std::env::var("OPENAI_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::OpenAI.default_base_url().to_string()),
+            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| {
+                providers::AIProvider::Anthropic
+                    .default_base_url()
+                    .to_string()
+            }),
+            google_base_url: std::env::var("GOOGLE_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::Google.default_base_url().to_string()),
+            xai_base_url: std::env::var("XAI_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::XAI.default_base_url().to_string()),
+
+            pretool_provider,
+            posttool_provider,
+            pretool_model: std::env::var("PRETOOL_MODEL")
+                .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
+            posttool_model: std::env::var("POSTTOOL_MODEL")
+                .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
+            max_tokens,
+            temperature,
+            max_issues,
+            request_timeout_secs,
+            connect_timeout_secs,
+
+            // Provider-specific output token limits (based on documentation)
+            gpt5_max_output_tokens: std::env::var("GPT5_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "12000".to_string())
+                .parse::<u32>()
+                .unwrap_or(12000)
+                .clamp(1000, 128000), // GPT-5: 128K output tokens max
+            claude_max_output_tokens: std::env::var("CLAUDE_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "4000".to_string())
+                .parse::<u32>()
+                .unwrap_or(4000)
+                .clamp(1000, 8000), // Claude: 4K typical, 8K max
+            gemini_max_output_tokens: std::env::var("GEMINI_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "8000".to_string())
+                .parse::<u32>()
+                .unwrap_or(8000)
+                .clamp(1000, 32000), // Gemini: Variable, 32K max
+            grok_max_output_tokens: std::env::var("GROK_MAX_OUTPUT_TOKENS")
+                .unwrap_or_else(|_| "8000".to_string())
+                .parse::<u32>()
+                .unwrap_or(8000)
+                .clamp(1000, 8000), // Grok: 8K typical
+        };
+
+        // Skip strict validation - allow missing API keys for graceful degradation
+        // Only validate basic configuration parameters
+        if config.max_tokens == 0 || config.max_tokens > 100_000 {
+            return Err(anyhow::anyhow!("max_tokens must be between 1 and 100,000"));
+        }
+
+        if config.temperature < 0.0 || config.temperature > 2.0 {
+            return Err(anyhow::anyhow!("temperature must be between 0.0 and 2.0"));
+        }
+
+        if config.request_timeout_secs == 0 || config.request_timeout_secs > 600 {
+            return Err(anyhow::anyhow!(
+                "request_timeout_secs must be between 1 and 600"
+            ));
+        }
 
         Ok(config)
     }
