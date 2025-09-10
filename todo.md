@@ -100,6 +100,9 @@ ID K — Документация и примеры
 - [-] K2. docs/: Playbook PreToolUse/PostToolUse (решения/структуры/лимиты)
   Критерий: пошаговые примеры «до/после», без излишней «воды».
 
+- [+] K3. Главный README полностью в SVG
+  Критерий: `README.md` содержит только `<img src="assets/readme.svg" ...>`; без fallback‑картинок/ссылок; отрисовывается на GitHub.
+
 ID Z — База (готово)
 - [+] Z1. Windows path validation: backslash/UNC корректны, e2e Windows — ОК
 - [+] Z2. JS/TS security: SQL‑строки (Critical), creds в assignment — ОК
