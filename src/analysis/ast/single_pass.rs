@@ -27,7 +27,7 @@ impl SinglePassEngine {
                 if max_depth > 4 { issues.push(ConcreteIssue { severity: IssueSeverity::Minor, category: IssueCategory::DeepNesting, message: format!("Deep nesting detected (level {})", max_depth), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "NEST001".to_string(), points_deducted: (max_depth - 4) * 10, }); }
             }
 
-            // Unreachable code after return (generic)
+            // Unreachable code after terminators (generic)
             let is_return = if let Some(ids) = kind_ids {
                 let k = node.kind_id();
                 match language {
@@ -45,7 +45,10 @@ impl SinglePassEngine {
             } else {
                 matches!(node.kind(), "return_statement" | "return_expression" | "return")
             };
-            if is_return {
+            // Python-specific terminators
+            let is_py_raise = language == SupportedLanguage::Python && node.kind() == "raise_statement";
+            let is_py_loop_term = language == SupportedLanguage::Python && (node.kind() == "break_statement" || node.kind() == "continue_statement");
+            if is_return || is_py_raise || is_py_loop_term {
                 // Conservative unreachable detection: skip label/switch-case/catch/else tokens and empty statements
                 if let Some(next) = node.next_sibling() {
                     let k = next.kind();
@@ -98,7 +101,7 @@ impl SinglePassEngine {
                         issues.push(ConcreteIssue {
                             severity: IssueSeverity::Major,
                             category: IssueCategory::UnreachableCode,
-                            message: "Unreachable code after return statement".to_string(),
+                            message: if is_py_raise { "Unreachable code after raise statement".to_string() } else if is_py_loop_term { "Unreachable code after loop control (break/continue)".to_string() } else { "Unreachable code after return statement".to_string() },
                             file: String::new(),
                             line: next.start_position().row + 1,
                             column: next.start_position().column + 1,
