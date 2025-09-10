@@ -1754,7 +1754,10 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
     let code = content.to_string();
     let handle = tokio::task::spawn_blocking(move || {
         let scorer = AstQualityScorer::new();
-        scorer.analyze(&code, language)
+        let t0 = std::time::Instant::now();
+        let res = scorer.analyze(&code, language);
+        if let Ok(_) = &res { crate::analysis::timings::record(&format!("score/{}", language), t0.elapsed().as_millis()); }
+        res
     });
 
     match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), handle).await {
@@ -2434,6 +2437,11 @@ async fn main() -> Result<()> {
         }
         if let Some(format_result) = &formatting_result {
             if format_result.changed { final_response.push_str("[FORMAT] Auto-format applied.\n\n"); }
+        }
+        // Append timings if enabled
+        if crate::analysis::timings::enabled() {
+            let sum = crate::analysis::timings::summary();
+            if !sum.is_empty() { final_response.push_str(&sum); final_response.push('\n'); }
         }
         let output = PostToolUseOutput { hook_specific_output: PostToolUseHookOutput { hook_event_name: "PostToolUse".to_string(), additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) }, }, };
         println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);

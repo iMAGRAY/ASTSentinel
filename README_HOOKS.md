@@ -133,3 +133,10 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
 Для проверки целостности используйте `sha256sum -c SHA256SUMS.txt` внутри соответствующей папки.
 
 
+
+### AST Timings (наблюдаемость)
+- AST_TIMINGS (set to any value) — включить сбор и вывод статистики таймингов в конце dditionalContext:
+  - Формат: === TIMINGS (ms) === с метриками per label: count, p50, p95, p99, vg.
+  - Лейблы: parse/<lang> (Tree‑sitter парсинг + метрики), score/<lang> (AST scoring).
+  - Используйте для отладки и контроля производительности в оффлайн‑прогоне.
+

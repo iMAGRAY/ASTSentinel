@@ -11,6 +11,7 @@ type AnalyzeProjectResult = (
 );
 use std::sync::{Arc, RwLock};
 use tree_sitter::{Language, Parser};
+use crate::analysis::timings;
 
 use crate::analysis::ast::visitor::ComplexityVisitor;
 use crate::analysis::metrics::ComplexityMetrics;
@@ -306,6 +307,7 @@ impl MultiLanguageAnalyzer {
 
         // Spawn analysis thread
         let handle = thread::spawn(move || {
+            let t0 = std::time::Instant::now();
             // Perform the actual analysis in a separate thread
             let result = (|| -> Result<ComplexityMetrics> {
                 // Use the new LanguageCache for efficient parser creation
@@ -335,6 +337,8 @@ impl MultiLanguageAnalyzer {
             })();
 
             // Send result back to main thread
+            let dur = t0.elapsed();
+            timings::record(&format!("parse/{}", language), dur.as_millis());
             let _ = tx.send(result);
         });
 
