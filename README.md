@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.svg" width="100%" alt="AST Sentinel"/>
+  <img src="assets/hero.svg?v=3" width="100%" alt="AST Sentinel"/>
 </p>
 
 <p align="center">
@@ -19,12 +19,32 @@ High‑performance validation hooks for Claude Code: deterministic AST checks, d
 
 ## Features
 
-- 🛡️ Security validation: SQL/command/path injection, hardcoded credentials, unsafe patterns
-- ✨ Code‑quality analysis: Too‑many‑params, deep‑nesting, complexity, long lines, unreachable, naming/docs
-- 🧠 Deterministic AST scoring: stable sorting + caps; diff‑aware entity snippets for context
-- ⚡ Performance/observability: soft budgets (size/lines), per‑label timings (p50/p95/p99/avg), strict perf‑gate in CI
-- 🧰 Duplicate/Deps insights: duplicate report (caps, per‑type summary, top directories), dependency summary (npm/pip/cargo/poetry)
-- 🤖 Multi‑provider AI: OpenAI / Anthropic / xAI / Google (through a unified client) — optional for online mode
+<table>
+  <tr>
+    <td width="5%"><img src="assets/icons/shield.svg" width="22" alt="Security"/></td>
+    <td><b>Security validation</b>: SQL / command / path injection, hardcoded credentials, unsafe patterns.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/icons/tree.svg" width="22" alt="AST"/></td>
+    <td><b>Deterministic AST</b>: stable sorting and caps; diff‑aware entity snippets for precise context.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/icons/diff.svg" width="22" alt="Diff"/></td>
+    <td><b>Change intelligence</b>: unified diff, entity‑based snippets, API contract checks.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/icons/cpu.svg" width="22" alt="Perf"/></td>
+    <td><b>Performance & observability</b>: soft budgets (size/lines), per‑label timings (p50/p95/p99/avg), strict perf‑gate in CI.</td>
+  </tr>
+  <tr>
+    <td><img src="assets/icons/graph.svg" width="22" alt="Dup"/></td>
+    <td><b>Duplicates & deps</b>: report with caps, per‑type summaries, top directories; dependency summary (npm/pip/cargo/poetry).</td>
+  </tr>
+  <tr>
+    <td><img src="assets/icons/package.svg" width="22" alt="Providers"/></td>
+    <td><b>Providers</b>: OpenAI / Anthropic / xAI / Google via a unified client — optional for online mode.</td>
+  </tr>
+  </table>
 
 ## Quick Start
 
