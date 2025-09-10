@@ -416,20 +416,63 @@ impl RustAstVisitor {
         });
     }
 
+    fn is_panic_like_stmt(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::Macro(mac_stmt) => {
+                mac_stmt
+                    .mac
+                    .path
+                    .segments
+                    .last()
+                    .map(|s| {
+                        let id = s.ident.to_string();
+                        id == "panic" || id == "todo" || id == "unimplemented"
+                    })
+                    .unwrap_or(false)
+            }
+            Stmt::Expr(Expr::Macro(expr_mac), _) => expr_mac
+                .mac
+                .path
+                .segments
+                .last()
+                .map(|s| {
+                    let id = s.ident.to_string();
+                    id == "panic" || id == "todo" || id == "unimplemented"
+                })
+                .unwrap_or(false),
+            _ => false,
+        }
+    }
+
     fn scan_block_unreachable(&mut self, block: &syn::Block) {
-        let mut after_return = false;
+        // Default: only return/panic-like terminate execution for the remainder of the block
+        self.scan_block_unreachable_with_flags(block, false);
+    }
+
+    fn scan_block_unreachable_with_flags(&mut self, block: &syn::Block, in_loop: bool) {
+        use syn::{ExprBreak, ExprContinue, ExprReturn};
+        let mut after_terminator = false;
         for stmt in &block.stmts {
+            if after_terminator {
+                // Skip empty statements (there is no explicit Empty in syn::Stmt; any stmt counts)
+                self.push_issue(
+                    IssueSeverity::Major,
+                    IssueCategory::UnreachableCode,
+                    "Unreachable code after return/break/continue/panic",
+                );
+                break;
+            }
+
             match stmt {
-                Stmt::Expr(Expr::Return(_), _) => {
-                    after_return = true;
+                Stmt::Expr(Expr::Return(ExprReturn { .. }), _)
+                | _ if Self::is_panic_like_stmt(stmt) => {
+                    after_terminator = true;
                 }
-                _ if after_return => {
-                    self.push_issue(
-                        IssueSeverity::Major,
-                        IssueCategory::UnreachableCode,
-                        "Unreachable code after return statement",
-                    );
-                    break;
+                Stmt::Expr(Expr::Break(ExprBreak { .. }), _) if in_loop => {
+                    after_terminator = true;
+                }
+                Stmt::Expr(Expr::Continue(ExprContinue { .. }), _) if in_loop => {
+                    after_terminator = true;
                 }
                 _ => {}
             }
@@ -437,7 +480,7 @@ impl RustAstVisitor {
     }
 
     fn calc_max_nesting(&self, expr: &Expr, depth: u32) -> u32 {
-        use syn::{ExprForLoop, ExprIf, ExprLoop, ExprMatch, ExprWhile};
+        use syn::{ExprForLoop, ExprIf, ExprLet, ExprLoop, ExprMatch, ExprWhile};
         match expr {
             Expr::If(ExprIf { then_branch, else_branch, .. }) => {
                 let then_d = self.calc_block_depth(then_branch, depth + 1);
@@ -446,7 +489,12 @@ impl RustAstVisitor {
                 } else { depth + 1 };
                 then_d.max(else_d)
             }
-            Expr::While(ExprWhile { body, .. }) => self.calc_block_depth(body, depth + 1),
+            // while / while let — treat condition with Expr::Let as same depth increase
+            Expr::While(ExprWhile { cond, body, .. }) => {
+                let mut d = depth + 1;
+                if matches!(cond.as_ref(), Expr::Let(ExprLet { .. })) { d += 0; /* already counted */ }
+                self.calc_block_depth(body, d)
+            }
             Expr::ForLoop(ExprForLoop { body, .. }) => self.calc_block_depth(body, depth + 1),
             Expr::Loop(ExprLoop { body, .. }) => self.calc_block_depth(body, depth + 1),
             Expr::Match(ExprMatch { arms, .. }) => {
@@ -500,7 +548,7 @@ impl<'a> Visit<'a> for RustAstVisitor {
             );
         }
 
-        // Unreachable after return
+        // Unreachable after return/panic (function body)
         self.scan_block_unreachable(&i.block);
 
         syn::visit::visit_item_fn(self, i);
@@ -529,6 +577,33 @@ impl<'a> Visit<'a> for RustAstVisitor {
             }
         }
         syn::visit::visit_expr_macro(self, mac);
+    }
+
+    fn visit_expr_while(&mut self, w: &syn::ExprWhile) {
+        // Inside loops, break/continue make the remainder of the loop block unreachable
+        self.scan_block_unreachable_with_flags(&w.body, true);
+        syn::visit::visit_expr_while(self, w);
+    }
+
+    fn visit_expr_for_loop(&mut self, f: &syn::ExprForLoop) {
+        self.scan_block_unreachable_with_flags(&f.body, true);
+        syn::visit::visit_expr_for_loop(self, f);
+    }
+
+    fn visit_expr_loop(&mut self, l: &syn::ExprLoop) {
+        self.scan_block_unreachable_with_flags(&l.body, true);
+        syn::visit::visit_expr_loop(self, l);
+    }
+
+    fn visit_expr_if(&mut self, i: &syn::ExprIf) {
+        // Scan both branches for post-terminator unreachable code
+        self.scan_block_unreachable(&i.then_branch);
+        if let Some((_, else_expr)) = &i.else_branch {
+            if let syn::Expr::Block(b) = else_expr.as_ref() {
+                self.scan_block_unreachable(&b.block);
+            }
+        }
+        syn::visit::visit_expr_if(self, i);
     }
 
     fn visit_stmt(&mut self, s: &Stmt) {
@@ -581,7 +656,7 @@ impl<'a> Visit<'a> for RustAstVisitor {
     }
 
     fn visit_block(&mut self, b: &syn::Block) {
-        // Scan for unreachable inside nested blocks as well
+        // Scan for unreachable inside nested blocks as well (non-loop context)
         self.scan_block_unreachable(b);
         syn::visit::visit_block(self, b);
     }
