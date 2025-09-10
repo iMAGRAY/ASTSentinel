@@ -39,7 +39,7 @@ ID E — UserPromptSubmit: компактный AST‑контекст
 ID F — Языковые правила (точность)
 - [-] F1. Rust: углубить DeepNesting (if/while let/loop), Unreachable внутри вложенных блоков
   Критерий: unit‑тесты на конструкции; без ложнопозитивов на good code.
-- [-] F2. TS/JS: decorators, optional chaining, сложные комбинации params (readonly/default/rest/optional/деструктуризация)
+- [+] F2. TS/JS: decorators, optional chaining, сложные комбинации params (readonly/default/rest/optional/деструктуризация)
   Критерий: unit‑тесты good/bad; корректная TooManyParameters и отсутствие шума.
 
   Прогресс: в контексте API‑контракта (PostToolUse) улучшен парсер сигнатур JS/TS:
@@ -95,6 +95,8 @@ ID Z — База (готово)
 - Итерация 7: J1, K1–K2 — покрытие 85%+, docs/примеры
 
 ## Журнал выполнения
+- 2025-09-10: F2 — TS/JS правила: игнорируем TS  'this' параметр при подсчёте арности; добавлены юнит‑тесты; корректный учёт rest/optional/default/dest. Все тесты: PASS. 
+
 - 2025-09-10: F1 — углублены Rust-правила (DeepNesting/Unreachable). Юнит-тесты добавлены; все тесты: PASS.
   - Новое: unreachable после break/continue в циклах; deep nesting учитывает while let/loop.
 
@@ -113,5 +115,7 @@ ID Z — База (готово)
   - Реализованы Contract‑check unit+e2e: `tests/e2e_pretooluse_contract.rs`; deny при уменьшении арности (Python), allow при сохранении сигнатуры (JS). Запуск: `cargo test --bin pretooluse`.
   - D2: добавлены unit‑тесты сущностных срезов и фильтра по диффу в `src/bin/posttooluse.rs` (unit_*), а также e2e `tests/e2e_posttooluse_entity_snippets.rs`. Документирован `AST_ENTITY_SNIPPETS`. Все тесты: PASS.
   - E1: реализован компактный контекст для UserPromptSubmit (Project Summary + Risk/Health snapshot) с лимитом (`USERPROMPT_CONTEXT_LIMIT`, по умолчанию 4000). Добавлен юнит‑тест `tests/unit_userpromptsubmit_snapshot.rs`. Все тесты: PASS.
+
+
 
 
