@@ -47,7 +47,7 @@ ID F — Языковые правила (точность)
   - computed‑имена уточняются (`[computed: …]` при возможности);
   - параметры извлекаются с учётом `decorator`/`readonly`/`optional`/`rest`/`default` и деструктурирования; типы/модификаторы игнорируются.
   Правила качества (TooManyParameters и др.) пока не менялись.
-- [-] F3. Python: raise/continue/break → Unreachable; сложные try/except цепочки
+- [+] F3. Python: raise/continue/break → Unreachable; сложные try/except цепочки
   Критерий: unit‑тесты good/bad; без ложнопозитивов.
 
 ID G — Многословность и полезность сообщений
@@ -95,6 +95,8 @@ ID Z — База (готово)
 - Итерация 7: J1, K1–K2 — покрытие 85%+, docs/примеры
 
 ## Журнал выполнения
+- 2025-09-10: F3 — Python: unreachable после raise/break/continue; добавлены юнит‑тесты. Все тесты: PASS.
+
 - 2025-09-10: F2 — TS/JS правила: игнорируем TS  'this' параметр при подсчёте арности; добавлены юнит‑тесты; корректный учёт rest/optional/default/dest. Все тесты: PASS. 
 
 - 2025-09-10: F1 — углублены Rust-правила (DeepNesting/Unreachable). Юнит-тесты добавлены; все тесты: PASS.
@@ -115,6 +117,8 @@ ID Z — База (готово)
   - Реализованы Contract‑check unit+e2e: `tests/e2e_pretooluse_contract.rs`; deny при уменьшении арности (Python), allow при сохранении сигнатуры (JS). Запуск: `cargo test --bin pretooluse`.
   - D2: добавлены unit‑тесты сущностных срезов и фильтра по диффу в `src/bin/posttooluse.rs` (unit_*), а также e2e `tests/e2e_posttooluse_entity_snippets.rs`. Документирован `AST_ENTITY_SNIPPETS`. Все тесты: PASS.
   - E1: реализован компактный контекст для UserPromptSubmit (Project Summary + Risk/Health snapshot) с лимитом (`USERPROMPT_CONTEXT_LIMIT`, по умолчанию 4000). Добавлен юнит‑тест `tests/unit_userpromptsubmit_snapshot.rs`. Все тесты: PASS.
+
+
 
 
 
