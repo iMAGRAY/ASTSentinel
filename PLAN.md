@@ -118,6 +118,12 @@ M7 (Follow‑up / Tech Debt)
   - CI installs rustfmt component; test skips gracefully if unavailable.
   - Deterministic assertions kept minimal (presence of `fn main`/`println!`).
 
+M9 (Docs & Finalization)
+- [x] README_HOOKS: Flag Reference + Windows quick start
+- [x] Tests README: quick env flags guide
+- [x] Golden tests: PostToolUse AST_ONLY/DRY_RUN section ordering; API CONTRACT presence (AST_ONLY)
+- [x] NEXT STEPS: expanded actionable recommendations; unit coverage
+
 - [x] Stabilize formatter doctests across languages (marked examples as `no_run` + tolerant assertions) — no external tools required in CI.
 
 - [x] Refactor: centralize KindIds caches in src/analysis/ast/kind_ids.rs and remove duplicated definitions from visitor.rs; single_pass.rs and visitor.rs now consume shared cache.

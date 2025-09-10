@@ -162,3 +162,46 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
 
 See docs/PLAYBOOK_AST_FLAGS.md for before/after examples and quick commands.
 
+## Flag Reference (полный справочник)
+
+- Core limits:
+  - `ADDITIONAL_CONTEXT_LIMIT_CHARS` (default 100000, 10000..1000000) — cap для additionalContext (UTF‑8 safe)
+  - `USERPROMPT_CONTEXT_LIMIT` (default 4000, 1000..8000) — cap для UserPromptSubmit вывода
+- AST:
+  - `AST_MAX_ISSUES`, `AST_MAX_MAJOR`, `AST_MAX_MINOR` — капы на количество issues (общий/по severity)
+  - `AST_ANALYSIS_TIMEOUT_SECS` (1..30, default 8) — таймаут анализа одного файла
+  - `AST_SOFT_BUDGET_BYTES` (1..5_000_000, default 500000), `AST_SOFT_BUDGET_LINES` (1..200_000, default 10000) — мягкие бюджеты; при превышении анализ пропускается с заметкой
+  - `AST_TIMINGS` — добавить секцию таймингов (AST_ONLY; p50/p95/p99/avg)
+- Diff/Context:
+  - `AST_DIFF_ONLY=1` — фильтровать issues по изменённым строкам
+  - `AST_DIFF_CONTEXT` (default 3) — контекст вокруг изменённых строк
+  - `AST_SNIPPETS` (default 1) — секция CHANGE CONTEXT включена/выкл
+  - `AST_ENTITY_SNIPPETS` (default 1) — сущностные сниппеты (функция/метод/класс)
+  - `AST_MAX_SNIPPETS` (default 3, 1..50), `AST_SNIPPETS_MAX_CHARS` (default 1500, 200..20000)
+- PostToolUse UX:
+  - `QUICK_TIPS` (default 1), `QUICK_TIPS_MAX`, `QUICK_TIPS_MAX_CHARS`
+  - `API_CONTRACT` (default 1) — включить секцию API CONTRACT (AST_ONLY/DRY_RUN/online)
+- Duplicates:
+  - `DUP_REPORT_MAX_GROUPS` (default 20), `DUP_REPORT_MAX_FILES` (default 10) — капы отчёта
+  - `DUP_REPORT_TOP_DIRS` (default 3, 0..20) — «Топ директорий» в отчёте
+- Perf gate:
+  - `PERF_GATE_STRICT` — строгий режим в CI (.github/workflows/perf-gate.yml)
+
+## Windows Quick Start
+
+1) Сборка релиза: `cargo build --release`
+2) Запуск хуков напрямую:
+   - PostToolUse (AST_ONLY):
+     - `set POSTTOOL_AST_ONLY=1`
+     - `set QUICK_TIPS=1`
+     - `set AST_TIMINGS=1`
+     - `set API_CONTRACT=1`
+     - `target\release\posttooluse.exe < hook.json`
+   - UserPromptSubmit:
+     - `set USERPROMPT_CONTEXT_LIMIT=1200`
+     - `target\release\userpromptsubmit.exe < hook_userprompt.json`
+3) Управление отчётом о дубликатах:
+   - `set DUP_REPORT_MAX_GROUPS=10`
+   - `set DUP_REPORT_MAX_FILES=5`
+   - `set DUP_REPORT_TOP_DIRS=3`
+
