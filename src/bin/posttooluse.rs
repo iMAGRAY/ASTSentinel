@@ -969,6 +969,15 @@ async fn load_prompt_file(filename: &str) -> Result<String> {
     )
     .await
     .context("Timeout reading prompt file")?
+    .or_else(|e| {
+        // In DRY_RUN mode, tolerate missing prompts and continue with empty content
+        if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
+            eprintln!("Warning: {} — continuing with empty prompt due to DRY_RUN", e);
+            Ok(String::new())
+        } else {
+            Err(e)
+        }
+    })
     .with_context(|| format!("Failed to load prompt file: {}", filename))
 }
 
@@ -1785,8 +1794,19 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
 fn soft_budget_note(content: &str, file_path: &str) -> Option<String> {
     let bytes = content.len();
     let lines = content.lines().count();
-    let max_bytes: usize = std::env::var("AST_SOFT_BUDGET_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(500_000).clamp(50_000, 5_000_000);
-    let max_lines: usize = std::env::var("AST_SOFT_BUDGET_LINES").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000).clamp(1_000, 200_000);
+    // Allow very small budgets for tests; keep a sane upper bound for safety.
+    // Previously we clamped to 50_000 bytes/1_000 lines which broke e2e expectations.
+    // New policy: lower bound = 1 (caller decides), upper bound remains protective.
+    let max_bytes: usize = std::env::var("AST_SOFT_BUDGET_BYTES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(500_000)
+        .clamp(1, 5_000_000);
+    let max_lines: usize = std::env::var("AST_SOFT_BUDGET_LINES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10_000)
+        .clamp(1, 200_000);
     if bytes > max_bytes || lines > max_lines {
         return Some(format!(
             "[ANALYSIS] Skipped AST analysis due to soft budget ({} bytes, {} lines) for {} (limits: {} bytes, {} lines)",
@@ -2655,6 +2675,8 @@ async fn main() -> Result<()> {
         // Include change summary
         let change = build_change_summary(&hook_input, &display_path).await;
         if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
+        // Uniformly include soft-budget note in DRY_RUN as well
+        if let Some(note) = soft_budget_note(&content, &display_path) { final_response.push_str(&note); final_response.push('\n'); }
         // Include AST structured sections
         if let Some(ast_score) = &ast_analysis {
             let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {

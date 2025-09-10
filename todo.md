@@ -32,6 +32,14 @@ ID D — PostToolUse: AST Аналитика 2.0 (diff‑aware, структур
 - [+] D3. Cap‑логика: Critical — все, Major top‑N, Minor top‑K (env) + общий cap; сортировка severity→line→rule_id
   Критерий: unit‑тест детерминизма/капов; e2e — context ≤ лимита (ГОТОВО).
 
+I — Производительность и бюджеты
+- [+] I1. AST timings (p50/p95/p99/avg) с флагом `AST_TIMINGS`; выводится в additionalContext при включении
+  Критерий: unit‑тесты summary + e2e проверка вывода
+- [+] I2. Soft budget по размеру/строкам (`AST_SOFT_BUDGET_BYTES`, `AST_SOFT_BUDGET_LINES`) — единообразное сообщение во всех режимах
+  Критерий: e2e на AST_ONLY и DRY_RUN; README обновлён. Понижен нижний порог клэмпа до `1` (ранее `50_000`/`1_000`) для поддержки tiny‑бюджетов в тестах; верхние пороги неизменны.
+- [+] I3. Perf‑gate строгий режим; CI workflow
+  Критерий: non‑zero exit на регрессиях выше порога; выполняется в CI
+
 ID E — UserPromptSubmit: компактный AST‑контекст
 - [+] E1. Секции «Project Summary» + «Risk/Health snapshot»
   Критерий: snapshot‑тест формата; размер ≤ лимита.

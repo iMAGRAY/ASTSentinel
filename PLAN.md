@@ -89,6 +89,7 @@ M6
 - [x] H1 add project-wide AST determinism test (posttooluse)
 - [x] H2 update README_HOOKS with AST context section and env knobs
 - [x] H3 add offline e2e test for PostToolUse (AST-only mode)
+- [x] I2 soft-budget note unified across modes; clamp lowered to 1 to allow tiny test budgets; added DRY_RUN e2e
 - [ ] Expand cross-language fixtures to cover all rules and "good" samples (partial: C/C++/PHP/Ruby covered for core checks; add JS/TS/Java/C#/Go and per-language "good" samples)
 - [x] Expand cross-language fixtures: added complex signatures + try/catch/switch/async cases
   - TS: async + try/catch + switch (good), complex optional params (bad: TooManyParameters)
@@ -106,6 +107,7 @@ Acceptance (Release Gate)
 - All tests pass, including new cross‑language suites.
 - Criterion benches show ≥30% aggregate speedup vs baseline; no language regresses >10%.
 - PostToolUse context deterministic and within size limits; contains critical issues for files with findings.
+- Soft budget note present when budgets exceeded in AST_ONLY/DRY_RUN/online flows.
 
 Rollback
 - Single‑pass engine is guarded by Cargo feature `ast_fastpath` (enabled by default) — disable via `--no-default-features` to fall back to multi‑pass rules.

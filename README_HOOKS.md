@@ -142,7 +142,8 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
 
 
 ### Soft Time Budget (I2)
-- AST_SOFT_BUDGET_BYTES (default: 500000, clamp 50000..5000000) — мягкий лимит по размеру файла; при превышении анализ пропускается с заметкой.
-- AST_SOFT_BUDGET_LINES (default: 10000, clamp 1000..200000) — мягкий лимит по числу строк.
-- При срабатывании лимита в PostToolUse добавляется строка вида: [ANALYSIS] Skipped AST analysis due to soft budget …. Анализ инструментов и дифф не блокируется.
+- AST_SOFT_BUDGET_BYTES (default: 500000, clamp 1..5000000) — мягкий лимит по размеру файла; при превышении AST‑анализ пропускается с заметкой.
+- AST_SOFT_BUDGET_LINES (default: 10000, clamp 1..200000) — мягкий лимит по числу строк.
+- Сообщение о пропуске формируется одинаково во всех оффлайн режимах (`POSTTOOL_AST_ONLY=1`, `POSTTOOL_DRY_RUN=1`) и в онлайн‑режиме: `[ANALYSIS] Skipped AST analysis due to soft budget (… )`.
+- Анализ диффа/форматирование/прочий контекст не блокируются.
 
