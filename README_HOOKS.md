@@ -16,24 +16,53 @@ Edit `.env` file to configure:
 - Debug options
 
 ### AST Analysis Settings
-- `AST_MAX_ISSUES` (default: `100`, range `10..500`) — cap number of AST issues included in context (deterministic top‑K by severity → line → rule_id).
+- `AST_MAX_ISSUES` (default: `100`, range `10..500`) — общий cap числа AST‑issues в контексте (детерминированная сортировка: severity → line → rule_id).
+- `AST_MAX_MAJOR` (optional) — cap для Major‑issues (по умолчанию берётся из `AST_MAX_ISSUES`).
+- `AST_MAX_MINOR` (optional) — cap для Minor‑issues (по умолчанию берётся из `AST_MAX_ISSUES`).
 - `ADDITIONAL_CONTEXT_LIMIT_CHARS` (default: `100000`, range `10000..1000000`) — max size of additional context; safely truncated on UTF‑8 boundaries.
 - `AST_ANALYSIS_TIMEOUT_SECS` (default: `8`, range `1..30`) — per‑file AST analysis timeout to avoid stalls on pathological inputs.
 - `AST_TIMINGS` (set to any value to enable) — include a brief per‑file timings summary (p50/p95/p99/mean) at the end of project‑wide AST analysis.
 - `FILE_READ_TIMEOUT` (seconds, default: 10) — timeout for safe file reads inside hooks.
 
-### PostToolUse Additional Context
-- Hook attaches deterministic AST insights to `additionalContext`:
-  - File-level: sorted concrete issues (Critical → Major → Minor), capped by `AST_MAX_ISSUES`.
-  - Project-level: summary block "PROJECT-WIDE AST ANALYSIS" with counts and top criticals.
-- Prompt sent to the AI provider also includes:
-  - Project structure + metrics (with cache), dependencies overview, duplicate files report.
-  - Unified diff of the change and a short transcript summary (last messages).
-- All strings are UTF‑8 safe truncated by `ADDITIONAL_CONTEXT_LIMIT_CHARS` to bound payload size.
-  - Note: `AST_MAX_ISSUES` имеет нижнюю границу 10 (clamp): значения <10 будут интерпретированы как 10.
+### PostToolUse: Structured Additional Context
+- Формат (детерминированный порядок секций):
+  - `=== CHANGE SUMMARY ===` — унифицированный дифф изменения.
+  - `=== RISK REPORT ===` — Critical (все), Major (top‑N), Minor (top‑K) — капы управляются `AST_MAX_ISSUES`/`AST_MAX_MAJOR`/`AST_MAX_MINOR`.
+  - `=== CHANGE CONTEXT ===` — сниппеты кода с нумерацией строк и маркером `>` на строке issue (включено по умолчанию).
+  - `=== CODE HEALTH ===` — краткие метрики читаемости/сложности.
+  - `=== NEXT STEPS ===` — приоритетные действия.
+- Контекст, передаваемый в AI:
+  - Структура проекта + метрики (с кэшем), зависимости, отчёт о дубликатах.
+  - Унифицированный дифф изменения и краткая сводка транскрипта.
+- Все строки безопасно обрезаются по UTF‑8 по `ADDITIONAL_CONTEXT_LIMIT_CHARS`.
+  - Примечание: `AST_MAX_ISSUES` имеет нижнюю границу 10 (clamp): значения <10 интерпретируются как 10.
+
+#### JS/TS: сигнатуры и имена сущностей
+- Распознаются функции и методы в JS/TS, включая:
+  - объявление функций, методы классов, стрелочные и `function`‑выражения, поля‑функции в классах;
+  - методы в объектных литералах как в виде `foo: ()=>{}`/`foo: function(){}`, так и шортхэнд `foo(){}`.
+- Вычисляемые имена (`[computed]`) теперь уточняются, если синтаксис прозрачен для Tree‑sitter (напр., `[Symbol.iterator]` → `[computed: Symbol.iterator]`, `['name']` → `[computed: name]`).
+- Параметры в сигнатурах JS/TS извлекаются аккуратно:
+  - игнорируются `decorator`/модификаторы (`public`/`private`/`protected`/`readonly` и т.п.), типы (`: T`, generics) и аннотации;
+  - поддерживаются `optional` (`x?`), `rest` (`...args`), `default` (`x=1`) и сложные паттерны деструктурирования (`{a, b:c}`, `[x,y]`).
+
+### Diff‑aware и сниппеты
+- `AST_DIFF_ONLY=1` — включить фильтрацию issues по изменённым строкам (с окном контекста `AST_DIFF_CONTEXT`, default `3`).
+- `AST_SNIPPETS` — управление секцией `CHANGE CONTEXT`:
+  - По умолчанию включено во всех режимах; выключить: `AST_SNIPPETS=0`.
+  - `AST_MAX_SNIPPETS` (default: `3`, range `1..50`) — максимум сниппетов.
+  - `AST_SNIPPETS_MAX_CHARS` (default: `1500`, range `200..20000`) — предел символов секции.
 
 ### Non‑modifying tools
 - Инструменты, которые не изменяют код (`ReadFile`, `Search`, etc.), проходят транзитом: `additionalContext` будет пустым.
+
+### PreToolUse: Контракт и чувствительность
+- В офлайн‑режиме (`PRETOOL_AST_ONLY=1`):
+  - Ослабление API‑контракта (уменьшение числа параметров/удаление/переименование) ⇒ `deny` с пояснением.
+- В обычном режиме (с AI):
+  - В промпт добавляется `HEURISTIC SUMMARY` при подозрении на ослабление контракта.
+  - При `SENSITIVITY=high` — ранний `deny` при ослаблении контракта.
+  - При `SENSITIVITY=medium` — ранний `deny` при сочетании ослабления контракта и security‑рисков (creds/SQL) в новом коде.
 
 ### Offline/E2E mode
 - Set `POSTTOOL_AST_ONLY=1` to skip AI provider call and still return deterministic AST context in `additionalContext`.

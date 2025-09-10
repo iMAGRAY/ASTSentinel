@@ -20,6 +20,7 @@ use rust_validation_hooks::validation::diff_formatter::{
 use rust_validation_hooks::analysis::ast::{
     AstQualityScorer, IssueSeverity, QualityScore, SupportedLanguage,
 };
+use rust_validation_hooks::analysis::ast::languages::LanguageCache;
 // Use duplicate detector for finding conflicting files
 use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
 // Use code formatting service for automatic code formatting
@@ -64,6 +65,767 @@ fn normalize_tool_name(name: &str) -> (ToolKind, bool /* is_append */) {
     (ToolKind::Other, false)
 }
 
+// =============================
+// Structured additionalContext builders
+// =============================
+fn build_risk_report(score: &QualityScore) -> String {
+    use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueSeverity};
+    // Deterministic order base
+    let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+
+    // Read caps
+    let global_cap: usize = std::env::var("AST_MAX_ISSUES").ok().and_then(|v| v.parse().ok()).unwrap_or(100).clamp(10, 500);
+    let cap_major: usize = std::env::var("AST_MAX_MAJOR").ok().and_then(|v| v.parse().ok()).unwrap_or(global_cap).clamp(5, 500);
+    let cap_minor: usize = std::env::var("AST_MAX_MINOR").ok().and_then(|v| v.parse().ok()).unwrap_or(global_cap).clamp(5, 500);
+
+    // Group by severity
+    let mut crit: Vec<_> = score.concrete_issues.iter().filter(|i| matches!(i.severity, IssueSeverity::Critical)).cloned().collect();
+    let mut major: Vec<_> = score.concrete_issues.iter().filter(|i| matches!(i.severity, IssueSeverity::Major)).cloned().collect();
+    let mut minor: Vec<_> = score.concrete_issues.iter().filter(|i| matches!(i.severity, IssueSeverity::Minor)).cloned().collect();
+
+    // Sort deterministically inside groups
+    let cmp = |a: &ConcreteIssue, b: &ConcreteIssue| sev_key(a.severity)
+        .cmp(&sev_key(b.severity))
+        .then_with(|| a.line.cmp(&b.line))
+        .then_with(|| a.rule_id.cmp(&b.rule_id));
+    crit.sort_by(cmp);
+    major.sort_by(cmp);
+    minor.sort_by(cmp);
+
+    // Apply per-severity caps (Critical = all)
+    if major.len() > cap_major { major.truncate(cap_major); }
+    if minor.len() > cap_minor { minor.truncate(cap_minor); }
+
+    // Combine and globally cap for determinism + compactness
+    let total_all = score.concrete_issues.len();
+    let mut combined = Vec::with_capacity(crit.len() + major.len() + minor.len());
+    combined.extend(crit);
+    combined.extend(major);
+    combined.extend(minor);
+    combined.sort_by(cmp);
+    if combined.len() > global_cap { combined.truncate(global_cap); }
+
+    // Build output
+    let mut s = String::new();
+    s.push_str("=== RISK REPORT ===\n");
+    if combined.is_empty() { s.push_str("No issues detected.\n"); return s; }
+    for i in &combined { s.push_str(&format!("- [{:?}] Line {}: {} [{}]\n", i.severity, i.line, i.message, i.rule_id)); }
+    if total_all > combined.len() { s.push_str(&format!("… truncated: showing {} of {} issues\n", combined.len(), total_all)); }
+    s
+}
+
+fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> QualityScore {
+    use std::collections::BTreeSet;
+    let mut changed: BTreeSet<usize> = BTreeSet::new();
+    for line in diff_text.lines() {
+        let t = line.trim_start();
+        // Expect leading line number followed by space and a sign (+/-/ )
+        let mut num: usize = 0;
+        let mut saw_digit = false;
+        let mut end_idx = 0usize;
+        for (pos, ch) in t.char_indices() {
+            if ch.is_ascii_digit() {
+                saw_digit = true;
+                num = num.saturating_mul(10).saturating_add((ch as u8 - b'0') as usize);
+                end_idx = pos + ch.len_utf8();
+            } else { break; }
+        }
+        if !saw_digit { continue; }
+        // After number, find sign
+        let rest = &t[end_idx..];
+        // Normalize spaces
+        let rest_trim = rest.trim_start();
+        if rest_trim.starts_with('+') {
+            // Mark changed line with context window
+            let start = num.saturating_sub(ctx);
+            let end = num.saturating_add(ctx);
+            for ln in start..=end { if ln > 0 { changed.insert(ln); } }
+        }
+    }
+    if changed.is_empty() { return score.clone(); }
+    let mut filtered = score.clone();
+    filtered.concrete_issues = score.concrete_issues.iter().cloned().filter(|i| changed.contains(&i.line)).collect();
+    filtered
+}
+
+fn build_code_health(score: &QualityScore) -> String {
+    use crate::analysis::ast::quality_scorer::IssueCategory;
+    let mut params = 0; let mut nesting = 0; let mut complexity = 0; let mut long_method = 0;
+    for i in &score.concrete_issues {
+        match i.category {
+            IssueCategory::TooManyParameters => params+=1,
+            IssueCategory::DeepNesting => nesting+=1,
+            IssueCategory::HighComplexity => complexity+=1,
+            IssueCategory::LongMethod => long_method+=1,
+            _=>{}
+        }
+    }
+    let mut s=String::new();
+    s.push_str("=== CODE HEALTH ===\n");
+    s.push_str(&format!("Too many params: {}\nDeep nesting: {}\nHigh complexity: {}\nLong methods: {}\n", params,nesting,complexity,long_method));
+    s
+}
+
+fn extract_changed_lines(diff_text: &str, ctx: usize) -> std::collections::BTreeSet<usize> {
+    use std::collections::BTreeSet;
+    let mut changed: BTreeSet<usize> = BTreeSet::new();
+    for line in diff_text.lines() {
+        let t = line.trim_start();
+        // Leading number
+        let mut num: usize = 0;
+        let mut saw_digit = false;
+        let mut end_idx = 0usize;
+        for (pos, ch) in t.char_indices() {
+            if ch.is_ascii_digit() {
+                saw_digit = true;
+                num = num.saturating_mul(10).saturating_add((ch as u8 - b'0') as usize);
+                end_idx = pos + ch.len_utf8();
+            } else { break; }
+        }
+        if !saw_digit { continue; }
+        let rest_trim = t[end_idx..].trim_start();
+        if rest_trim.starts_with('+') {
+            let start = num.saturating_sub(ctx);
+            let end = num.saturating_add(ctx);
+            for ln in start..=end { if ln > 0 { changed.insert(ln); } }
+        }
+    }
+    changed
+}
+
+fn build_change_context_snippets(
+    content: &str,
+    score: &QualityScore,
+    changed: &std::collections::BTreeSet<usize>,
+    ctx_lines: usize,
+    max_snippets: usize,
+    max_chars: usize,
+) -> String {
+    use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueSeverity};
+    if changed.is_empty() || score.concrete_issues.is_empty() {
+        let mut out = String::new();
+        out.push_str("=== CHANGE CONTEXT ===\n");
+        out.push_str("No localized snippets available.\n");
+        return out;
+    }
+
+    let mut issues = score.concrete_issues.clone();
+    let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+    issues.sort_by(|a: &ConcreteIssue, b: &ConcreteIssue| sev_key(a.severity)
+        .cmp(&sev_key(b.severity))
+        .then_with(|| a.line.cmp(&b.line))
+        .then_with(|| a.rule_id.cmp(&b.rule_id)));
+
+    let lines: Vec<&str> = content.lines().collect();
+    let mut out = String::new();
+    out.push_str("=== CHANGE CONTEXT ===\n");
+    let mut used = 0usize;
+    for i in issues {
+        if used >= max_snippets { break; }
+        let ln = i.line;
+        if !changed.contains(&ln) { continue; }
+        let start = ln.saturating_sub(ctx_lines).max(1) - 1;
+        let end = (ln + ctx_lines).min(lines.len());
+        // Header for this issue
+        let header = format!("- [{:?}] Line {}: {} [{}]\n", i.severity, i.line, i.message, i.rule_id);
+        if out.len() + header.len() > max_chars { break; }
+        out.push_str(&header);
+        for idx in start..end {
+            let mark = if idx + 1 == ln { '>' } else { ' ' };
+            let row = format!("{} {:4} | {}\n", mark, idx + 1, lines.get(idx).copied().unwrap_or(""));
+            if out.len() + row.len() > max_chars { return out; }
+            out.push_str(&row);
+        }
+        used += 1;
+    }
+    out
+}
+
+fn compute_line_offsets(s: &str) -> Vec<usize> {
+    let mut offs = Vec::with_capacity(256);
+    offs.push(0);
+    for (i, b) in s.as_bytes().iter().enumerate() {
+        if *b == b'\n' { offs.push(i + 1); }
+    }
+    offs
+}
+
+fn build_entity_context_snippets(
+    language: SupportedLanguage,
+    content: &str,
+    score: &QualityScore,
+    changed: &std::collections::BTreeSet<usize>,
+    ctx_lines: usize,
+    max_snippets: usize,
+    max_chars: usize,
+) -> String {
+    use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueSeverity};
+    if score.concrete_issues.is_empty() { return String::new(); }
+    let lang_supported = matches!(language, SupportedLanguage::Python | SupportedLanguage::JavaScript | SupportedLanguage::TypeScript);
+    if !lang_supported { return String::new(); }
+
+    let mut parser = match LanguageCache::create_parser_with_language(language) { Ok(p) => p, Err(_) => return String::new(), };
+    let tree = match parser.parse(content, None) { Some(t) => t, None => return String::new(), };
+    let root = tree.root_node();
+    let lines: Vec<&str> = content.lines().collect();
+    let line_offs = compute_line_offsets(content);
+
+    let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+    let mut issues = score.concrete_issues.clone();
+    issues.sort_by(|a: &ConcreteIssue, b: &ConcreteIssue| sev_key(a.severity)
+        .cmp(&sev_key(b.severity))
+        .then_with(|| a.line.cmp(&b.line))
+        .then_with(|| a.rule_id.cmp(&b.rule_id)));
+
+    let mut out = String::new();
+    out.push_str("=== CHANGE CONTEXT ===\n");
+    let mut used = 0usize;
+    for i in issues {
+        if used >= max_snippets { break; }
+        let ln = i.line;
+        if !changed.is_empty() && !changed.contains(&ln) { continue; }
+        let idx = ln.saturating_sub(1);
+        let off = *line_offs.get(idx).unwrap_or(&0);
+        let node = root.named_descendant_for_byte_range(off, off).unwrap_or(root);
+        let mut cur = node;
+        let mut found = None;
+        for _ in 0..20 {
+            let k = cur.kind();
+            let is_entity = match language {
+                SupportedLanguage::Python => k == "function_definition" || k == "class_definition",
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                    if k == "function_declaration"
+                        || k == "function_expression"
+                        || k == "arrow_function"
+                        || k == "method_definition"
+                        || k == "class_declaration"
+                    { true } else if k == "pair" || k == "property_assignment" {
+                        // Object literal shorthand or function-valued property
+                        let mut has_params_or_func = false;
+                        for i in 0..cur.child_count() {
+                            if let Some(ch) = cur.child(i) {
+                                let ck = ch.kind();
+                                if ck == "formal_parameters" || ck == "function" || ck == "function_expression" || ck == "arrow_function" {
+                                    has_params_or_func = true; break;
+                                }
+                            }
+                        }
+                        has_params_or_func
+                    } else { false }
+                }
+                _ => false,
+            };
+            if is_entity { found = Some(cur); break; }
+            if let Some(p) = cur.parent() { cur = p; } else { break; }
+        }
+        let (start_row, end_row, entity_name, entity_kind) = if let Some(ent) = found {
+            let sr = ent.start_position().row + 1; let er = ent.end_position().row + 1;
+            let mut name = String::new();
+            if matches!(language, SupportedLanguage::Python) {
+                let mut c = ent.walk();
+                if c.goto_first_child() {
+                    loop {
+                        let n = c.node();
+                        if n.kind() == "identifier" { if let Ok(txt) = n.utf8_text(content.as_bytes()) { name = txt.to_string(); break; } }
+                        if !c.goto_next_sibling() { break; }
+                    }
+                }
+            }
+            (sr, er, name, ent.kind().to_string())
+        } else { (ln, ln, String::new(), String::from("context")) };
+        let start = start_row.saturating_sub(1).max(ln.saturating_sub(ctx_lines * 2).saturating_sub(1));
+        let end = end_row.min(ln + ctx_lines * 2);
+        let header = if entity_name.is_empty() { format!("- [{:?}] Line {} in {}: {} [{}]\n", i.severity, i.line, entity_kind, i.message, i.rule_id) } else { format!("- [{:?}] Line {} in {} {}: {} [{}]\n", i.severity, i.line, entity_kind, entity_name, i.message, i.rule_id) };
+        if out.len() + header.len() > max_chars { break; }
+        out.push_str(&header);
+        for idx in start..end {
+            let mark = if idx + 1 == ln { '>' } else { ' ' };
+            let row = format!("{} {:4} | {}\n", mark, idx + 1, lines.get(idx).copied().unwrap_or(""));
+            if out.len() + row.len() > max_chars { return out; }
+            out.push_str(&row);
+        }
+        used += 1;
+    }
+    if used == 0 { out.push_str("No localized snippets available.\n"); }
+    out
+}
+
+// Function signatures via AST (Python/JS/TS)
+#[derive(Clone, Debug)]
+struct FuncSignature {
+    name: String,
+    params: Vec<String>,
+    start_byte: usize,
+    end_byte: usize,
+}
+
+fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::collections::HashMap<String, FuncSignature> {
+    use std::collections::HashMap;
+    let mut res: HashMap<String, FuncSignature> = HashMap::new();
+    if !matches!(language, SupportedLanguage::Python | SupportedLanguage::JavaScript | SupportedLanguage::TypeScript) {
+        return res;
+    }
+    let mut parser = match LanguageCache::create_parser_with_language(language) { Ok(p) => p, Err(_) => return res };
+    let tree = match parser.parse(content, None) { Some(t) => t, None => return res };
+    let root = tree.root_node();
+    let bytes = content.as_bytes();
+
+    // Extract param names from a Python parameters node (simple: collect identifiers)
+    let collect_params_py = |node: tree_sitter::Node| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut st = vec![node];
+        while let Some(n) = st.pop() {
+            if n.kind() == "identifier" {
+                if let Ok(t) = n.utf8_text(bytes) { out.push(t.to_string()); }
+            }
+            for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
+        }
+        let mut seen = std::collections::HashSet::new();
+        out.into_iter().filter(|s| seen.insert(s.clone())).collect()
+    };
+
+    // Extract param names from JS/TS formal_parameters with careful filtering:
+    // - skip type_annotation/type parameters/arguments and decorators/modifiers
+    // - support optional/rest/assignment/object/array patterns
+    // - collect only binding identifiers (ignore property identifiers and type names)
+    let collect_params_js_ts = |node: tree_sitter::Node| -> Vec<String> {
+        let mut out = Vec::new();
+        let mut st = vec![node];
+        while let Some(n) = st.pop() {
+            let k = n.kind();
+            // Prune subtrees that can't contain bindings we want
+            if matches!(
+                k,
+                "type_annotation"
+                    | "type_parameters"
+                    | "type_arguments"
+                    | "flow_type"
+                    | "decorator"
+                    | "accessibility_modifier"
+                    | "public"
+                    | "private"
+                    | "protected"
+                    | "readonly"
+                    | "declare"
+                    | "abstract"
+                    | "override"
+            ) {
+                continue;
+            }
+            // Default value in parameters: only care about the left-hand binding
+            if k == "assignment_pattern" {
+                if let Some(lhs) = n.child(0) { st.push(lhs); }
+                continue;
+            }
+            // Binding identifiers to collect
+            if k == "binding_identifier" || k == "shorthand_property_identifier" || k == "identifier" {
+                if let Ok(t) = n.utf8_text(bytes) {
+                    // Ignore special TS 'this' parameter (used only for typing)
+                    if t != "this" { out.push(t.to_string()); }
+                }
+                continue;
+            }
+            for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
+        }
+        // Deduplicate but preserve first-seen order
+        let mut seen = std::collections::HashSet::new();
+        out.into_iter().filter(|s| seen.insert(s.clone())).collect()
+    };
+
+    // Helper to render computed property names more specifically when possible
+    fn render_computed_name(bytes: &[u8], node: tree_sitter::Node) -> String {
+        if let Ok(full) = node.utf8_text(bytes) {
+            // full usually like: [expr]
+            let trimmed = full.trim();
+            if trimmed.starts_with('[') && trimmed.ends_with(']') {
+                let inner = &trimmed[1..trimmed.len()-1].trim();
+                // If inner looks reasonably short, surface it; else fallback
+                if inner.len() <= 40 && !inner.is_empty() && !inner.contains('\n') {
+                    // Strip simple quotes/backticks around literals
+                    let inner_clean = inner
+                        .trim_matches('"')
+                        .trim_matches('\'')
+                        .trim_matches('`')
+                        .to_string();
+                    return format!("[computed: {}]", inner_clean);
+                }
+            }
+        }
+        "[computed]".to_string()
+    }
+
+    // Helper: from a member/subscript expression, try to extract the property name
+    fn extract_member_property_name(bytes: &[u8], node: tree_sitter::Node) -> Option<String> {
+        let k = node.kind();
+        if k == "member_expression" {
+            for i in 0..node.child_count() {
+                if let Some(ch) = node.child(i) {
+                    let ck = ch.kind();
+                    if ck == "property_identifier" || ck == "identifier" || ck == "private_property_identifier" {
+                        return ch.utf8_text(bytes).ok().map(|s| s.to_string());
+                    }
+                }
+            }
+        } else if k == "subscript_expression" {
+            // subscript_expression: object '[' index ']'
+            for i in 0..node.child_count() {
+                if let Some(ch) = node.child(i) {
+                    // Heuristic: pick the first non-bracket child that isn't the object
+                    let ck = ch.kind();
+                    if ck == "string" || ck == "number" || ck == "identifier" || ck == "member_expression" {
+                        let text = ch.utf8_text(bytes).unwrap_or("");
+                        if !text.is_empty() { return Some(format!("[computed: {}]", text.trim_matches('"').trim_matches('\'').trim_matches('`'))); }
+                    }
+                }
+            }
+            return Some("[computed]".to_string());
+        }
+        None
+    }
+
+    let mut st = vec![root];
+    while let Some(n) = st.pop() {
+        for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
+        let k = n.kind();
+        match language {
+            SupportedLanguage::Python => {
+                if k == "function_definition" || k == "async_function_definition" {
+                    let mut name = String::new();
+                    let mut params_node = None;
+                    for i in 0..n.child_count() { if let Some(ch) = n.child(i) { if name.is_empty() && ch.kind() == "identifier" { if let Ok(t)=ch.utf8_text(bytes){name=t.to_string();} } if ch.kind()=="parameters" { params_node=Some(ch); } } }
+                    let params = params_node.map(collect_params_py).unwrap_or_default();
+                    if !name.is_empty() { res.insert(name.clone(), FuncSignature { name, params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
+                }
+            }
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                if k == "function_declaration" {
+                    let mut name = String::new(); let mut params_node=None;
+                    for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ if name.is_empty() && (ch.kind()=="identifier"||ch.kind()=="binding_identifier"){ if let Ok(t)=ch.utf8_text(bytes){name=t.to_string();} } if ch.kind()=="formal_parameters"{params_node=Some(ch);} } }
+                    let params=params_node.map(collect_params_js_ts).unwrap_or_default();
+                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
+                } else if k == "method_definition" {
+                    let mut name=String::new(); let mut params_node=None;
+                    for i in 0..n.child_count(){
+                        if let Some(ch)=n.child(i){
+                            let ck = ch.kind();
+                            // Accessor keywords get/set are allowed but not used further here
+                            if ck=="computed_property_name" && name.is_empty() { name = render_computed_name(bytes, ch); }
+                            if name.is_empty() && (ck=="property_identifier"||ck=="identifier"||ck=="private_property_identifier"){ if let Ok(t)=ch.utf8_text(bytes){ name=t.to_string(); } }
+                            if ck=="formal_parameters"{ params_node=Some(ch); }
+                        }
+                    }
+                    let params=params_node.map(collect_params_js_ts).unwrap_or_default();
+                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
+                } else if k == "arrow_function" || k == "function_expression" {
+                    let mut cur=n; let mut name=String::new();
+                    for _ in 0..6 {
+                        if let Some(p)=cur.parent(){
+                            let pk=p.kind();
+                            if pk=="variable_declarator" {
+                                if let Some(lhs)=p.child(0){
+                                    if lhs.kind()=="identifier"||lhs.kind()=="binding_identifier"{
+                                        if let Ok(t)=lhs.utf8_text(bytes){name=t.to_string();}
+                                    }
+                                }
+                            } else if pk=="assignment_expression" {
+                                if let Some(lhs)=p.child(0){
+                                    let lk = lhs.kind();
+                                    if lk=="identifier"||lk=="binding_identifier"||lk=="property_identifier"{
+                                        if let Ok(t)=lhs.utf8_text(bytes){ name=t.to_string(); }
+                                    } else if lk=="member_expression" || lk=="subscript_expression" {
+                                        if let Some(pname) = extract_member_property_name(bytes, lhs) { name = pname; }
+                                    }
+                                }
+                            }
+                            cur=p;
+                        } else { break; }
+                        if !name.is_empty() { break; }
+                    }
+                    let mut params_node=None; for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } }
+                    let mut params=params_node.map(collect_params_js_ts).unwrap_or_default();
+                    // Fallback: single identifier parameter for concise arrow functions (x => ...)
+                    if params.is_empty() {
+                        for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ let ck=ch.kind(); if ck=="identifier"||ck=="binding_identifier"{ if let Ok(t)=ch.utf8_text(bytes){ params.push(t.to_string()); } } } }
+                    }
+                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
+                } else if k == "pair" || k == "property_assignment" {
+                    // Object literal method/property with function value: { foo(){} } or { foo: function(){} } or { foo: ()=>{} }
+                    if let Some(key) = n.child(0) {
+                        let key_k = key.kind();
+                        if key_k=="property_identifier" || key_k=="identifier" || key_k=="private_property_identifier" || key_k=="computed_property_name" {
+                            let kname = if key_k=="computed_property_name" { render_computed_name(bytes, key) } else { key.utf8_text(bytes).unwrap_or("").to_string() };
+                            if !kname.is_empty() {
+                                // Value likely at child(1) or later
+                                let mut params_node=None; let mut func_like: Option<tree_sitter::Node> = None;
+                                // First, direct function value
+                                for i in 1..n.child_count(){ if let Some(ch)=n.child(i){ let ck=ch.kind(); if ck=="function"||ck=="function_expression"||ck=="arrow_function"{ func_like=Some(ch); break; } } }
+                                // Shorthand object method: look for a descendant 'formal_parameters'
+                                if func_like.is_none() {
+                                    let mut t = Vec::new(); for i in 1..n.child_count(){ if let Some(ch)=n.child(i){ t.push(ch); } }
+                                    while let Some(m) = t.pop() {
+                                        if m.kind()=="formal_parameters" { params_node=Some(m); break; }
+                                        for i in 0..m.child_count(){ if let Some(ch)=m.child(i){ t.push(ch); } }
+                                    }
+                                }
+                                if params_node.is_none() {
+                                    if let Some(func) = func_like { for i in 0..func.child_count(){ if let Some(ch)=func.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } } }
+                                }
+                                if let Some(pn) = params_node {
+                                    let params=collect_params_js_ts(pn);
+                                    res.insert(kname.to_string(), FuncSignature{ name:kname.to_string(), params, start_byte: n.start_byte(), end_byte: n.end_byte() });
+                                }
+                            }
+                        }
+                    }
+                } else if k == "field_definition" || k == "public_field_definition" || k == "private_field_definition" {
+                    // Class fields with function values: foo = () => {} or foo = function() {}
+                    let mut name = String::new();
+                    let mut value_func: Option<tree_sitter::Node> = None;
+                    for i in 0..n.child_count() {
+                        if let Some(ch) = n.child(i) {
+                            let ck = ch.kind();
+                            if name.is_empty() && (ck=="property_identifier" || ck=="identifier" || ck=="private_property_identifier" || ck=="computed_property_name") {
+                                name = if ck=="computed_property_name" { render_computed_name(bytes, ch) } else { ch.utf8_text(bytes).unwrap_or("").to_string() };
+                            }
+                            if ck=="arrow_function" || ck=="function" || ck=="function_expression" { value_func = Some(ch); }
+                        }
+                    }
+                    if let (false, Some(func)) = (name.is_empty(), value_func) {
+                        let mut params_node=None; for i in 0..func.child_count(){ if let Some(ch)=func.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } }
+                        let params=params_node.map(collect_params_js_ts).unwrap_or_default();
+                        res.insert(name.clone(), FuncSignature{ name, params, start_byte: n.start_byte(), end_byte: n.end_byte() });
+                    }
+                }
+            }
+            _=>{}
+        }
+    }
+    res
+}
+
+fn ascend_to_function_node(language: SupportedLanguage, mut node: tree_sitter::Node) -> Option<tree_sitter::Node> {
+    for _ in 0..50 {
+        let k = node.kind();
+        let is_func = match language {
+            SupportedLanguage::Python => k == "function_definition" || k == "async_function_definition",
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "function_declaration" || k == "function_expression" || k == "arrow_function" || k == "method_definition",
+            _ => false,
+        };
+        if is_func { return Some(node); }
+        if let Some(p) = node.parent() { node = p; } else { break; }
+    }
+    None
+}
+
+fn is_param_used_in_function(language: SupportedLanguage, content: &str, start_byte: usize, end_byte: usize, param: &str) -> bool {
+    let mut parser = match LanguageCache::create_parser_with_language(language) { Ok(p) => p, Err(_) => return false };
+    let tree = match parser.parse(content, None) { Some(t) => t, None => return false };
+    let root = tree.root_node();
+    let at = root.named_descendant_for_byte_range(start_byte, start_byte).unwrap_or(root);
+    let func = if let Some(f) = ascend_to_function_node(language, at) { f } else { return false };
+    let bytes = content.as_bytes();
+    let mut params_range: Option<(usize, usize)> = None;
+    for i in 0..func.child_count() {
+        if let Some(ch) = func.child(i) {
+            let k = ch.kind();
+            let is_params = match language { SupportedLanguage::Python => k == "parameters", SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "formal_parameters", _ => false };
+            if is_params { params_range = Some((ch.start_byte(), ch.end_byte())); break; }
+        }
+    }
+    let mut stack = vec![func];
+    while let Some(n) = stack.pop() {
+        if n.start_byte() < start_byte || n.end_byte() > end_byte { continue; }
+        if let Some((ps, pe)) = params_range { if n.start_byte() >= ps && n.end_byte() <= pe { continue; } }
+        let k = n.kind();
+        let is_id = match language {
+            SupportedLanguage::Python => k == "identifier",
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "identifier" || k == "shorthand_property_identifier" || k == "binding_identifier",
+            _ => false,
+        };
+        if is_id { if let Ok(t) = n.utf8_text(bytes) { if t == param { return true; } } }
+        for i in 0..n.child_count() { if let Some(ch) = n.child(i) { stack.push(ch); } }
+    }
+    false
+}
+
+async fn build_change_summary(hook_input: &HookInput, display_path: &str) -> String {
+    match generate_diff_context(hook_input, display_path).await {
+        Ok(diff) => { let mut s=String::new(); s.push_str("=== CHANGE SUMMARY ===\n"); s.push_str(&diff); s },
+        Err(_) => String::new(),
+    }
+}
+
+// =============================
+// API Contract checking (simple heuristics)
+// =============================
+fn extract_functions_signatures(language: SupportedLanguage, code: &str) -> std::collections::HashMap<String, Vec<String>> {
+    use regex::Regex;
+    let mut map = std::collections::HashMap::new();
+    match language {
+        SupportedLanguage::Python => {
+            let re = Regex::new(r"(?m)^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)").ok();
+            if let Some(re) = re {
+                for cap in re.captures_iter(code) {
+                    let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                    let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    let list = params
+                        .split(',')
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| {
+                            let base = p.split(':').next().unwrap_or("").split('=').next().unwrap_or("").trim();
+                            let base = base.trim_start_matches('*'); // *args/**kwargs normalization
+                            base.to_string()
+                        })
+                        .filter(|p| !matches!(p.as_str(), "self"|"cls"|"args"|"kwargs"))
+                        .collect::<Vec<_>>();
+                    if !name.is_empty() { map.insert(name, list); }
+                }
+            }
+        }
+        SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+            let re_fn = Regex::new(r"(?m)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)").ok();
+            if let Some(re) = re_fn {
+                for cap in re.captures_iter(code) {
+                    let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                    let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    let list = params
+                        .split(',')
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                        .collect::<Vec<_>>();
+                    if !name.is_empty() { map.insert(name, list); }
+                }
+            }
+            // Class methods: name(param){ ... }
+            let re_meth = Regex::new(r"(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{").ok();
+            if let Some(re) = re_meth {
+                for cap in re.captures_iter(code) {
+                    let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                    let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    let list = params
+                        .split(',')
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                        .collect::<Vec<_>>();
+                    if !name.is_empty() { map.entry(name).or_insert(list.clone()); }
+                }
+            }
+        }
+        _ => {}
+    }
+    map
+}
+
+fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput, content: &str) -> String {
+    if std::env::var("API_CONTRACT").map(|v| v == "0").unwrap_or(false) { return String::new(); }
+
+    let mut before_code = String::new();
+    let mut after_code = String::new();
+
+    match normalize_tool_name(&hook_input.tool_name).0 {
+        ToolKind::Edit => {
+            if let Some(s) = hook_input.tool_input.get("old_string").and_then(|v| v.as_str()) { before_code = s.to_string(); }
+            if let Some(s) = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()) { after_code = s.to_string(); }
+        }
+        ToolKind::MultiEdit => {
+            if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
+                for e in edits.iter().take(1000) {
+                    if let Some(s) = e.get("old_string").and_then(|v| v.as_str()) { before_code.push_str(s); before_code.push('\n'); }
+                    if let Some(s) = e.get("new_string").and_then(|v| v.as_str()) { after_code.push_str(s); after_code.push('\n'); }
+                }
+            }
+        }
+        _ => { /* Write/Other: no before */ }
+    }
+
+    if before_code.is_empty() && after_code.is_empty() { return String::new(); }
+
+    // Prefer AST-based signatures; fallback to regex
+    let mut before_ast = extract_signatures_ast(language, &before_code);
+    let mut after_ast = extract_signatures_ast(language, if after_code.is_empty() { content } else { &after_code });
+    if before_ast.is_empty() && !before_code.is_empty() {
+        let b = extract_functions_signatures(language, &before_code);
+        for (k, v) in b { before_ast.insert(k.clone(), FuncSignature { name: k, params: v, start_byte: 0, end_byte: content.len() }); }
+    }
+    if after_ast.is_empty() {
+        let a = extract_functions_signatures(language, if after_code.is_empty() { content } else { &after_code });
+        for (k, v) in a { after_ast.insert(k.clone(), FuncSignature { name: k, params: v, start_byte: 0, end_byte: content.len() }); }
+    }
+
+    if before_ast.is_empty() && after_ast.is_empty() { return String::new(); }
+
+    let mut s = String::new();
+    s.push_str("=== API CONTRACT ===\n");
+
+    // Removed parameters / removed functions
+    for (name, bsig) in before_ast.iter() {
+        if let Some(asig) = after_ast.get(name) {
+            if asig.params.len() < bsig.params.len() {
+                s.push_str(&format!("- Function `{}`: parameter count reduced ({} -> {})\n", name, bsig.params.len(), asig.params.len()));
+            } else {
+                for bp in &bsig.params {
+                    // Skip Python boilerplate params
+                    if matches!(language, SupportedLanguage::Python) && (bp == "self" || bp == "cls" || bp == "args" || bp == "kwargs") { continue; }
+                    if !bp.is_empty() && !asig.params.iter().any(|x| x == bp) {
+                        s.push_str(&format!("- Function `{}`: parameter `{}` removed or renamed\n", name, bp));
+                    }
+                }
+            }
+        } else {
+            s.push_str(&format!("- Function `{}`: removed from module (possible breaking change)\n", name));
+        }
+    }
+
+    // Unused parameters: prefer AST usage check; fallback to regex on the function slice
+    use regex::Regex;
+    let word = |p: &str| Regex::new(&format!(r"(?m)\b{}\b", regex::escape(p))).ok();
+    let is_simple_ident = |v: &str| -> bool {
+        if v.is_empty() { return false; }
+        let first = v.chars().next().unwrap();
+        if !(first.is_ascii_alphabetic() || first == '_' || first == '$') { return false; }
+        v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+    };
+    for (name, asig) in after_ast.iter() {
+        for p in &asig.params {
+            if p.is_empty() { continue; }
+            // Ignore typical receiver params in Python
+            if matches!(language, SupportedLanguage::Python) && (p == "self" || p == "cls") { continue; }
+            // Only check simple identifiers for JS/TS; complex patterns are skipped to avoid false positives
+            if matches!(language, SupportedLanguage::JavaScript | SupportedLanguage::TypeScript) && !is_simple_ident(p) { continue; }
+            let used = if asig.end_byte > asig.start_byte && asig.end_byte <= content.len() {
+                is_param_used_in_function(language, content, asig.start_byte, asig.end_byte, p)
+            } else { false };
+            if !used {
+                let hay = if asig.end_byte > asig.start_byte && asig.end_byte <= content.len() { &content[asig.start_byte..asig.end_byte] } else { content };
+                let used_re = word(p).map(|re| re.is_match(hay)).unwrap_or(false);
+                if !used_re { s.push_str(&format!("- Function `{}`: parameter `{}` appears unused\n", name, p)); }
+            }
+        }
+    }
+
+    if s.trim_end() == "=== API CONTRACT ===" { String::new() } else { s }
+}
+
+fn build_next_steps(score: &QualityScore) -> String {
+    use crate::analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
+    let mut s=String::new(); s.push_str("=== NEXT STEPS ===\n");
+    let has_crit = score.concrete_issues.iter().any(|i| matches!(i.severity, IssueSeverity::Critical));
+    if has_crit { s.push_str("- Fix security-critical issues first (creds/SQL/path/command).\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HardcodedCredentials)) {
+        s.push_str("- Move secrets to env/secret manager; avoid hardcoding credentials.\n");
+    }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::SqlInjection)) {
+        s.push_str("- Use parameterized queries; avoid concatenating SQL with inputs.\n");
+    }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)) { s.push_str("- Reduce function parameters (>5). Consider grouping.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)) { s.push_str("- Flatten deep nesting (>4). Extract helpers/early returns.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HighComplexity)) { s.push_str("- Reduce cyclomatic complexity. Split large functions.\n"); }
+    if s.trim_end() == "=== NEXT STEPS ===" { s.push_str("- Looks good. Proceed with implementation and tests.\n"); }
+    s
+}
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
 
 /// Check if a path should be ignored based on gitignore patterns
@@ -533,28 +1295,13 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
                 .and_then(|v| v.as_str())
                 .context("Edit operation missing required 'new_string' field")?;
 
-            // Return unified diff for clear change visibility
-            // Since posttooluse runs AFTER edit, reconstruct diff from old_string -> new_string
-            let mut result = String::new();
-            result.push_str(&format!("--- a/{}\n", display_path));
-            result.push_str(&format!("+++ b/{}\n", display_path));
-
-            let old_lines = old_string.lines().count().max(1);
-            let new_lines = new_string.lines().count().max(1);
-
-            result.push_str(&format!("@@ -1,{} +1,{} @@\n", old_lines, new_lines));
-
-            // Show removed lines
-            for line in old_string.lines() {
-                result.push_str(&format!("-{}\n", line));
-            }
-
-            // Show added lines
-            for line in new_string.lines() {
-                result.push_str(&format!("+{}\n", line));
-            }
-
-            Ok(result)
+            // Use numbered unified diff for better downstream parsing
+            Ok(crate::validation::diff_formatter::format_edit_as_unified_diff(
+                display_path,
+                file_content.as_deref(),
+                old_string,
+                new_string,
+            ))
         }
 
         ToolKind::MultiEdit => {
@@ -1637,33 +2384,36 @@ async fn main() -> Result<()> {
     // In offline/e2e tests we may want to skip network and prompt loading entirely
     if std::env::var("POSTTOOL_AST_ONLY").is_ok() {
         let mut final_response = String::new();
+        let display_path = hook_input.tool_input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let change = build_change_summary(&hook_input, display_path).await;
+        if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
         if let Some(ast_score) = &ast_analysis {
-            final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
-            if !ast_score.concrete_issues.is_empty() {
-                let max_issues: usize = std::env::var("AST_MAX_ISSUES").ok().and_then(|v| v.parse().ok()).unwrap_or(100).clamp(10, 500);
-                let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
-                let mut issues = ast_score.concrete_issues.clone();
-                issues.sort_by(|a,b| sev_key(a.severity).cmp(&sev_key(b.severity)).then_with(|| a.line.cmp(&b.line)).then_with(|| a.rule_id.cmp(&b.rule_id)));
-                let total = issues.len();
-                issues.truncate(max_issues);
-                final_response.push_str("Concrete Issues Found (sorted):\n");
-                for issue in &issues {
-                    final_response.push_str(&format!("• Line {}: {} [{}] (-{} pts)\n", issue.line, issue.message, issue.rule_id, issue.points_deducted));
-                }
-                if total > issues.len() { final_response.push_str(&format!("… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n", issues.len(), total)); }
-                final_response.push('\n');
-            } else {
-                final_response.push_str("No concrete issues found by AST analysis.\n\n");
-            }
+            let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, display_path).await {
+                let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                let changed = extract_changed_lines(&diff, ctxn);
+                let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() { filter_issues_to_diff(ast_score, &diff, ctxn) } else { ast_score.clone() };
+                let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                let snips = if snips_enabled {
+                    let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
+                    let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
+                    let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+                    let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                    if use_entity {
+                        let ent = build_entity_context_snippets(lang, &content, &filtered, &changed, ctxn, max_snips, max_chars);
+                        if !ent.is_empty() { ent } else { build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars) }
+                    } else {
+                        build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars)
+                    }
+                } else { String::new() };
+                (filtered, snips)
+            } else { (ast_score.clone(), String::new()) };
+            final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
+            if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
+            final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
+            final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
         }
         if let Some(format_result) = &formatting_result {
-            if format_result.changed {
-                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
-            } else if !format_result.messages.is_empty() {
-                final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
-                for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
-                final_response.push_str("\n\n");
-            }
+            if format_result.changed { final_response.push_str("[FORMAT] Auto-format applied.\n\n"); }
         }
         let output = PostToolUseOutput { hook_specific_output: PostToolUseHookOutput { hook_event_name: "PostToolUse".to_string(), additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) }, }, };
         println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
@@ -1856,42 +2606,46 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Dry-run mode: build prompt and contexts, skip network call; return AST details in additionalContext
+    // Dry-run mode: build prompt and contexts, skip network call; return structured AST details in additionalContext
     if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
         let mut final_response = String::new();
-
+        // Include change summary
+        let change = build_change_summary(&hook_input, &display_path).await;
+        if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
+        // Include AST structured sections
         if let Some(ast_score) = &ast_analysis {
-            final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
-            if !ast_score.concrete_issues.is_empty() {
-                let max_issues: usize = std::env::var("AST_MAX_ISSUES").ok().and_then(|v| v.parse().ok()).unwrap_or(100).clamp(10, 500);
-                let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
-                let mut issues = ast_score.concrete_issues.clone();
-                issues.sort_by(|a, b| sev_key(a.severity).cmp(&sev_key(b.severity)).then_with(|| a.line.cmp(&b.line)).then_with(|| a.rule_id.cmp(&b.rule_id)));
-                let total = issues.len();
-                issues.truncate(max_issues);
-                final_response.push_str("Concrete Issues Found (sorted):\n");
-                for issue in &issues {
-                    final_response.push_str(&format!(
-                        "• Line {}: {} [{}] (-{} pts)\n",
-                        issue.line, issue.message, issue.rule_id, issue.points_deducted
-                    ));
-                }
-                if total > issues.len() {
-                    final_response.push_str(&format!(
-                        "… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
-                        issues.len(), total
-                    ));
-                }
-                final_response.push('\n');
-            } else {
-                final_response.push_str("No concrete issues found by AST analysis.\n\n");
-            }
+            let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {
+                let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                let changed = extract_changed_lines(&diff, ctxn);
+                let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() { filter_issues_to_diff(ast_score, &diff, ctxn) } else { ast_score.clone() };
+                let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                let snips = if snips_enabled {
+                    let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
+                    let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
+                    let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+                    let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                    if use_entity {
+                        let ent = build_entity_context_snippets(lang, &content, &filtered, &changed, ctxn, max_snips, max_chars);
+                        if !ent.is_empty() { ent } else { build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars) }
+                    } else {
+                        build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars)
+                    }
+                } else { String::new() };
+                (filtered, snips)
+            } else { (ast_score.clone(), String::new()) };
+            final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
+            if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
+            final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
+            // API Contract (simple heuristics)
+            let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+            let api = build_api_contract_report(lang, &hook_input, &content);
+            if !api.is_empty() { final_response.push_str(&api); final_response.push('\n'); }
+            final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
         }
-
+        // Include formatting outcome
         if let Some(format_result) = &formatting_result {
-            if format_result.changed {
-                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
-            } else if !format_result.messages.is_empty() {
+            if format_result.changed { final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\n\n"); }
+            else if !format_result.messages.is_empty() {
                 final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
                 for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
                 final_response.push_str("\n\n");
@@ -1911,63 +2665,6 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Optional AST-only mode for offline/e2e testing: skip AI call but still return AST context
-    if std::env::var("POSTTOOL_AST_ONLY").is_ok() {
-        let mut final_response = String::new();
-
-        if let Some(ast_score) = &ast_analysis {
-            final_response.push_str(&format!("<Deterministic Score: {}/1000>\n", ast_score.total_score));
-
-            if !ast_score.concrete_issues.is_empty() {
-                let max_issues: usize = std::env::var("AST_MAX_ISSUES")
-                    .ok()
-                    .and_then(|v| v.parse().ok())
-                    .unwrap_or(100)
-                    .clamp(10, 500);
-                let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
-                let mut issues = ast_score.concrete_issues.clone();
-                issues.sort_by(|a, b| sev_key(a.severity).cmp(&sev_key(b.severity)).then_with(|| a.line.cmp(&b.line)).then_with(|| a.rule_id.cmp(&b.rule_id)));
-                let total = issues.len();
-                issues.truncate(max_issues);
-                final_response.push_str("Concrete Issues Found (sorted):\n");
-                for issue in &issues {
-                    final_response.push_str(&format!(
-                        "• Line {}: {} [{}] (-{} pts)\n",
-                        issue.line, issue.message, issue.rule_id, issue.points_deducted
-                    ));
-                }
-                if total > issues.len() {
-                    final_response.push_str(&format!(
-                        "… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
-                        issues.len(), total
-                    ));
-                }
-                final_response.push('\n');
-            } else {
-                final_response.push_str("No concrete issues found by AST analysis.\n\n");
-            }
-        }
-
-        if let Some(format_result) = &formatting_result {
-            if format_result.changed {
-                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n");
-            } else if !format_result.messages.is_empty() {
-                final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
-                for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
-                final_response.push_str("\n\n");
-            }
-        }
-
-        let output = PostToolUseOutput {
-            hook_specific_output: PostToolUseHookOutput {
-                hook_event_name: "PostToolUse".to_string(),
-                additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) },
-            },
-        };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
-        return Ok(());
-    }
-
     // Create AI client and perform analysis
     let client = UniversalAIClient::new(config.clone()).context("Failed to create AI client")?;
 
@@ -1977,66 +2674,45 @@ async fn main() -> Result<()> {
         .await
     {
         Ok(ai_response) => {
-            // Combine AST results with AI response for full visibility
+            // Combine structured sections and AI response
             let mut final_response = String::new();
-
-            // Add AST results first if available
+            // Change Summary
+            let change = build_change_summary(&hook_input, &display_path).await;
+            if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
+            // Risk + Health + Change Context + API Contract + Next Steps
             if let Some(ast_score) = &ast_analysis {
-                final_response.push_str(&format!(
-                    "<Deterministic Score: {}/1000>\n",
-                    ast_score.total_score
-                ));
-
-                if !ast_score.concrete_issues.is_empty() {
-                    // Determine limit for issues
-                    let max_issues: usize = std::env::var("AST_MAX_ISSUES")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(100)
-                        .clamp(10, 500);
-
-                    // Sort deterministically: severity -> line -> rule_id
-                    let sev_key = |s: IssueSeverity| match s {
-                        IssueSeverity::Critical => 0,
-                        IssueSeverity::Major => 1,
-                        IssueSeverity::Minor => 2,
-                    };
-                    let mut issues = ast_score.concrete_issues.clone();
-                    issues.sort_by(|a, b| {
-                        sev_key(a.severity)
-                            .cmp(&sev_key(b.severity))
-                            .then_with(|| a.line.cmp(&b.line))
-                            .then_with(|| a.rule_id.cmp(&b.rule_id))
-                    });
-
-                    let total = issues.len();
-                    issues.truncate(max_issues);
-
-                    final_response.push_str("Concrete Issues Found (sorted):\n");
-                    for issue in &issues {
-                        final_response.push_str(&format!(
-                            "• Line {}: {} [{}] (-{} pts)\n",
-                            issue.line, issue.message, issue.rule_id, issue.points_deducted
-                        ));
-                    }
-
-                    if total > issues.len() {
-                        final_response.push_str(&format!(
-                            "… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
-                            issues.len(), total
-                        ));
-                    }
-                } else {
-                    final_response.push_str("No concrete issues found by AST analysis.\n");
-                }
-                final_response.push('\n');
+                let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {
+                    let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                    let changed = extract_changed_lines(&diff, ctxn);
+                    let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() { filter_issues_to_diff(ast_score, &diff, ctxn) } else { ast_score.clone() };
+                    let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                    let snips = if snips_enabled {
+                        let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
+                        let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
+                        let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+                        let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                        if use_entity {
+                            let ent = build_entity_context_snippets(lang, &content, &filtered, &changed, ctxn, max_snips, max_chars);
+                            if !ent.is_empty() { ent } else { build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars) }
+                        } else {
+                            build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars)
+                        }
+                    } else { String::new() };
+                    (filtered, snips)
+                } else { (ast_score.clone(), String::new()) };
+                final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
+                if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
+                final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
+                let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+                let api = build_api_contract_report(lang, &hook_input, &content);
+                if !api.is_empty() { final_response.push_str(&api); final_response.push('\n'); }
+                final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
             }
-
             // Add formatting results if available
             if let Some(format_result) = &formatting_result {
                 if format_result.changed {
                     final_response.push_str(
-                        "[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\nКод был автоматически отформатирован.\n\n",
+                        "[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\n\n",
                     );
                 } else if !format_result.messages.is_empty() {
                     final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
