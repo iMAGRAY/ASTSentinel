@@ -454,6 +454,35 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
         "[computed]".to_string()
     }
 
+    // Helper: from a member/subscript expression, try to extract the property name
+    fn extract_member_property_name(bytes: &[u8], node: tree_sitter::Node) -> Option<String> {
+        let k = node.kind();
+        if k == "member_expression" {
+            for i in 0..node.child_count() {
+                if let Some(ch) = node.child(i) {
+                    let ck = ch.kind();
+                    if ck == "property_identifier" || ck == "identifier" || ck == "private_property_identifier" {
+                        return ch.utf8_text(bytes).ok().map(|s| s.to_string());
+                    }
+                }
+            }
+        } else if k == "subscript_expression" {
+            // subscript_expression: object '[' index ']'
+            for i in 0..node.child_count() {
+                if let Some(ch) = node.child(i) {
+                    // Heuristic: pick the first non-bracket child that isn't the object
+                    let ck = ch.kind();
+                    if ck == "string" || ck == "number" || ck == "identifier" || ck == "member_expression" {
+                        let text = ch.utf8_text(bytes).unwrap_or("");
+                        if !text.is_empty() { return Some(format!("[computed: {}]", text.trim_matches('"').trim_matches('\'').trim_matches('`'))); }
+                    }
+                }
+            }
+            return Some("[computed]".to_string());
+        }
+        None
+    }
+
     let mut st = vec![root];
     while let Some(n) = st.pop() {
         for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
@@ -489,7 +518,29 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                     if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
                 } else if k == "arrow_function" || k == "function_expression" {
                     let mut cur=n; let mut name=String::new();
-                    for _ in 0..4 { if let Some(p)=cur.parent(){ let pk=p.kind(); if pk=="variable_declarator" { if let Some(lhs)=p.child(0){ if lhs.kind()=="identifier"||lhs.kind()=="binding_identifier"{ if let Ok(t)=lhs.utf8_text(bytes){name=t.to_string();} } } } else if pk=="assignment_expression" { if let Some(lhs)=p.child(0){ if lhs.kind()=="identifier"||lhs.kind()=="binding_identifier"||lhs.kind()=="property_identifier"{ if let Ok(t)=lhs.utf8_text(bytes){name=t.to_string();} } } } cur=p; } else { break; } }
+                    for _ in 0..6 {
+                        if let Some(p)=cur.parent(){
+                            let pk=p.kind();
+                            if pk=="variable_declarator" {
+                                if let Some(lhs)=p.child(0){
+                                    if lhs.kind()=="identifier"||lhs.kind()=="binding_identifier"{
+                                        if let Ok(t)=lhs.utf8_text(bytes){name=t.to_string();}
+                                    }
+                                }
+                            } else if pk=="assignment_expression" {
+                                if let Some(lhs)=p.child(0){
+                                    let lk = lhs.kind();
+                                    if lk=="identifier"||lk=="binding_identifier"||lk=="property_identifier"{
+                                        if let Ok(t)=lhs.utf8_text(bytes){ name=t.to_string(); }
+                                    } else if lk=="member_expression" || lk=="subscript_expression" {
+                                        if let Some(pname) = extract_member_property_name(bytes, lhs) { name = pname; }
+                                    }
+                                }
+                            }
+                            cur=p;
+                        } else { break; }
+                        if !name.is_empty() { break; }
+                    }
                     let mut params_node=None; for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } }
                     let mut params=params_node.map(collect_params_js_ts).unwrap_or_default();
                     // Fallback: single identifier parameter for concise arrow functions (x => ...)
