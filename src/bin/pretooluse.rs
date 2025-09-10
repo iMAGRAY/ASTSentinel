@@ -173,7 +173,7 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
             let tail = &code[after..];
             let open = tail.find('(');
             if let Some(op) = open {
-                let mut j = after + op + 1; // position after '('
+                let j = after + op + 1; // position after '('
                 let mut depth = 1i32; let mut end = j;
                 while end < code.len() {
                     let ch = code.as_bytes()[end] as char;
@@ -205,7 +205,7 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
         let mut pos = 0usize; let mut offending = 0usize;
         while let Some(idx) = code[pos..].find(fname) {
             let i = pos + idx; if i>0 { let prev = code.as_bytes()[i-1] as char; if prev.is_ascii_alphanumeric() || prev == '_' { pos = i+fname.len(); continue; } }
-            let after = i+fname.len(); let tail = &code[after..]; if let Some(op)=tail.find('('){ let mut j=after+op+1; let mut depth=1i32; let mut end=j; while end<code.len(){ let ch=code.as_bytes()[end] as char; if ch=='(' {depth+=1;} else if ch==')'{depth-=1; if depth==0{break;}} end+=1;} if depth==0 { let args_slice=&code[j..end]; let (argc,_)=analyze_args_slice(args_slice); if argc> *new_n { offending+=1; } pos=end+1; continue; } }
+            let after = i+fname.len(); let tail = &code[after..]; if let Some(op)=tail.find('('){ let j=after+op+1; let mut depth=1i32; let mut end=j; while end<code.len(){ let ch=code.as_bytes()[end] as char; if ch=='(' {depth+=1;} else if ch==')'{depth-=1; if depth==0{break;}} end+=1;} if depth==0 { let args_slice=&code[j..end]; let (argc,_)=analyze_args_slice(args_slice); if argc> *new_n { offending+=1; } pos=end+1; continue; } }
             pos = after;
         }
         if offending>0 { issues.push(format!("Calls to `{}` exceed new arity ({} -> {}): {} occurrences", fname, old_n, new_n, offending)); }

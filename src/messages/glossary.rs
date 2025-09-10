@@ -1,4 +1,4 @@
-use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueCategory, QualityScore};
+use crate::analysis::ast::quality_scorer::{IssueCategory, QualityScore};
 use std::collections::HashSet;
 
 // Return a concise, action-oriented tip for an issue category (<= 120 chars per G1)
@@ -41,4 +41,3 @@ pub fn build_quick_tips(score: &QualityScore, max_tips: usize, max_line_chars: u
     }
     out
 }
-

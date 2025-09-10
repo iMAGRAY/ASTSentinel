@@ -4,9 +4,7 @@ use std::path::Path;
 
 use rust_validation_hooks::*;
 // Use project analysis for full context
-use rust_validation_hooks::analysis::project::{
-    format_project_structure_for_ai_with_metrics, scan_project_with_cache,
-};
+use rust_validation_hooks::analysis::project::scan_project_with_cache;
 // Use AST analysis for comprehensive error detection
 use rust_validation_hooks::analysis::ast::{
     MultiLanguageAnalyzer, AstQualityScorer, SupportedLanguage, IssueSeverity,
