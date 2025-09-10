@@ -519,6 +519,31 @@ pytest = { version = "^7.4.0" }
         assert!(!deps.iter().any(|d| d.name == "python"));
     }
 
+    #[tokio::test]
+    async fn test_parse_pyproject_toml_poetry_extras_markers() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("pyproject.toml");
+        let content = r#"[tool.poetry]
+name = "demo"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+requests = { version = "^2.31.0", extras = ["socks"], markers = "python_version >= '3.8'" }
+
+[tool.poetry.dev-dependencies]
+pytest = { version = "^7.4.0", markers = "python_version >= '3.8'" }
+"#;
+        let mut f = File::create(&file_path).await.unwrap();
+        f.write_all(content.as_bytes()).await.unwrap();
+        drop(f);
+
+        let deps = parse_pyproject_toml_poetry(&file_path).await.unwrap();
+        assert!(deps.iter().any(|d| d.name == "requests" && !d.is_dev_dependency));
+        assert!(deps.iter().any(|d| d.name == "pytest" && d.is_dev_dependency));
+        assert!(!deps.iter().any(|d| d.name == "python"));
+    }
+
     #[test]
     fn test_clean_version_string() {
         assert_eq!(clean_version_string("^4.18.0"), "4.18.0");
@@ -554,16 +579,24 @@ async fn parse_pyproject_toml_poetry(file_path: &PathBuf) -> Result<Vec<Dependen
             let name = line[..eq].trim().to_string();
             if name.eq_ignore_ascii_case("python") { continue; }
             let val = line[eq+1..].trim();
-            // version formats: "^1.2.3" or { version = "1.2.3" }
-            let version = if val.starts_with('"') && val.ends_with('"') {
-                val.trim_matches('"').to_string()
+            // version formats: "^1.2.3" or { version = "1.2.3", extras = [...] }
+            let version = if val.starts_with('"') {
+                // simple quoted value
+                let trimmed = val.trim_start_matches('"');
+                if let Some(end) = trimmed.find('"') { trimmed[..end].to_string() } else { String::new() }
             } else if val.starts_with('{') {
-                // find version = "..."
                 if let Some(vpos) = val.find("version") {
                     let after = &val[vpos+7..];
                     if let Some(eq) = after.find('=') {
-                        let v = after[eq+1..].trim();
-                        v.trim_matches(|c| c=='"' || c==',' || c==' ' || c=='}').to_string()
+                        let rest = after[eq+1..].trim_start();
+                        // find first quote character and matching closing quote
+                        if let Some(first) = rest.find('"') {
+                            let rest2 = &rest[first+1..];
+                            if let Some(end) = rest2.find('"') { rest2[..end].to_string() } else { String::new() }
+                        } else if let Some(first) = rest.find('\'') {
+                            let rest2 = &rest[first+1..];
+                            if let Some(end) = rest2.find('\'') { rest2[..end].to_string() } else { String::new() }
+                        } else { String::new() }
                     } else { String::new() }
                 } else { String::new() }
             } else { String::new() };
