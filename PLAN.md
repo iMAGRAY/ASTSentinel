@@ -124,6 +124,7 @@ M7 (Follow‑up / Tech Debt)
 Updates (QA hardening)
 - [x] Legacy (no-default-features) parity: added LongLineRule to multi-pass to honor AST_MAX_ISSUES cap in AST-only mode.
 - [x] Gated integration tests that rely on fastpath-only coverage (C/C++/PHP/Ruby unreachable) with `cfg(feature=ast_fastpath)`.
+ - [x] PreToolUse Contract-check: added unit + e2e tests (deny on signature reduction; allow on preserved signatures) under PRETOOL_AST_ONLY flow.
 
 
 
