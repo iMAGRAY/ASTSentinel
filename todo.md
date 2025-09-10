@@ -59,11 +59,11 @@ ID H — Детерминизм и капы (БАЗА)
   Критерий: unit‑тесты детерминизма (ГОТОВО).
 
 ID I — Наблюдаемость и перф
-- [-] I1. Тайминги per file (AST_TIMINGS), краткий отчёт
+- [+] I1. Тайминги per file (AST_TIMINGS), краткий отчёт
   Критерий: вывод включается по env, не шумит по умолчанию.
-- [-] I2. Soft time budget per file, graceful skip
+- [+] I2. Soft time budget per file, graceful skip
   Критерий: тяжёлые файлы/патологии не блокируют общий процесс.
-- [-] I3. Perf‑гейт без регрессий (>20%)
+- [+] I3. Perf‑гейт без регрессий (>20%)
   Критерий: benches+perf_gate проходят.
 
 ID J — Тестовая матрица и покрытие
@@ -95,6 +95,8 @@ ID Z — База (готово)
 - Итерация 7: J1, K1–K2 — покрытие 85%+, docs/примеры
 
 ## Журнал выполнения
+- 2025-09-10: I1/I2/I3 — добавлены AST тайминги (parse/score), soft budget (bytes/lines) со skip‑заметкой, и строгий perf‑гейт в CI (--strict). Все тесты: PASS.
+
 - 2025-09-10: G1 — добавлен глоссарий QUICK TIPS и интеграция в PostToolUse; добавлены unit/e2e тесты; документированы флаги QUICK_TIPS*. Все тесты: PASS.
 
 - 2025-09-10: F3 — Python: unreachable после raise/break/continue; добавлены юнит‑тесты. Все тесты: PASS.
@@ -119,6 +121,7 @@ ID Z — База (готово)
   - Реализованы Contract‑check unit+e2e: `tests/e2e_pretooluse_contract.rs`; deny при уменьшении арности (Python), allow при сохранении сигнатуры (JS). Запуск: `cargo test --bin pretooluse`.
   - D2: добавлены unit‑тесты сущностных срезов и фильтра по диффу в `src/bin/posttooluse.rs` (unit_*), а также e2e `tests/e2e_posttooluse_entity_snippets.rs`. Документирован `AST_ENTITY_SNIPPETS`. Все тесты: PASS.
   - E1: реализован компактный контекст для UserPromptSubmit (Project Summary + Risk/Health snapshot) с лимитом (`USERPROMPT_CONTEXT_LIMIT`, по умолчанию 4000). Добавлен юнит‑тест `tests/unit_userpromptsubmit_snapshot.rs`. Все тесты: PASS.
+
 
 
 
