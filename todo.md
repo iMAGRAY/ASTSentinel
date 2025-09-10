@@ -160,3 +160,7 @@ L — Deps & Duplicates hardening
   Критерий: `tests/e2e_userpromptsubmit_deps.rs` проходит
 - [+] L2. DuplicateDetector unit — обнаружение ExactDuplicate и VersionConflict; формат отчёта
   Критерий: `tests/unit_duplicate_detector.rs` проходит (наличие групп и строки «КРИТИЧНО»)
+- [+] L3. Duplicate report caps — env `DUP_REPORT_MAX_GROUPS`/`DUP_REPORT_MAX_FILES` + формат «… и ещё N …»
+  Критерий: модульные тесты (включены в unit_duplicate_detector расширением) и ручная проверка плейбуком
+- [+] L4. Poetry (pyproject.toml) — парсинг [tool.poetry.dependencies] и [tool.poetry.dev-dependencies]
+  Критерий: unit‑тест на парсинг pyproject; e2e можно добавить позже (опционально)

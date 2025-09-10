@@ -197,9 +197,14 @@ pub async fn analyze_project_dependencies(project_root: &Path) -> Result<Project
                         }
                     }
                 }
-                _ => {
-                    // TODO: Implement other package managers
-                    eprintln!("Package manager {:?} not yet implemented", package_manager);
+                PackageManager::Poetry => {
+                    if let Ok(deps) = parse_pyproject_toml_poetry(&file_path).await {
+                        for dep in deps { project_deps.add_dependency(dep); }
+                    }
+                }
+                PackageManager::Yarn => {
+                    // Yarn lock parsing is heavy; rely on package.json instead.
+                    // Intentionally no-op here.
                 }
             }
         }
@@ -488,6 +493,32 @@ tokio = { version = "1.0", features = ["full"] }
         assert!(deps.iter().any(|d| d.name == "tokio" && d.current_version == "1.0" && d.is_dev_dependency));
     }
 
+    #[tokio::test]
+    async fn test_parse_pyproject_toml_poetry() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("pyproject.toml");
+        let content = r#"[tool.poetry]
+name = "demo"
+version = "0.1.0"
+
+[tool.poetry.dependencies]
+python = ">=3.11,<3.13"
+requests = "^2.31.0"
+
+[tool.poetry.dev-dependencies]
+pytest = { version = "^7.4.0" }
+"#;
+        let mut f = File::create(&file_path).await.unwrap();
+        f.write_all(content.as_bytes()).await.unwrap();
+        drop(f);
+
+        let deps = parse_pyproject_toml_poetry(&file_path).await.unwrap();
+        assert!(deps.iter().any(|d| d.name == "requests" && d.current_version == "2.31.0" && !d.is_dev_dependency));
+        assert!(deps.iter().any(|d| d.name == "pytest" && d.current_version == "7.4.0" && d.is_dev_dependency));
+        // 'python' entry is a platform constraint; we intentionally do not treat it as a dependency
+        assert!(!deps.iter().any(|d| d.name == "python"));
+    }
+
     #[test]
     fn test_clean_version_string() {
         assert_eq!(clean_version_string("^4.18.0"), "4.18.0");
@@ -495,4 +526,59 @@ tokio = { version = "1.0", features = ["full"] }
         assert_eq!(clean_version_string(">=2.28.0"), "2.28.0");
         assert_eq!(clean_version_string("1.0.0"), "1.0.0");
     }
+}
+
+/// Parse pyproject.toml (Poetry) for dependencies
+async fn parse_pyproject_toml_poetry(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
+    let content = fs::read_to_string(file_path).await
+        .context("Failed to read pyproject.toml")?;
+
+    let mut dependencies = Vec::new();
+    let mut in_deps = false;
+    let mut in_dev_deps = false;
+
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.starts_with("[tool.poetry.dependencies]") {
+            in_deps = true; in_dev_deps = false; continue;
+        }
+        if line.starts_with("[tool.poetry.dev-dependencies]") {
+            in_deps = false; in_dev_deps = true; continue;
+        }
+        if line.starts_with('[') && line.ends_with(']') {
+            in_deps = false; in_dev_deps = false; continue;
+        }
+        if !(in_deps || in_dev_deps) { continue; }
+        if line.is_empty() || line.starts_with('#') { continue; }
+        if let Some(eq) = line.find('=') {
+            let name = line[..eq].trim().to_string();
+            if name.eq_ignore_ascii_case("python") { continue; }
+            let val = line[eq+1..].trim();
+            // version formats: "^1.2.3" or { version = "1.2.3" }
+            let version = if val.starts_with('"') && val.ends_with('"') {
+                val.trim_matches('"').to_string()
+            } else if val.starts_with('{') {
+                // find version = "..."
+                if let Some(vpos) = val.find("version") {
+                    let after = &val[vpos+7..];
+                    if let Some(eq) = after.find('=') {
+                        let v = after[eq+1..].trim();
+                        v.trim_matches(|c| c=='"' || c==',' || c==' ' || c=='}').to_string()
+                    } else { String::new() }
+                } else { String::new() }
+            } else { String::new() };
+
+            if !version.is_empty() {
+                dependencies.push(DependencyInfo {
+                    name,
+                    current_version: clean_version_string(&version),
+                    latest_version: None,
+                    package_manager: PackageManager::Poetry,
+                    is_dev_dependency: in_dev_deps,
+                });
+            }
+        }
+    }
+
+    Ok(dependencies)
 }

@@ -272,9 +272,16 @@ impl DuplicateDetector {
             return String::new();
         }
 
+        // Soft caps to keep report compact
+        let max_groups: usize = std::env::var("DUP_REPORT_MAX_GROUPS").ok().and_then(|v| v.parse().ok()).unwrap_or(20).clamp(1, 200);
+        let max_files: usize = std::env::var("DUP_REPORT_MAX_FILES").ok().and_then(|v| v.parse().ok()).unwrap_or(10).clamp(1, 200);
+
         let mut report = String::from("\n🔴 **КРИТИЧНО: Обнаружены дубликаты/конфликты файлов**\n");
 
-        for group in groups {
+        let shown_groups = groups.iter().take(max_groups);
+        let hidden_groups = groups.len().saturating_sub(max_groups);
+
+        for group in shown_groups {
             let conflict_icon = match group.conflict_type {
                 ConflictType::ExactDuplicate => "🔁",
                 ConflictType::BackupFile => "💾",
@@ -295,6 +302,9 @@ impl DuplicateDetector {
                     .cmp(&a.size)
                     .then_with(|| b.modified.cmp(&a.modified))
             });
+
+            if sorted_files.len() > max_files { sorted_files.truncate(max_files); }
+            let hidden_files = group.files.len().saturating_sub(max_files);
 
             for (i, file) in sorted_files.iter().enumerate() {
                 let path_str = file.path.display().to_string();
@@ -321,6 +331,10 @@ impl DuplicateDetector {
                 ));
             }
 
+            if hidden_files > 0 {
+                report.push_str(&format!("  ... и ещё {} файлов скрыто по лимиту\n", hidden_files));
+            }
+
             // Add recommendation
             if group.conflict_type == ConflictType::ExactDuplicate {
                 report.push_str("  💡 Удалить дубликаты, оставить один файл\n");
@@ -331,6 +345,10 @@ impl DuplicateDetector {
             } else {
                 report.push_str("  💡 Объединить изменения в один файл\n");
             }
+        }
+
+        if hidden_groups > 0 {
+            report.push_str(&format!("\n... и ещё {} групп скрыто по лимиту\n", hidden_groups));
         }
 
         report

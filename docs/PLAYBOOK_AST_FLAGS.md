@@ -77,3 +77,12 @@ userpromptsubmit < hook.json
 ```
 - PostToolUse includes dependency analysis and duplicate report in the AI prompt context (not in additionalContext) to keep it compact.
   - Duplicate report is marked as critical and suggests consolidation/deletion of backup/temp files.
+
+Caps for duplicates report (to avoid bloat on large repos):
+- `DUP_REPORT_MAX_GROUPS=10`
+- `DUP_REPORT_MAX_FILES=5`
+The report will append lines like:
+```
+  ... и ещё N файлов скрыто по лимиту
+... и ещё M групп скрыто по лимиту
+```
