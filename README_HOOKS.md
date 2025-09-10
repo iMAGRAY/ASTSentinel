@@ -147,3 +147,5 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
 - Сообщение о пропуске формируется одинаково во всех оффлайн режимах (`POSTTOOL_AST_ONLY=1`, `POSTTOOL_DRY_RUN=1`) и в онлайн‑режиме: `[ANALYSIS] Skipped AST analysis due to soft budget (… )`.
 - Анализ диффа/форматирование/прочий контекст не блокируются.
 
+See docs/PLAYBOOK_AST_FLAGS.md for before/after examples and quick commands.
+

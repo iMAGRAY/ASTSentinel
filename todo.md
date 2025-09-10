@@ -40,6 +40,16 @@ I — Производительность и бюджеты
 - [+] I3. Perf‑gate строгий режим; CI workflow
   Критерий: non‑zero exit на регрессиях выше порога; выполняется в CI
 
+J — Покрытие UserPromptSubmit/Observability
+- [+] J1. QUICK_TIPS — e2e для PostToolUse (AST_ONLY) с проверкой лимита длины строки и наличия секции
+  Критерий: `tests/e2e_posttooluse_quick_tips.rs` проходит на Windows/Unix матрице
+- [+] J2. AST_TIMINGS — e2e для PostToolUse (AST_ONLY)
+  Критерий: `tests/e2e_posttooluse_timings.rs` обнаруживает секцию `=== TIMINGS (ms) ===`
+
+K — Документация
+- [+] K1. README_HOOKS обновлён для soft‑budget и единообразного вывода
+- [+] K2. docs/PLAYBOOK_AST_FLAGS.md — playbook «до/после» с примерами команд
+
 ID E — UserPromptSubmit: компактный AST‑контекст
 - [+] E1. Секции «Project Summary» + «Risk/Health snapshot»
   Критерий: snapshot‑тест формата; размер ≤ лимита.
