@@ -104,7 +104,13 @@ impl ProjectDependencies {
             by_manager.entry(dep.package_manager.clone()).or_default().push(dep);
         }
 
-        for (manager, deps) in by_manager {
+        // Stable iteration over managers by priority
+        let mut managers: Vec<_> = by_manager.keys().cloned().collect();
+        let prio = |m: &PackageManager| -> u8 { match m { PackageManager::Cargo=>0, PackageManager::Npm=>1, PackageManager::Yarn=>2, PackageManager::Pip=>3, PackageManager::Poetry=>4 } };
+        managers.sort_by(|a,b| prio(a).cmp(&prio(b)).then_with(|| a.to_string().cmp(&b.to_string())));
+
+        for manager in managers {
+            let deps = by_manager.get(&manager).cloned().unwrap_or_default();
             result.push_str(&format!("### {} Dependencies ({})\n", manager, deps.len()));
             
             // Separate outdated and current dependencies
@@ -112,7 +118,7 @@ impl ProjectDependencies {
                 d.latest_version.is_some() && 
                 d.latest_version.as_ref() != Some(&d.current_version)
             }).collect();
-            let current: Vec<_> = deps.iter().filter(|d| {
+            let mut current: Vec<_> = deps.iter().filter(|d| {
                 d.latest_version.is_none() || 
                 d.latest_version.as_ref() == Some(&d.current_version)
             }).collect();
@@ -137,6 +143,7 @@ impl ProjectDependencies {
             // Show current dependencies (less verbose)
             if !current.is_empty() && current.len() <= 10 {
                 result.push_str("✅ **Up-to-date:**\n");
+                current.sort_by(|a,b| a.name.cmp(&b.name));
                 for dep in current.iter().take(10) {
                     let dev_marker = if dep.is_dev_dependency { " (dev)" } else { "" };
                     result.push_str(&format!(
@@ -400,6 +407,26 @@ mod tests {
     use tempfile::tempdir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
+    
+    #[test]
+    fn unit_format_for_ai_manager_and_name_order() {
+        let mut pd = ProjectDependencies::new();
+        pd.add_dependency(DependencyInfo { name: "serde".into(), current_version: "1.0".into(), latest_version: None, package_manager: PackageManager::Cargo, is_dev_dependency: false });
+        pd.add_dependency(DependencyInfo { name: "requests".into(), current_version: "2.31.0".into(), latest_version: None, package_manager: PackageManager::Pip, is_dev_dependency: false });
+        pd.add_dependency(DependencyInfo { name: "eslint".into(), current_version: "8.0.0".into(), latest_version: None, package_manager: PackageManager::Npm, is_dev_dependency: true });
+        pd.add_dependency(DependencyInfo { name: "left-pad".into(), current_version: "1.3.0".into(), latest_version: None, package_manager: PackageManager::Npm, is_dev_dependency: false });
+        let s = pd.format_for_ai();
+        // Managers should be ordered: cargo → npm → yarn → pip → poetry
+        let idx_cargo = s.find("### cargo Dependencies").unwrap();
+        let idx_npm = s.find("### npm Dependencies").unwrap();
+        let idx_pip = s.find("### pip Dependencies").unwrap();
+        assert!(idx_cargo < idx_npm && idx_npm < idx_pip, "manager order incorrect: {}", s);
+        // Names inside npm current should be ordered alphabetically
+        let npm_section = &s[idx_npm..];
+        let i_left = npm_section.find("left-pad").unwrap();
+        let i_eslint = npm_section.find("eslint").unwrap();
+        assert!(i_eslint < i_left, "names not sorted in npm section: {}", npm_section);
+    }
 
     #[tokio::test]
     async fn test_parse_package_json() {
