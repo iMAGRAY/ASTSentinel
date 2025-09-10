@@ -366,6 +366,7 @@ fn build_entity_context_snippets(
 
 // Function signatures via AST (Python/JS/TS)
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 struct FuncSignature {
     name: String,
     params: Vec<String>,
@@ -2468,6 +2469,10 @@ async fn main() -> Result<()> {
             let tips = build_quick_tips_section(&filtered); if !tips.is_empty() { final_response.push_str(&tips); final_response.push('\n'); }
             if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
             final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
+            // API Contract (simple heuristics)
+            let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+            let api = build_api_contract_report(lang, &hook_input, &content);
+            if !api.is_empty() { final_response.push_str(&api); final_response.push('\n'); }
             final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
         }
         if let Some(format_result) = &formatting_result {

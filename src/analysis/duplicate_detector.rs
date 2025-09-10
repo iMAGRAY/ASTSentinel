@@ -201,8 +201,11 @@ impl DuplicateDetector {
             }
         }
 
+        let sum = |g: &DuplicateGroup| -> u64 { g.files.iter().map(|f| f.size).sum() };
+
         groups.sort_by(|a, b| prio(&a.conflict_type)
             .cmp(&prio(&b.conflict_type))
+            .then_with(|| sum(b).cmp(&sum(a))) // larger groups first within same type
             .then_with(|| a.pattern.cmp(&b.pattern)));
         groups
     }
