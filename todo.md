@@ -48,9 +48,11 @@ J — Покрытие UserPromptSubmit/Observability
 - [+] J3. UserPromptSubmit fallback/ошибки — e2e: невалидный JSON → дефолтный ввод; несуществующий CWD → "Project analysis unavailable"
   Критерий: `tests/e2e_userpromptsubmit_more.rs` проходит на Windows/Unix матрице
 
-K — Документация
+K — Документация и техдолг
 - [+] K1. README_HOOKS обновлён для soft‑budget и единообразного вывода
 - [+] K2. docs/PLAYBOOK_AST_FLAGS.md — playbook «до/после» с примерами команд
+- [+] K3. Rust formatter: вернуть интеграционный тест, добавить idempotent‑проверку; rustfmt в CI
+  Критерий: тесты в `src/formatting/formatters/rust.rs` не игнорируются; `actions-rs/toolchain` ставит компонент rustfmt; прогон CI/локально зелёный
 
 ID E — UserPromptSubmit: компактный AST‑контекст
 - [+] E1. Секции «Project Summary» + «Risk/Health snapshot»
