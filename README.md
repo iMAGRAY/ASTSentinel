@@ -3,20 +3,20 @@
 <!-- Badges -->
 ![CI](https://github.com/your-org/your-repo/actions/workflows/ci.yml/badge.svg)
 
-High-performance validation hooks for Claude Code, providing real-time security and code quality analysis through AI-powered validation.
+High‑performance validation hooks for Claude Code, providing real‑time security and code‑quality analysis with deterministic AST checks and compact, actionable outputs.
 
 ## Features
 
-- 🛡️ **Security Validation**: Detects SQL injection, code injection, exposed secrets, and other vulnerabilities
-- ✨ **Code Quality Analysis**: Validates code style, test coverage, and maintainability
-- 🤖 **Multi-Provider AI Support**: Works with OpenAI (GPT-4/5), xAI (Grok), Anthropic (Claude), Google (Gemini)
-- 🌍 **Multi-Language Support**: Automatically responds in user's language (Russian, English, etc.)
-- ⚡ **High Performance**: Built in Rust for minimal overhead
-- 📊 **Project Context Awareness**: Analyzes entire project structure for better validation
+- 🛡️ Security validation: SQL/command/path injection, hardcoded credentials, unsafe patterns
+- ✨ Code‑quality analysis: Too‑many‑params, deep‑nesting, complexity, long lines, unreachable, naming/docs
+- 🧠 Deterministic AST scoring: stable sorting + caps; diff‑aware entity snippets for context
+- ⚡ Performance/observability: soft budgets (size/lines), per‑label timings (p50/p95/p99/avg), strict perf‑gate in CI
+- 🧰 Duplicate/Deps insights: duplicate report (caps, per‑type summary, top directories), dependency summary (npm/pip/cargo/poetry)
+- 🤖 Multi‑provider AI: OpenAI / Anthropic / xAI / Google (through a unified client) — optional for online mode
 
 ## Quick Start
 
-### 1. Clone and Build
+### 1) Clone and Build
 
 ```bash
 git clone https://github.com/yourusername/ValidationCodeHook.git
@@ -24,7 +24,7 @@ cd ValidationCodeHook
 cargo build --release
 ```
 
-### 2. Setup API Keys
+### 2) Configure API Keys (for online mode)
 
 **IMPORTANT:** The hooks WILL NOT WORK without real API keys!
 
@@ -38,9 +38,9 @@ cp hooks/.env.example hooks/.env
 nano hooks/.env  # Add your REAL API keys here
 ```
 
-See [SETUP_API_KEYS.md](SETUP_API_KEYS.md) for detailed instructions on getting API keys.
+Online mode requires valid provider keys. For offline validation and tests, keys не требуются.
 
-### 3. Install Hooks
+### 3) Install Hooks
 
 Copy the compiled binaries to your hooks directory:
 
@@ -49,11 +49,11 @@ cp target/release/pretooluse.exe hooks/
 cp target/release/posttooluse.exe hooks/
 ```
 
-### 4. Configure Claude Code
+### 4) Configure Claude Code
 
 Add to your Claude Code settings to use the validation hooks.
 
-## Configuration
+## Configuration (Flags)
 
 ### Environment Variables
 
@@ -64,7 +64,7 @@ Add to your Claude Code settings to use the validation hooks.
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `XAI_API_KEY`: Your xAI API key
 
-See `.env.example` for all configuration options.
+Полный справочник флагов и примеров — в README_HOOKS.md (Flag Reference, Sections vs. Flags, Windows Quick Start).
 
 ### Prompt Customization
 
@@ -80,16 +80,14 @@ Edit prompts in the `prompts/` directory:
 ValidationCodeHook/
 ├── src/
 │   ├── bin/
-│   │   ├── pretooluse.rs    # Pre-execution validation
-│   │   └── posttooluse.rs   # Post-execution validation
-│   ├── analysis/             # Project structure analysis
-│   ├── providers/            # AI provider integrations
-│   └── validation/           # Validation logic
-├── hooks/                    # Production binaries
-│   ├── pretooluse.exe
-│   ├── posttooluse.exe
-│   └── prompts/             # Production prompts
-└── prompts/                  # Development prompts
+│   │   ├── pretooluse.rs     # Pre-execution validation (anti-cheating, security heuristics)
+│   │   └── posttooluse.rs    # Post-execution validation (deterministic AST context)
+│   ├── analysis/              # AST, metrics, duplicates, deps, project scan/cache
+│   ├── providers/             # AI provider integrations (optional online)
+│   └── validation/            # Diff formatter and helpers
+├── hooks/                     # Production drop-in (gitignored)
+│   └── prompts/               # Production prompts (if used)
+└── prompts/                   # Development prompts
 ```
 
 See also:
@@ -109,8 +107,8 @@ Fastpath AST engine is enabled by default. To exercise both paths:
 - Fastpath: `cargo test --features ast_fastpath`
 - Legacy multipass: `cargo test --no-default-features`
 
-Coverage (recommended tool):
-- `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
+Coverage (Linux/CI parity):
+- tarpaulin: `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
 
 
 ### Building for Release
@@ -118,6 +116,22 @@ Coverage (recommended tool):
 ```bash
 cargo build --release
 ```
+
+### Release Process
+
+Releases публикуются автоматически через GitHub Actions при пуше тега вида `vX.Y.Z`.
+
+1) Обновите версию в `Cargo.toml` (поле `version`).
+2) Создайте тег и запушьте:
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+3) В разделе Releases появится релиз с артефактами:
+   - Windows: `windows-x86_64.zip` (pretooluse.exe, posttooluse.exe, userpromptsubmit.exe, SHA256SUMS.txt)
+   - Linux: `linux-x86_64.tar.gz` (pretooluse, posttooluse, userpromptsubmit, SHA256SUMS.txt)
+
+Ручной запуск также доступен через `workflow_dispatch` у workflow `release`.
 
 ### Syncing Prompts
 

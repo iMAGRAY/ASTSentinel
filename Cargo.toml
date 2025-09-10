@@ -15,9 +15,6 @@ path = "src/bin/posttooluse.rs"
 
 # Memory organizer binary removed as requested
 
-[[bin]]
-name = "test_unified_diff"
-path = "test_data/rust/test_unified_diff.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

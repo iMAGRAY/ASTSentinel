@@ -1,19 +1,17 @@
-Testing & Coverage
+# Testing & Coverage
 
-Running Tests
-- Default (fastpath enabled): `cargo test --features ast_fastpath`
-- Legacy multi-pass: `cargo test --no-default-features`
+## Running Tests
+- Default (fastpath): `cargo test`
+- Legacy multi‑pass: `cargo test --no-default-features`
 
-E2E
-- PostToolUse and PreToolUse have e2e tests in `tests/` that run without network when `POSTTOOL_AST_ONLY=1` or using dry-run.
+## E2E
+- Hooks e2e находятся в `tests/` и не требуют сети в режимах:
+  - `POSTTOOL_AST_ONLY=1` (структурный контекст без сетевых вызовов)
+  - `POSTTOOL_DRY_RUN=1` (построение промпта/контекста без сетевых вызовов)
 
-Unit Tests Highlights
-- Single-pass engine: module tests in `src/analysis/ast/single_pass.rs` cover Go switch-unreachable fix and TS TooManyParameters.
-- Duplicate detector: `tests/test_duplicate_detector.rs` verifies ExactDuplicate and VersionConflict detection and report formatting.
-- Path handling (Windows-friendly): `src/bin/posttooluse.rs` contains unit tests for alias normalization, gitignore matching with `\` → `/`, and safe path validation.
+## Unit Highlights
+- AST single‑pass/legacy, безопасная обработка путей, парсеры deps (npm/pip/cargo/poetry), DuplicateDetector (caps, порядок, сводки)
 
-Coverage
-- Recommended: tarpaulin or grcov.
-  - Example (tarpaulin): `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
-- Goal: cover critical paths 100% (AST analysis, path validation, diff formatter, duplicate detection, dependency parsers). Remaining CLI glue code measured via e2e tests.
-
+## Coverage
+- Tarpaulin (Linux): `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
+- Цель: покрытие критичных путей AST/validation/duplicates/deps; остальной клей покрывается e2e.

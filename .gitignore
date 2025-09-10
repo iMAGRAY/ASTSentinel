@@ -1,4 +1,6 @@
 /target
+dist/
+tmp_validation/
 
 # Production deployment directory - should not be in git
 /hooks
