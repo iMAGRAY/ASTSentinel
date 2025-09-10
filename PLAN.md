@@ -1,7 +1,7 @@
 # AST Quality & Performance Plan (v1.0)
 
 Date: 2025-09-09
-Owner: ValidationCodeHook Team
+Owner: AST Sentinel Team
 
 Goal: Make AST analysis maximally efficient, deterministic, and accurate across all supported languages, and deliver high‑quality, compact context to AI (PostToolUse) for downstream validation.
 

@@ -1,6 +1,6 @@
 # Quality Improvements Report
 **Date**: September 7, 2025  
-**Project**: ValidationCodeHook - AI-driven validation hooks for Claude Code  
+**Project**: AST Sentinel - AI-driven validation hooks for Claude Code  
 **Status**: ✅ COMPLETED SUCCESSFULLY
 
 ## Overview

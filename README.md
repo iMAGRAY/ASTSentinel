@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/hero.svg" width="100%" alt="Validation Code Hooks"/>
+  <img src="assets/hero.svg" width="100%" alt="AST Sentinel"/>
 </p>
 
 <p align="center">
@@ -35,8 +35,8 @@ High‑performance validation hooks for Claude Code: deterministic AST checks, d
 ### 1) Clone and Build
 
 ```bash
-git clone https://github.com/yourusername/ValidationCodeHook.git
-cd ValidationCodeHook
+git clone https://github.com/yourusername/ast-sentinel.git
+cd ast-sentinel
 cargo build --release
 ```
 
@@ -93,7 +93,7 @@ Edit prompts in the `prompts/` directory:
 ## Architecture
 
 ```
-ValidationCodeHook/
+ast-sentinel/
 ├── src/
 │   ├── bin/
 │   │   ├── pretooluse.rs     # Pre-execution validation (anti-cheating, security heuristics)

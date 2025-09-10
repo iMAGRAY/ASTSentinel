@@ -181,7 +181,7 @@ Completed work with full context:
   </ai-dynamic-context>
   
   <project-info>
-    <name>ValidationCodeHook</name>
+    <name>AST Sentinel</name>
     <description>AI-driven validation hooks for Claude Code</description>
     <created-at>2025-09-06T13:42:16Z</created-at>
   </project-info>

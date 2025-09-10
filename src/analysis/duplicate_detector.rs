@@ -384,11 +384,18 @@ impl DuplicateDetector {
 
             for (i, file) in sorted_files.iter().enumerate() {
                 let path_str = file.path.display().to_string();
-                let relative_path = path_str
-                    .split("ValidationCodeHook")
-                    .last()
-                    .or_else(|| path_str.split("GitHub").last())
-                    .unwrap_or(&path_str);
+                let relative_path = if let Ok(cwd) = std::env::current_dir() {
+                    let cwd_s = cwd.display().to_string();
+                    if path_str.starts_with(&cwd_s) {
+                        let mut rel = path_str[cwd_s.len()..].to_string();
+                        if rel.starts_with('/') || rel.starts_with('\\') { let _ = rel.remove(0); }
+                        rel
+                    } else {
+                        path_str.clone()
+                    }
+                } else {
+                    path_str.clone()
+                };
 
                 let is_likely_main = i == 0; // Largest and newest is likely the main one
                 let marker = if is_likely_main {
