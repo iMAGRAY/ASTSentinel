@@ -54,6 +54,12 @@ Edit `.env` file to configure:
   - `AST_SNIPPETS_MAX_CHARS` (default: `1500`, range `200..20000`) — предел символов секции.
   - `AST_ENTITY_SNIPPETS` (default: `1`) — включить сущностные срезы (функция/метод/класс) вместо «плоских» окон по строкам. Поддерживаются Python/JS/TS; при невозможности выделить сущность автоматически выполняется fallback к `CHANGE CONTEXT` на основе строк.
 
+
+### QUICK TIPS (краткие советы по исправлению)
+-  `QUICK_TIPS` (default: `1`) — вывести секцию `=== QUICK TIPS ===` в PostToolUse (AST‑only и обычный режимы). 
+-  `QUICK_TIPS_MAX` (default: `6`, range `1..20`) — максимум советов (уникальных по категории). 
+-  `QUICK_TIPS_MAX_CHARS` (default: `120`, range `60..180`) — максимальная длина одной строки совета. 
+  - Примеры советов: «Use parameterized queries», «Reduce params (>5)», «Flatten nesting (>4)» и т.п.; советы стабильны и кратки (≤120 симв.).
 ### Non‑modifying tools
 - Инструменты, которые не изменяют код (`ReadFile`, `Search`, etc.), проходят транзитом: `additionalContext` будет пустым.
 
