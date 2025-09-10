@@ -190,6 +190,20 @@ impl DuplicateDetector {
             }
         }
 
+        // Deterministic ordering: by conflict type priority, then pattern asc
+        fn prio(t: &ConflictType) -> u8 {
+            match t {
+                ConflictType::ExactDuplicate => 0,
+                ConflictType::VersionConflict => 1,
+                ConflictType::BackupFile => 2,
+                ConflictType::TempFile => 3,
+                ConflictType::SimilarName => 4,
+            }
+        }
+
+        groups.sort_by(|a, b| prio(&a.conflict_type)
+            .cmp(&prio(&b.conflict_type))
+            .then_with(|| a.pattern.cmp(&b.pattern)));
         groups
     }
 

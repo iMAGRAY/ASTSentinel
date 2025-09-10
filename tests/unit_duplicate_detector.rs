@@ -24,6 +24,10 @@ fn unit_duplicate_detector_finds_duplicates_and_conflicts() {
     assert!(has_exact, "expected an ExactDuplicate group: {:?}", groups);
     assert!(has_version, "expected a VersionConflict group: {:?}", groups);
 
+    // Ordering: ExactDuplicate should come first by priority
+    let first_ty = &groups[0].conflict_type;
+    assert_eq!(first_ty, &ConflictType::ExactDuplicate, "first group is not ExactDuplicate: {:?}", groups[0]);
+
     // Format report sanity
     let report = det.format_report(&groups);
     assert!(report.contains("КРИТИЧНО"));

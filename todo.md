@@ -164,3 +164,9 @@ L — Deps & Duplicates hardening
   Критерий: модульные тесты (включены в unit_duplicate_detector расширением) и ручная проверка плейбуком
 - [+] L4. Poetry (pyproject.toml) — парсинг [tool.poetry.dependencies] и [tool.poetry.dev-dependencies]
   Критерий: unit‑тест на парсинг pyproject; e2e можно добавить позже (опционально)
+ - [+] L5. Duplicate groups deterministic order — сортировка по типу конфликта и паттерну
+  Критерий: unit‑тест проверяет, что ExactDuplicate идёт первым
+
+M — Snapshots
+- [+] M1. UserPromptSubmit golden shape — стабильный порядок секций и ключевые строки
+  Критерий: `tests/unit_userpromptsubmit_golden.rs` проходит; проверяются заголовки и счётчики
