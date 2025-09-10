@@ -218,8 +218,8 @@ impl SinglePassEngine {
                     // Simple SQL detection inside string literals and creds in assignments
                     if kind == "string" {
                         if let Ok(text) = node.utf8_text(src_bytes) {
-                            // Remove quotes for heuristic
-                            let lower = text.trim_matches(['"', '\'']).to_string();
+                            // Remove quotes for heuristic and lowercase
+                            let lower = text.trim_matches(['"', '\'']).to_ascii_lowercase();
                             if (lower.contains("select") && lower.contains("where"))
                                 || (lower.contains("insert") && lower.contains("values"))
                                 || (lower.contains("update") && lower.contains("set"))

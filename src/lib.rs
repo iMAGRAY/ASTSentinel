@@ -57,6 +57,9 @@ pub mod formatting;
 /// Centralized validation constants for memory optimization
 pub mod validation_constants;
 
+/// Runtime configuration (sensitivity, ignore globs, environment)
+pub mod config;
+
 // Re-export commonly used types for convenience
 pub use analysis::ast::{ComplexityVisitor, MultiLanguageAnalyzer, SupportedLanguage};
 pub use analysis::{

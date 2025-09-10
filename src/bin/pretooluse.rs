@@ -15,6 +15,358 @@ use rust_validation_hooks::providers::ai::UniversalAIClient;
 use rust_validation_hooks::validation::diff_formatter::{
     format_code_diff, format_edit_diff, format_multi_edit_diff,
 };
+use rust_validation_hooks::config;
+
+// =============================
+// Heuristics for anti-cheating
+// =============================
+#[derive(Default, Debug)]
+struct HeuristicAssessment {
+    is_whitespace_or_comments_only: bool,
+    is_return_constant_only: bool,
+    is_print_or_log_only: bool,
+    has_todo_or_placeholder: bool,
+    has_empty_catch_or_except: bool,
+    is_new_file_minimal: bool,
+    summary: String,
+}
+
+// ==============
+// API Contract heuristics (regex-based; Python/JS/TS)
+// ==============
+fn extract_signatures_regex(language: Option<SupportedLanguage>, code: &str) -> std::collections::HashMap<String, Vec<String>> {
+    use regex::Regex;
+    let mut map = std::collections::HashMap::new();
+    let Some(lang) = language else { return map; };
+    match lang {
+        SupportedLanguage::Python => {
+            if let Ok(re) = Regex::new(r"(?m)^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)") {
+                for cap in re.captures_iter(code) {
+                    let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                    let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    let list = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty())
+                        .map(|p| {
+                            let base = p.split(':').next().unwrap_or("").split('=').next().unwrap_or("").trim();
+                            base.trim_start_matches('*').to_string()
+                        })
+                        .filter(|p| !matches!(p.as_str(), "self"|"cls"|"args"|"kwargs"))
+                        .collect::<Vec<_>>();
+                    if !name.is_empty() { map.insert(name, list); }
+                }
+            }
+        }
+        SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+            if let Ok(re_fn) = Regex::new(r"(?m)function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)") {
+                for cap in re_fn.captures_iter(code) {
+                    let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                    let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    let list = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty())
+                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                        .collect::<Vec<_>>();
+                    if !name.is_empty() { map.insert(name, list); }
+                }
+            }
+            // Class methods: name(param){ ... }
+            if let Ok(re_m) = Regex::new(r"(?m)^\s*([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*\{") {
+                for cap in re_m.captures_iter(code) {
+                    let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
+                    let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
+                    let list = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty())
+                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                        .collect::<Vec<_>>();
+                    if !name.is_empty() { map.entry(name).or_insert(list.clone()); }
+                }
+            }
+        }
+        _ => {}
+    }
+    map
+}
+
+fn contract_weakening_reasons(language: Option<SupportedLanguage>, old_code: &str, new_code: &str) -> Vec<String> {
+    let before = extract_signatures_regex(language, old_code);
+    let after = extract_signatures_regex(language, new_code);
+    if before.is_empty() && after.is_empty() { return vec![]; }
+    let mut reasons = Vec::new();
+    for (name, bparams) in before.iter() {
+        if let Some(aparams) = after.get(name) {
+            if aparams.len() < bparams.len() {
+                reasons.push(format!("Function `{}`: parameter count reduced ({} -> {})", name, bparams.len(), aparams.len()));
+            } else {
+                for bp in bparams {
+                    if !bp.is_empty() && !aparams.iter().any(|x| x == bp) {
+                        reasons.push(format!("Function `{}`: parameter `{}` removed or renamed", name, bp));
+                    }
+                }
+            }
+        } else {
+            reasons.push(format!("Function `{}`: removed from module", name));
+        }
+    }
+    reasons
+}
+
+// Heuristic: find call sites that still pass removed parameters or exceed new arity
+fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: &str, new_code: &str) -> Vec<String> {
+    use std::collections::HashMap;
+    let lang = language;
+    let before = extract_signatures_regex(lang, old_code);
+    let after = extract_signatures_regex(lang, new_code);
+    let mut issues = Vec::new();
+
+    // Helper: count top-level args and detect named args in a slice
+    fn analyze_args_slice(slice: &str) -> (usize, Vec<String>) {
+        let mut depth = 0usize; let mut count = 0usize; let mut named = Vec::new();
+        let mut token = String::new();
+        let mut i = 0; let bytes = slice.as_bytes();
+        while i < bytes.len() {
+            let c = bytes[i] as char;
+            match c {
+                '(' | '[' | '{' => { depth += 1; token.clear(); }
+                ')' | ']' | '}' => { if depth>0 { depth -= 1; } }
+                ',' => { if depth==0 { count += 1; token.clear(); } }
+                '=' => { if depth==0 { let name = token.trim(); if !name.is_empty() { named.push(name.to_string()); } } }
+                _ => { if depth==0 { token.push(c); } }
+            }
+            i += 1;
+        }
+        // If non-empty args without trailing comma, increment count
+        let trimmed = slice.trim();
+        if !trimmed.is_empty() { count = count.saturating_add(1); }
+        (count, named)
+    }
+
+    // Extract removed signatures
+    let mut removed_params: HashMap<String, Vec<String>> = HashMap::new();
+    let mut reduced_arity: HashMap<String, (usize, usize)> = HashMap::new();
+    for (name, bparams) in before.iter() {
+        if let Some(aparams) = after.get(name) {
+            if aparams.len() < bparams.len() { reduced_arity.insert(name.clone(), (bparams.len(), aparams.len())); }
+            let mut removed = Vec::new();
+            for bp in bparams {
+                // Python boilerplate ignore
+                if matches!(lang, Some(SupportedLanguage::Python)) && (bp == "self" || bp == "cls" || bp == "args" || bp == "kwargs") { continue; }
+                if !bp.is_empty() && !aparams.iter().any(|x| x == bp) { removed.push(bp.clone()); }
+            }
+            if !removed.is_empty() { removed_params.insert(name.clone(), removed); }
+        } else {
+            // Function removed entirely — flag
+            issues.push(format!("Function `{}` removed; consider migration plan", name));
+        }
+    }
+
+    if removed_params.is_empty() && reduced_arity.is_empty() { return issues; }
+
+    let code = new_code;
+    // Scan for function calls by name (simple heuristic)
+    for (fname, removed) in removed_params.iter() {
+        let mut pos = 0usize;
+        let mut seen_named = Vec::new();
+        while let Some(idx) = code[pos..].find(fname) {
+            let i = pos + idx;
+            // ensure word boundary and next char is '('
+            if i>0 {
+                let prev = code.as_bytes()[i-1] as char;
+                if prev.is_ascii_alphanumeric() || prev == '_' { pos = i+fname.len(); continue; }
+            }
+            let after = i+fname.len();
+            let tail = &code[after..];
+            let open = tail.find('(');
+            if let Some(op) = open {
+                let mut j = after + op + 1; // position after '('
+                let mut depth = 1i32; let mut end = j;
+                while end < code.len() {
+                    let ch = code.as_bytes()[end] as char;
+                    if ch == '(' { depth += 1; }
+                    else if ch == ')' { depth -= 1; if depth == 0 { break; } }
+                    end += 1;
+                }
+                if depth == 0 && end <= code.len() {
+                    let args_slice = &code[j..end];
+                    let (_argc, named) = analyze_args_slice(args_slice);
+                    for r in removed {
+                        let needle = format!("{}=", r);
+                        if args_slice.contains(&needle) || named.iter().any(|n| n == r) {
+                            seen_named.push(r.clone());
+                        }
+                    }
+                    pos = end + 1;
+                    continue;
+                }
+            }
+            pos = after;
+        }
+        if !seen_named.is_empty() {
+            issues.push(format!("Calls to `{}` still pass removed named params: {}", fname, seen_named.join(", ")));
+        }
+    }
+
+    for (fname, (old_n, new_n)) in reduced_arity.iter() {
+        let mut pos = 0usize; let mut offending = 0usize;
+        while let Some(idx) = code[pos..].find(fname) {
+            let i = pos + idx; if i>0 { let prev = code.as_bytes()[i-1] as char; if prev.is_ascii_alphanumeric() || prev == '_' { pos = i+fname.len(); continue; } }
+            let after = i+fname.len(); let tail = &code[after..]; if let Some(op)=tail.find('('){ let mut j=after+op+1; let mut depth=1i32; let mut end=j; while end<code.len(){ let ch=code.as_bytes()[end] as char; if ch=='(' {depth+=1;} else if ch==')'{depth-=1; if depth==0{break;}} end+=1;} if depth==0 { let args_slice=&code[j..end]; let (argc,_)=analyze_args_slice(args_slice); if argc> *new_n { offending+=1; } pos=end+1; continue; } }
+            pos = after;
+        }
+        if offending>0 { issues.push(format!("Calls to `{}` exceed new arity ({} -> {}): {} occurrences", fname, old_n, new_n, offending)); }
+    }
+
+    issues
+}
+
+fn extract_old_new_contents(hook_input: &HookInput) -> (String, Option<String>, Option<String>) {
+    let file_path = extract_file_path(&hook_input.tool_input);
+    match hook_input.tool_name.as_str() {
+        "Edit" => {
+            let old = hook_input.tool_input.get("old_string").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let new = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()).map(|s| s.to_string());
+            (file_path, old, new)
+        }
+        "MultiEdit" => {
+            if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
+                let mut old = String::new();
+                let mut new = String::new();
+                for e in edits.iter().take(1000) {
+                    if let Some(o) = e.get("old_string").and_then(|v| v.as_str()) { old.push_str(o); old.push('\n'); }
+                    if let Some(n) = e.get("new_string").and_then(|v| v.as_str()) { new.push_str(n); new.push('\n'); }
+                }
+                (file_path, if old.is_empty() { None } else { Some(old) }, if new.is_empty() { None } else { Some(new) })
+            } else {
+                let old = std::fs::read_to_string(&file_path).ok();
+                (file_path, old, None)
+            }
+        }
+        "Write" => {
+            let old = std::fs::read_to_string(&file_path).ok();
+            let new = hook_input.tool_input.get("content").and_then(|v| v.as_str()).map(|s| s.to_string());
+            (file_path, old, new)
+        }
+        _ => (file_path, None, None),
+    }
+}
+
+// -----------------
+// Unit tests (private) for contract heuristics
+// -----------------
+#[cfg(test)]
+mod tests {
+    use super::{contract_weakening_reasons, extract_signatures_regex};
+    use rust_validation_hooks::analysis::ast::SupportedLanguage;
+
+    #[test]
+    fn unit_contract_detects_python_param_reduction() {
+        let old = "def f(a, b):\n    return a + b\n";
+        let new = "def f(a):\n    return a\n";
+        let reasons = contract_weakening_reasons(Some(SupportedLanguage::Python), old, new);
+        assert!(!reasons.is_empty(), "expected contract weakening reasons");
+        assert!(reasons.iter().any(|r| r.contains("parameter count reduced")));
+    }
+
+    #[test]
+    fn unit_contract_preserves_js_same_signature() {
+        let old = "function sum(a, b){ return a + b }\n";
+        let new = "function sum(a, b){ const c = a + b; return c }\n";
+        // сигнатуры одинаковые → пусто
+        let reasons = contract_weakening_reasons(Some(SupportedLanguage::JavaScript), old, new);
+        assert!(reasons.is_empty(), "no weakening expected for same signature");
+        // sanity: разбор сигнатур видит два параметра
+        let sig_old = extract_signatures_regex(Some(SupportedLanguage::JavaScript), old);
+        assert_eq!(sig_old.get("sum").map(|v| v.len()), Some(2));
+    }
+}
+
+fn normalize_code_for_signal(code: &str) -> String {
+    let mut s = String::new();
+    let mut i = 0;
+    let b = code.as_bytes();
+    while i < b.len() {
+        if i + 1 < b.len() && b[i] == b'/' && b[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') { i += 1; }
+            if i + 1 < b.len() { i += 2; }
+            continue;
+        }
+        if i + 1 < b.len() && b[i] == b'/' && b[i + 1] == b'/' {
+            while i < b.len() && b[i] != b'\n' { i += 1; }
+            continue;
+        }
+        if b[i] == b'#' {
+            while i < b.len() && b[i] != b'\n' { i += 1; }
+            continue;
+        }
+        s.push(b[i] as char);
+        i += 1;
+    }
+    s.split_whitespace().collect::<Vec<_>>().join("")
+}
+
+fn detect_return_constant(code: &str) -> bool {
+    let low = code.to_ascii_lowercase();
+    let constants = ["true", "false", "null", "none", "0", "1"]; 
+    if low.contains("return") {
+        for c in &constants {
+            if low.contains(&format!("return{}", c)) || low.contains(&format!("return({})", c)) { return true; }
+        }
+        if low.contains("return\"") || low.contains("return'") { return true; }
+    }
+    if low.contains("=>") && (low.contains("=>0") || low.contains("=>1") || low.contains("=>\"") || low.contains("=>'") ) { return true; }
+    false
+}
+
+fn detect_print_only(code: &str) -> bool {
+    let low = code.to_ascii_lowercase();
+    let prints = ["print(", "console.log(", "debug(", "logger.", "system.out.println("]; 
+    let mut has_print = false;
+    for p in &prints { if low.contains(p) { has_print = true; break; } }
+    if !has_print { return false; }
+    let stripped = low.replace("console.log", "").replace("print", "").replace("logger", "").replace("system.out.println", "");
+    stripped.chars().filter(|c| c.is_alphanumeric()).count() < 6
+}
+
+fn detect_todo_placeholder(code: &str) -> bool {
+    let low = code.to_ascii_lowercase();
+    low.contains("todo") || low.contains("fixme") || low.contains("notimplemented") || low.contains("pass\n")
+}
+
+fn detect_empty_catch_except(code: &str) -> bool {
+    let low = code.to_ascii_lowercase();
+    if low.contains("catch") && low.contains("{") && low.contains("}") {
+        if low.contains("catch(") && (low.contains("catch(e){}") || low.contains("catch(e){\n}\n")) { return true; }
+    }
+    if low.contains("except") && low.contains(":") {
+        if low.contains("except:\n    pass") || low.contains("except:\\n    pass") { return true; }
+    }
+    false
+}
+
+fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
+    let (_path, old_opt, new_opt) = extract_old_new_contents(hook_input);
+    let mut assess = HeuristicAssessment::default();
+    if let (Some(old), Some(new)) = (old_opt.as_ref(), new_opt.as_ref()) {
+        let norm_old = normalize_code_for_signal(old);
+        let norm_new = normalize_code_for_signal(new);
+        if norm_old == norm_new { assess.is_whitespace_or_comments_only = true; }
+    }
+    let combined_new = new_opt.clone().unwrap_or_default();
+    assess.is_return_constant_only = detect_return_constant(&combined_new);
+    assess.is_print_or_log_only = detect_print_only(&combined_new);
+    assess.has_todo_or_placeholder = detect_todo_placeholder(&combined_new);
+    assess.has_empty_catch_or_except = detect_empty_catch_except(&combined_new);
+    // New, minimal file creation (do not block for simple stubs like print("ok"))
+    if old_opt.is_none() && new_opt.is_some() {
+        let norm = normalize_code_for_signal(&combined_new);
+        assess.is_new_file_minimal = combined_new.trim().len() <= 64 || norm.len() <= 32;
+    }
+    let mut parts = Vec::new();
+    if assess.is_whitespace_or_comments_only { parts.push("no-op change (whitespace/comments only)".to_string()); }
+    if assess.is_return_constant_only { parts.push("returns constant only".to_string()); }
+    if assess.is_print_or_log_only { parts.push("print/log only".to_string()); }
+    if assess.has_todo_or_placeholder { parts.push("TODO/placeholder".to_string()); }
+    if assess.has_empty_catch_or_except { parts.push("empty catch/except".to_string()); }
+    if assess.is_new_file_minimal { parts.push("new minimal file".to_string()); }
+    assess.summary = if parts.is_empty() { "no red flags".to_string() } else { parts.join(", ") };
+    assess
+}
 
 // Removed GrokSecurityClient - now using UniversalAIClient from ai_providers module
 
@@ -422,17 +774,101 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
+        // Heuristic assessment for AST-only path
+        let heur = {
+            // Build a minimal HookInput clone to reuse helper
+            assess_change(&hook_input)
+        };
+
+        // If WRITE is a no-op (old == new ignoring whitespace/comments), allow
+        if hook_input.tool_name == "Write" {
+            let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
+            if let (Some(o), Some(n)) = (old_opt, new_opt) {
+                if normalize_code_for_signal(&o) == normalize_code_for_signal(&n) {
+                    // If dangerous patterns present, do not allow silently
+                    let low = n.to_ascii_lowercase();
+                    let has_creds = low.contains("password") || low.contains("secret") || low.contains("api_key") || low.contains("token");
+                    let has_sql = (low.contains("select") && low.contains("where")) || (low.contains("insert") && low.contains("values")) || (low.contains("update") && low.contains("set")) || (low.contains("delete") && low.contains("from"));
+                    if !(has_creds || has_sql) {
+                        let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "allow".to_string(), permission_decision_reason: None } };
+                        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        if heur.has_todo_or_placeholder || heur.has_empty_catch_or_except || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal) {
+            let reason = format!("Anti-cheating: {}", heur.summary);
+            let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)) } };
+            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            return Ok(());
+        }
+
+        // If EDIT is a no-op (old == new ignoring whitespace/comments), soft-deny (converted to deny)
+        if hook_input.tool_name == "Edit" {
+            let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
+            if let (Some(o), Some(n)) = (old_opt, new_opt) {
+                if normalize_code_for_signal(&o) == normalize_code_for_signal(&n) {
+                    let reason = "No-op change (whitespace/comments only)";
+                    let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(reason)) } };
+                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    return Ok(());
+                }
+            }
+        }
+
+        // API contract weakening heuristic (deny in AST-only mode)
+        if hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit" {
+            let (path, old_opt, new_opt) = extract_old_new_contents(&hook_input);
+            if let (Some(old), Some(new)) = (old_opt, new_opt) {
+                let lang = path.split('.').next_back().and_then(SupportedLanguage::from_extension);
+                let reasons = contract_weakening_reasons(lang, &old, &new);
+                if !reasons.is_empty() {
+                    let reason = format!("API contract weakening detected:\n{}", reasons.join("\n"));
+                    let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)) } };
+                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    return Ok(());
+                }
+            }
+        }
+
         // Analyze with AST quality scorer
         let scorer = analysis::ast::quality_scorer::AstQualityScorer::new();
         let score = scorer.analyze(&code, language.unwrap())
             .unwrap_or_else(|_| analysis::ast::quality_scorer::QualityScore { total_score: 1000, functionality_score: 300, reliability_score: 200, maintainability_score: 200, performance_score: 150, security_score: 100, standards_score: 50, concrete_issues: vec![] });
 
-        // Decide: deny on critical security signals
+        // Load runtime config (sensitivity, ignore globs, environment)
+        let cfg = config::load_config();
+
+        // Decide: deny on security signals based on sensitivity and context
         use analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
         let mut deny_reasons: Vec<String> = Vec::new();
         for i in &score.concrete_issues {
-            let critical = matches!(i.category, IssueCategory::HardcodedCredentials | IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal) || i.severity == IssueSeverity::Critical;
-            if critical {
+            // Skip ignored files
+            if config::should_ignore_path(&cfg, &file_path) { continue; }
+
+            // Determine effective severity threshold by sensitivity
+            let min_sev = match cfg.sensitivity { config::Sensitivity::Low => IssueSeverity::Critical, config::Sensitivity::Medium => IssueSeverity::Major, config::Sensitivity::High => IssueSeverity::Minor };
+
+            // In test context, relax creds if allowlisted variables present in code
+            let is_test_ctx = config::is_test_context(&cfg, &file_path);
+            let allowlisted = config::code_contains_allowlisted_vars(&cfg, &code);
+
+            // Decide if issue should trigger deny
+            let mut triggers = false;
+            if i.severity as u8 <= min_sev as u8 { // Severity ordering via discriminant: Critical(0) < Major(1) < Minor(2)
+                triggers = true;
+            }
+            // Always treat certain categories as critical triggers regardless of sensitivity
+            if matches!(i.category, IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal) { triggers = true; }
+
+            // Relax hardcoded creds in test context with allowlisted vars
+            if is_test_ctx && allowlisted && matches!(i.category, IssueCategory::HardcodedCredentials) {
+                triggers = false;
+            }
+
+            if triggers {
                 deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id));
             }
         }
@@ -705,6 +1141,10 @@ async fn perform_validation(
         );
     }
 
+    // Add heuristic assessment to guide the validator
+    let assessment = assess_change(hook_input);
+    prompt = format!("{}\n\nHEURISTIC SUMMARY: {}", prompt, assessment.summary);
+
     // Add context from transcript if available
     if let Some(transcript_path) = &hook_input.transcript_path {
         match read_transcript_summary(transcript_path, 10, 1000) {
@@ -853,6 +1293,53 @@ async fn perform_validation(
 
     // Add language instruction at the end
     prompt = format!("{}\n\nIMPORTANT: Respond in {} language.", prompt, language);
+
+    // Heuristic summary: API contract weakening (adds bias for safer decision)
+    if !file_path.is_empty() && (hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit") {
+        let (path, old_opt, new_opt) = extract_old_new_contents(hook_input);
+        if let (Some(old), Some(new)) = (old_opt, new_opt) {
+            let lang = path.split('.').next_back().and_then(SupportedLanguage::from_extension);
+            let reasons = contract_weakening_reasons(lang, &old, &new);
+            if !reasons.is_empty() {
+                let hs = format!("\n\nHEURISTIC SUMMARY:\nAPI contract weakening suspected:\n- {}\n", reasons.join("\n- "));
+                prompt.push_str(&hs);
+            }
+        }
+    }
+
+    // Early gate: contract weakening under high sensitivity ⇒ deny
+    if let Some(file_path) = hook_input.tool_input.get("file_path").and_then(|v| v.as_str()) {
+        let ext = std::path::Path::new(file_path).extension().and_then(|e| e.to_str());
+        let lang = ext.and_then(SupportedLanguage::from_extension);
+        // Load policy config (sensitivity)
+        let policy_cfg = rust_validation_hooks::config::load_config();
+        if hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit" {
+            let (_p, old_opt, new_opt) = extract_old_new_contents(hook_input);
+            if let (Some(old), Some(new)) = (old_opt, new_opt) {
+                let reasons = contract_weakening_reasons(lang, &old, &new);
+                if !reasons.is_empty() {
+                    let code_new = if !content.is_empty() { content } else { &new };
+                    let low = code_new.to_ascii_lowercase();
+                    let has_creds = low.contains("password") || low.contains("secret") || low.contains("api_key") || low.contains("token");
+                    let has_sql = (low.contains("select") && low.contains("where")) || (low.contains("insert") && low.contains("values")) || (low.contains("update") && low.contains("set")) || (low.contains("delete") && low.contains("from"));
+                    let has_cmd = low.contains("child_process.exec") || low.contains("subprocess.") || low.contains("os.system(");
+                    let sec_risk = has_creds || has_sql || has_cmd;
+                    use rust_validation_hooks::config::Sensitivity;
+                    let call_issues = find_contract_callsite_issues(lang, &old, code_new);
+                    let trigger = matches!(policy_cfg.sensitivity, Sensitivity::High)
+                        || (matches!(policy_cfg.sensitivity, Sensitivity::Medium) && (sec_risk || !call_issues.is_empty()));
+                    if trigger {
+                        let mut msg = String::new();
+                        if sec_risk { msg.push_str("Security-sensitive change combined with API weakening. "); }
+                        msg.push_str("Please preserve API contract (do not remove/rename parameters) or provide a migration strategy.\n");
+                        msg.push_str("Detected issues:\n- "); msg.push_str(&reasons.join("\n- "));
+                        if !call_issues.is_empty() { msg.push_str("\n- "); msg.push_str(&call_issues.join("\n- ")); }
+                        return Ok(SecurityValidation{ decision: "deny".to_string(), reason: msg, security_concerns: Some(vec!["api_contract".to_string()]), risk_level: if sec_risk { "high".to_string() } else { "medium".to_string() }, });
+                    }
+                }
+            }
+        }
+    }
 
     // Initialize universal AI client with configured provider
     let client = UniversalAIClient::new(config.clone()).context("Failed to create AI client")?;

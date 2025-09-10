@@ -65,10 +65,13 @@ fn e2e_posttooluse_ast_only_mode() {
     assert!(ctx.is_string(), "additionalContext should be string");
     let ctx_str = ctx.as_str().unwrap();
 
-    // Should contain deterministic AST score header or issue listing
+    // Should contain structured AST insights sections in AST-only mode
     assert!(
-        ctx_str.contains("Deterministic Score") || ctx_str.contains("Concrete Issues Found"),
-        "additionalContext must include AST insights"
+        ctx_str.contains("=== RISK REPORT ===")
+            || ctx_str.contains("=== CODE HEALTH ===")
+            || ctx_str.contains("=== CHANGE SUMMARY ===")
+            || ctx_str.contains("=== NEXT STEPS ==="),
+        "additionalContext must include structured AST insights"
     );
 
     // Hardcoded creds message should be present for our code
@@ -131,7 +134,16 @@ fn e2e_posttooluse_dry_run_edit_with_prompt_and_diff() {
     let stdout_str = String::from_utf8(output.stdout).expect("utf8 stdout");
     let v: serde_json::Value = serde_json::from_str(&stdout_str).expect("parse json");
     let ctx_str = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx_str.contains("Deterministic Score") || ctx_str.contains("Concrete Issues Found"));
+    assert!(
+        // New structured sections (preferred)
+        ctx_str.contains("=== RISK REPORT ===")
+            || ctx_str.contains("=== CODE HEALTH ===")
+            || ctx_str.contains("=== CHANGE SUMMARY ===")
+            || ctx_str.contains("=== NEXT STEPS ===")
+            // Legacy output (during transition)
+            || ctx_str.contains("Deterministic Score")
+            || ctx_str.contains("Concrete Issues Found")
+    );
 
     // Prompt was written to post-context.txt due to DEBUG_HOOKS
     let prompt_path = dir.join("post-context.txt");
@@ -246,8 +258,16 @@ fn e2e_posttooluse_write_aliases() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    // additionalContext must be a string; may be empty for clean code
-    assert!(ctx.is_empty() || ctx.contains("Deterministic") || ctx.contains("Concrete Issues"));
+    // additionalContext may be empty or contain structured/legacy AST sections
+    assert!(
+        ctx.is_empty()
+            || ctx.contains("=== RISK REPORT ===")
+            || ctx.contains("=== CODE HEALTH ===")
+            || ctx.contains("=== CHANGE SUMMARY ===")
+            || ctx.contains("=== NEXT STEPS ===")
+            || ctx.contains("Deterministic")
+            || ctx.contains("Concrete Issues")
+    );
 }
 
 #[test]
@@ -274,8 +294,16 @@ fn e2e_posttooluse_append_alias() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    // Context may be empty if no issues; ensure it is a string
-    assert!(ctx.is_empty() || ctx.contains("Deterministic") || ctx.contains("Concrete Issues"));
+    // Context may be empty if no issues; accept structured or legacy sections
+    assert!(
+        ctx.is_empty()
+            || ctx.contains("=== RISK REPORT ===")
+            || ctx.contains("=== CODE HEALTH ===")
+            || ctx.contains("=== CHANGE SUMMARY ===")
+            || ctx.contains("=== NEXT STEPS ===")
+            || ctx.contains("Deterministic")
+            || ctx.contains("Concrete Issues")
+    );
 }
 
 #[cfg(windows)]
@@ -479,7 +507,14 @@ fn e2e_posttooluse_path_validation_fallback_to_tool_input() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx.contains("Deterministic Score") || ctx.contains("Concrete Issues"));
+    assert!(
+        ctx.contains("=== RISK REPORT ===")
+            || ctx.contains("=== CODE HEALTH ===")
+            || ctx.contains("=== CHANGE SUMMARY ===")
+            || ctx.contains("=== NEXT STEPS ===")
+            || ctx.contains("Deterministic Score")
+            || ctx.contains("Concrete Issues")
+    );
 }
 
 #[test]
@@ -520,6 +555,56 @@ fn e2e_posttooluse_dry_run_edit_diff_contains_markers() {
 }
 
 #[test]
+fn e2e_posttooluse_ast_snippets_change_context() {
+    // Ensure CHANGE CONTEXT snippets appear when AST_SNIPPETS is enabled
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path();
+
+    // Prepare prompts required by prompt builder
+    let prompts = dir.join("prompts");
+    std::fs::create_dir_all(&prompts).unwrap();
+    std::fs::write(prompts.join("post_edit_validation.txt"), "Validate changes.").unwrap();
+    std::fs::write(prompts.join("output_template.txt"), "TEMPLATE").unwrap();
+
+    // Create file and edited content already applied (post-tool behavior)
+    let file_path = dir.join("snip.py");
+    let before = "def do_auth(user, pwd):\n    print('start')\n    return None\n";
+    let after = "def do_auth(user, pwd):\n    password = 'supersecret'\n    print('changed')\n    return None\n"; // should trigger hardcoded creds near changed lines
+    std::fs::write(&file_path, after).unwrap();
+
+    // HookInput for Edit
+    let hook_input = serde_json::json!({
+        "tool_name": "Edit",
+        "tool_input": {"file_path": file_path.to_string_lossy(), "old_string": before, "new_string": after},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse"
+    });
+
+    // Run binary with AST_SNIPPETS enabled
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .env("POSTTOOL_DRY_RUN", "1")
+        .env("AST_SNIPPETS", "1")
+        .env("AST_DIFF_ONLY", "1")
+        .env("AST_MAX_SNIPPETS", "3")
+        .env("AST_SNIPPETS_MAX_CHARS", "800")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    // Must contain CHANGE CONTEXT and at least one snippet marker
+    assert!(ctx.contains("=== CHANGE CONTEXT ==="));
+    assert!(ctx.contains("| ") || ctx.contains("> ") || ctx.contains("No localized snippets"),
+        "expected context lines with markers or fallback note");
+}
+
+#[test]
 fn e2e_posttooluse_ast_only_max_issues_cap() {
     // Ensure AST_MAX_ISSUES caps issues and prints truncation note
     let temp = tempdir().expect("tempdir");
@@ -550,9 +635,17 @@ fn e2e_posttooluse_ast_only_max_issues_cap() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    let bullets = ctx.matches("• Line ").count();
-    assert_eq!(bullets, 10, "should be capped to 10 issues (min clamp)");
-    assert!(ctx.contains("truncated: showing 10 of 20"));
+    // Count only issues listed in RISK REPORT section
+    let ctx_str = ctx;
+    let start = ctx_str.find("=== RISK REPORT ===").expect("risk report present");
+    let tail = &ctx_str[start + "=== RISK REPORT ===".len()..];
+    let end = tail
+        .find("=== ")
+        .map(|i| &tail[..i])
+        .unwrap_or(tail);
+    let issue_lines = end.lines().filter(|l| l.trim_start().starts_with("- [")).count();
+    assert_eq!(issue_lines, 10, "should be capped to 10 issues (min clamp)");
+    assert!(end.contains("truncated: showing 10 of 20"));
 }
 
 #[test]
@@ -651,7 +744,12 @@ fn e2e_posttooluse_ast_only_percent_encoded_path_fallback() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx.contains("Deterministic Score") || ctx.contains("Concrete Issues"));
+    assert!(
+        ctx.contains("=== RISK REPORT ===")
+            || ctx.contains("=== CODE HEALTH ===")
+            || ctx.contains("=== CHANGE SUMMARY ===")
+            || ctx.contains("=== NEXT STEPS ===")
+    );
 }
 
 #[test]
@@ -717,5 +815,10 @@ fn e2e_posttooluse_ast_only_windows_backslashes_path_fallback() {
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx.contains("Deterministic Score") || ctx.contains("Concrete Issues"));
+    assert!(
+        ctx.contains("=== RISK REPORT ===")
+            || ctx.contains("=== CODE HEALTH ===")
+            || ctx.contains("=== CHANGE SUMMARY ===")
+            || ctx.contains("=== NEXT STEPS ===")
+    );
 }

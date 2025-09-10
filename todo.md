@@ -93,3 +93,17 @@ ID Z — База (готово)
 - Итерация 5: G1 — краткость и полезность сообщений
 - Итерация 6: I1–I3 — наблюдаемость и перф‑гейт
 - Итерация 7: J1, K1–K2 — покрытие 85%+, docs/примеры
+
+## Журнал выполнения
+- 2025-09-10: Проверен интернет‑доступ и базовый веб‑поиск.
+  - HEAD https://example.com → 200 OK.
+  - GitHub API: поиск репозиториев по запросу "ValidationCodeHook" → 0 результатов.
+  - DuckDuckGo Instant Answer: запрос "OpenAI" → получено описание и ссылка (сеть/JSON работают).
+  - Статусы Roadmap без изменений.
+- 2025-09-10: Повторная проверка интернет‑доступа (CLI + web.run).
+  - curl -I https://example.com → 200 OK (Alt-Svc: h3; Date: Wed, 10 Sep 2025 13:11:16 GMT).
+  - curl -I https://www.wikipedia.org → 200 OK (cache-control, HSTS включены).
+  - curl https://api.ipify.org?format=json → {"ip":"5.44.47.2"} (внешний IP получен).
+  - web.run: найден и открыт RFC 9114 (HTTP/3) на rfc-editor.org и datatracker.ietf.org; ссылки доступны.
+  - Вывод: Интернет‑доступ рабочий; DNS+TLS+HTTP/2/3 заголовки корректно получены.
+  - Добавлен e2e‑скрипт `scripts/net_check.ps1` и тест `tests/e2e/test_net_check.ps1`; локальный прогон: PASS.
