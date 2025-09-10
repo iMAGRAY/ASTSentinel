@@ -152,3 +152,11 @@ ID Z — База (готово)
 
 
 
+- [+] K4. Project Context Sources — README раздел (зависимости, дубликаты) + плейбук дополнен
+  Критерий: README_HOOKS раздел обновлён; docs/PLAYBOOK_AST_FLAGS.md содержит инструкцию по проверке deps/duplicates
+
+L — Deps & Duplicates hardening
+- [+] L1. UserPromptSubmit deps e2e — счётчики из package.json/requirements.txt/Cargo.toml
+  Критерий: `tests/e2e_userpromptsubmit_deps.rs` проходит
+- [+] L2. DuplicateDetector unit — обнаружение ExactDuplicate и VersionConflict; формат отчёта
+  Критерий: `tests/unit_duplicate_detector.rs` проходит (наличие групп и строки «КРИТИЧНО»)

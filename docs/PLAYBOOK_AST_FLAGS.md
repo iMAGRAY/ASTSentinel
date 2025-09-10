@@ -66,3 +66,14 @@ score/python     3      …    …    …    …
 - Use `ADDITIONAL_CONTEXT_LIMIT_CHARS` to cap payload size (UTF‑8 safe truncation).
 - All sections are deterministic (ordering, sorting, caps) for stable snapshots.
 - Windows: in PowerShell use `$env:POSTTOOL_AST_ONLY='1'` for per‑process flags.
+
+## 5) Dependencies & Duplicates in Context
+
+- UserPromptSubmit prints a compact summary with dependency counts:
+```
+$env:USERPROMPT_CONTEXT_LIMIT='4000'
+userpromptsubmit < hook.json
+# Look for: "Dependencies: total N, outdated M"
+```
+- PostToolUse includes dependency analysis and duplicate report in the AI prompt context (not in additionalContext) to keep it compact.
+  - Duplicate report is marked as critical and suggests consolidation/deletion of backup/temp files.
