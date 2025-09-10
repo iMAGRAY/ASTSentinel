@@ -526,10 +526,8 @@ impl MultiLanguageAnalyzer {
                                 processed_count += 1;
                             }
 
-                            // If still no progress and channels are disconnected, exit
-                            if results_rx.try_recv().is_err() && errors_rx.try_recv().is_err() {
-                                break;
-                            }
+                            // If still no progress and both channels are disconnected, exit
+                            // keep waiting; senders may still be active
                         }
                     }
                 }
@@ -1209,3 +1207,4 @@ mod tests {
         assert_eq!(metrics1.function_count, metrics2.function_count);
     }
 }
+

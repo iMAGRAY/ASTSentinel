@@ -1782,6 +1782,20 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
     }
 }
 
+fn soft_budget_note(content: &str, file_path: &str) -> Option<String> {
+    let bytes = content.len();
+    let lines = content.lines().count();
+    let max_bytes: usize = std::env::var("AST_SOFT_BUDGET_BYTES").ok().and_then(|v| v.parse().ok()).unwrap_or(500_000).clamp(50_000, 5_000_000);
+    let max_lines: usize = std::env::var("AST_SOFT_BUDGET_LINES").ok().and_then(|v| v.parse().ok()).unwrap_or(10_000).clamp(1_000, 200_000);
+    if bytes > max_bytes || lines > max_lines {
+        return Some(format!(
+            "[ANALYSIS] Skipped AST analysis due to soft budget ({} bytes, {} lines) for {} (limits: {} bytes, {} lines)",
+            bytes, lines, file_path, max_bytes, max_lines
+        ));
+    }
+    None
+}
+
 /// Format AST analysis results for AI context (without scores to avoid duplication)
 fn format_ast_results(score: &QualityScore) -> String {
     let mut result = String::with_capacity(2000);
@@ -2409,6 +2423,7 @@ async fn main() -> Result<()> {
         let display_path = hook_input.tool_input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
         let change = build_change_summary(&hook_input, display_path).await;
         if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
+        if let Some(note) = soft_budget_note(&content, display_path) { final_response.push_str(&note); final_response.push('\n'); }
         if let Some(ast_score) = &ast_analysis {
             let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, display_path).await {
                 let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
@@ -2707,6 +2722,7 @@ async fn main() -> Result<()> {
             // Change Summary
             let change = build_change_summary(&hook_input, &display_path).await;
             if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
+            if let Some(note) = soft_budget_note(&content, &display_path) { final_response.push_str(&note); final_response.push('\n'); }
             // Risk + Health + Change Context + API Contract + Next Steps
             if let Some(ast_score) = &ast_analysis {
                 let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {

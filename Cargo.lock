@@ -1460,6 +1460,7 @@ dependencies = [
  "libc",
  "lru",
  "memmap2",
+ "once_cell",
  "quick-xml",
  "quote",
  "rand",

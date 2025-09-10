@@ -140,3 +140,9 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
   - Лейблы: parse/<lang> (Tree‑sitter парсинг + метрики), score/<lang> (AST scoring).
   - Используйте для отладки и контроля производительности в оффлайн‑прогоне.
 
+
+### Soft Time Budget (I2)
+- AST_SOFT_BUDGET_BYTES (default: 500000, clamp 50000..5000000) — мягкий лимит по размеру файла; при превышении анализ пропускается с заметкой.
+- AST_SOFT_BUDGET_LINES (default: 10000, clamp 1000..200000) — мягкий лимит по числу строк.
+- При срабатывании лимита в PostToolUse добавляется строка вида: [ANALYSIS] Skipped AST analysis due to soft budget …. Анализ инструментов и дифф не блокируется.
+

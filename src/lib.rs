@@ -60,6 +60,9 @@ pub mod validation_constants;
 /// Runtime configuration (sensitivity, ignore globs, environment)
 pub mod config;
 
+/// Short, action-oriented messages glossary
+pub mod messages;
+
 // Re-export commonly used types for convenience
 pub use analysis::ast::{ComplexityVisitor, MultiLanguageAnalyzer, SupportedLanguage};
 pub use analysis::{

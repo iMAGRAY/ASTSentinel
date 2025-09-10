@@ -4,6 +4,7 @@ pub mod dependencies;
 pub mod duplicate_detector;
 pub mod metrics;
 pub mod project;
+pub mod timings;
 
 // Re-export commonly used types
 pub use dependencies::{analyze_project_dependencies, ProjectDependencies, DependencyInfo, PackageManager};
