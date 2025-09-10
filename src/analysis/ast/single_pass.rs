@@ -374,7 +374,8 @@ fn count_param_nodes(lang: SupportedLanguage, list: &tree_sitter::Node) -> u32 {
     let mut c = list.walk();
     if c.goto_first_child() {
         loop {
-            let k = c.node().kind();
+            let node = c.node();
+            let k = node.kind();
             let is_param = match lang {
                 SupportedLanguage::Python => matches!(k, "identifier" | "typed_parameter" | "default_parameter" | "list_splat_pattern"),
                 SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => matches!(
@@ -389,7 +390,28 @@ fn count_param_nodes(lang: SupportedLanguage, list: &tree_sitter::Node) -> u32 {
                 SupportedLanguage::Go => matches!(k, "parameter_declaration" | "variadic_parameter_declaration"),
                 _ => false,
             };
-            if is_param { cnt += 1; }
+            if is_param {
+                // TS/JS: пропускаем специальный параметр 'this' (не влияет на реальную арность)
+                if matches!(lang, SupportedLanguage::TypeScript | SupportedLanguage::JavaScript) {
+                    let mut w = node.walk();
+                    let mut has_this = false;
+                    if w.goto_first_child() {
+                        loop {
+                            let ck = w.node().kind();
+                            if ck == "this" || ck == "this_type" || ck == "this_parameter" {
+                                has_this = true;
+                                break;
+                            }
+                            if !w.goto_next_sibling() { break; }
+                        }
+                    }
+                    if has_this {
+                        if !c.goto_next_sibling() { break; }
+                        continue;
+                    }
+                }
+                cnt += 1;
+            }
             if !c.goto_next_sibling() { break; }
         }
     }
