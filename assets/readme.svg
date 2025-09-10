@@ -1,144 +1,82 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="2400" viewBox="0 0 1200 2400" role="img" aria-label="AST Sentinel – Project Overview">
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#0B1220"/>
-      <stop offset="100%" stop-color="#0F172A"/>
-    </linearGradient>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#5B8CFF"/>
-      <stop offset="100%" stop-color="#6EE7B7"/>
-    </linearGradient>
-    <style><![CDATA[
-      .title{font:700 56px Segoe UI,Roboto,Helvetica,Arial,sans-serif;fill:url(#grad)}
-      .subtitle{font:20px Consolas,Menlo,monospace;fill:#98A2B3}
-      .h2{font:600 28px Segoe UI,Roboto,Helvetica,Arial,sans-serif;fill:#E5E7EB}
-      .text{font:16px Segoe UI,Roboto,Helvetica,Arial,sans-serif;fill:#D1D8E5}
-      .mono{font:15px Consolas,Menlo,monospace;fill:#D1D8E5}
-      .badge{font:13px Segoe UI,Roboto,Helvetica,Arial,sans-serif;fill:#0B1220}
-      .muted{fill:#98A2B3}
-      .panel{fill:#0D1324;opacity:0.92}
-      .rule{stroke:#1F2937;stroke-width:1}
-      .chip{fill:#0F172A;stroke:#25304a;stroke-width:1}
-    ]]></style>
-    <filter id="glow"><feGaussianBlur stdDeviation="3"/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-  </defs>
-
-  <!-- Background -->
-  <rect width="1200" height="2400" fill="url(#bg)"/>
-
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1700" viewBox="0 0 1200 1700" role="img" aria-label="AST Sentinel – Project Overview">
+  <title>AST Sentinel — Project Overview</title>
+  <rect width="1200" height="1700" fill="#0F172A"/>
   <!-- HERO -->
-  <g transform="translate(0,0)">
-    <rect x="24" y="24" width="1152" height="220" rx="22" fill="#0D1324"/>
-    <g opacity="0.25" fill="none" stroke="url(#grad)">
-      <path d="M40,200 C 240,120 440,260 640,180 840,100 1040,240 1180,160" stroke-width="3">
-        <animate attributeName="d" dur="12s" repeatCount="indefinite"
-          values="M40,200 C 240,120 440,260 640,180 840,100 1040,240 1180,160;
-                  M40,160 C 240,220 440,140 640,220 840,160 1040,120 1180,200;
-                  M40,200 C 240,120 440,260 640,180 840,100 1040,240 1180,160"/>
-      </path>
-    </g>
-    <text x="600" y="115" text-anchor="middle" class="title" filter="url(#glow)">AST Sentinel</text>
-    <text x="600" y="160" text-anchor="middle" class="subtitle">Deterministic AST • Diff‑Aware • Soft Budgets • Perf Gate</text>
-  </g>
-
-  <!-- BADGES -->
-  <g transform="translate(24,260)">
-    <rect x="0" y="0" width="180" height="28" rx="8" fill="#0EA5E9"/><text x="90" y="19" text-anchor="middle" class="badge">CI</text>
-    <rect x="196" y="0" width="220" height="28" rx="8" fill="#22C55E"/><text x="306" y="19" text-anchor="middle" class="badge">AST: deterministic</text>
-    <rect x="424" y="0" width="190" height="28" rx="8" fill="#F59E0B"/><text x="519" y="19" text-anchor="middle" class="badge">Perf‑gated</text>
-    <rect x="620" y="0" width="200" height="28" rx="8" fill="#6366F1"/><text x="720" y="19" text-anchor="middle" class="badge">Tests: 100%</text>
-  </g>
+  <rect x="24" y="24" width="1152" height="160" rx="18" fill="#0D1324"/>
+  <text x="600" y="100" text-anchor="middle" font-size="54" font-family="Segoe UI,Arial" font-weight="700" fill="#8bb7ff">AST Sentinel</text>
+  <text x="600" y="136" text-anchor="middle" font-size="18" font-family="Consolas,Menlo,monospace" fill="#9AA4B2">Deterministic AST • Diff‑Aware • Soft Budgets • Perf Gate</text>
 
   <!-- FEATURES -->
-  <g transform="translate(24,320)">
-    <text class="h2" x="0" y="0">Features</text>
-    <rect class="panel" x="0" y="16" width="1152" height="230" rx="12"/>
-    <g transform="translate(18,48)">
-      <circle cx="8" cy="-6" r="4" fill="#5B8CFF"/>
-      <text x="24" y="0" class="text">Security validation: SQL / command / path injection, hardcoded credentials, unsafe patterns.</text>
-      <circle cx="8" cy="26" r="4" fill="#6EE7B7"/>
-      <text x="24" y="32" class="text">Deterministic AST: stable sorting and caps; diff‑aware entity snippets for precise context.</text>
-      <circle cx="8" cy="58" r="4" fill="#5B8CFF"/>
-      <text x="24" y="64" class="text">Change intelligence: unified diff, entity‑based snippets, API contract checks.</text>
-      <circle cx="8" cy="90" r="4" fill="#6EE7B7"/>
-      <text x="24" y="96" class="text">Performance & observability: soft budgets (size/lines), timings (p50/p95/p99/avg), perf‑gate.</text>
-      <circle cx="8" cy="122" r="4" fill="#5B8CFF"/>
-      <text x="24" y="128" class="text">Duplicates & deps: capped reports, per‑type summaries, top directories; npm/pip/cargo/poetry.</text>
-      <circle cx="8" cy="154" r="4" fill="#6EE7B7"/>
-      <text x="24" y="160" class="text">Providers: OpenAI / Anthropic / xAI / Google — optional for online mode.</text>
-    </g>
+  <text x="24" y="230" font-size="28" font-weight="600" font-family="Segoe UI,Arial" fill="#E5E7EB">Features</text>
+  <rect x="24" y="245" width="1152" height="200" rx="12" fill="#0D1324"/>
+  <g font-family="Segoe UI,Arial" font-size="16" fill="#D1D8E5">
+    <rect x="40" y="270" width="6" height="6" fill="#5B8CFF"/>
+    <text x="56" y="280">Security validation: SQL / command / path injection, hardcoded credentials, unsafe patterns.</text>
+    <rect x="40" y="300" width="6" height="6" fill="#6EE7B7"/>
+    <text x="56" y="310">Deterministic AST: stable sorting & caps; diff‑aware entity snippets for precise context.</text>
+    <rect x="40" y="330" width="6" height="6" fill="#5B8CFF"/>
+    <text x="56" y="340">Change intelligence: unified diff, entity‑based snippets, API contract checks.</text>
+    <rect x="40" y="360" width="6" height="6" fill="#6EE7B7"/>
+    <text x="56" y="370">Performance & observability: soft budgets, timings (p50/p95/p99/avg), perf‑gate in CI.</text>
   </g>
 
   <!-- QUICK START -->
-  <g transform="translate(24,580)">
-    <text class="h2" x="0" y="0">Quick Start</text>
-    <rect class="panel" x="0" y="16" width="1152" height="310" rx="12"/>
-    <g transform="translate(18,50)">
-      <text class="text" x="0" y="0">1) Clone & Build</text>
-      <rect class="chip" x="0" y="12" width="540" height="94" rx="8"/>
-      <text class="mono" x="14" y="34">git clone https://github.com/yourusername/ast-sentinel.git</text>
-      <text class="mono" x="14" y="56">cd ast-sentinel</text>
-      <text class="mono" x="14" y="78">cargo build --release</text>
+  <text x="24" y="480" font-size="28" font-weight="600" font-family="Segoe UI,Arial" fill="#E5E7EB">Quick Start</text>
+  <rect x="24" y="495" width="1152" height="280" rx="12" fill="#0D1324"/>
+  <g font-family="Consolas,Menlo,monospace" font-size="15" fill="#D1D8E5">
+    <text x="40" y="530">1) Clone & Build</text>
+    <rect x="40" y="542" width="520" height="90" rx="8" fill="#0F172A" stroke="#23324d"/>
+    <text x="54" y="568">git clone https://github.com/yourusername/ast-sentinel.git</text>
+    <text x="54" y="590">cd ast-sentinel</text>
+    <text x="54" y="612">cargo build --release</text>
 
-      <text class="text" x="0" y="124">2) Configure API keys (online only)</text>
-      <rect class="chip" x="0" y="136" width="540" height="94" rx="8"/>
-      <text class="mono" x="14" y="158">cp hooks/.env.example hooks/.env</text>
-      <text class="mono" x="14" y="180"># set provider keys (OpenAI/xAI/Anthropic/Google)</text>
+    <text x="40" y="660" font-family="Segoe UI,Arial" font-size="16">2) Configure API keys (online only)</text>
+    <rect x="40" y="674" width="520" height="80" rx="8" fill="#0F172A" stroke="#23324d"/>
+    <text x="54" y="700">cp hooks/.env.example hooks/.env</text>
+    <text x="54" y="722"># set provider keys (OpenAI/xAI/Anthropic/Google)</text>
 
-      <text class="text" x="580" y="0">Install Hooks</text>
-      <rect class="chip" x="580" y="12" width="560" height="94" rx="8"/>
-      <text class="mono" x="594" y="34">cp target/release/pretooluse(.exe) hooks/</text>
-      <text class="mono" x="594" y="56">cp target/release/posttooluse(.exe) hooks/</text>
+    <text x="600" y="530" font-family="Segoe UI,Arial" font-size="16">Install Hooks</text>
+    <rect x="600" y="542" width="560" height="90" rx="8" fill="#0F172A" stroke="#23324d"/>
+    <text x="614" y="568">cp target/release/pretooluse(.exe) hooks/</text>
+    <text x="614" y="590">cp target/release/posttooluse(.exe) hooks/</text>
 
-      <text class="text" x="580" y="124">Offline modes</text>
-      <rect class="chip" x="580" y="136" width="560" height="94" rx="8"/>
-      <text class="mono" x="594" y="158">POSTTOOL_AST_ONLY=1  # structured context only</text>
-      <text class="mono" x="594" y="180">POSTTOOL_DRY_RUN=1  # build prompt/ctx, no network</text>
-    </g>
+    <text x="600" y="660" font-family="Segoe UI,Arial" font-size="16">Offline modes</text>
+    <rect x="600" y="674" width="560" height="80" rx="8" fill="#0F172A" stroke="#23324d"/>
+    <text x="614" y="700">POSTTOOL_AST_ONLY=1  # structured context only</text>
+    <text x="614" y="722">POSTTOOL_DRY_RUN=1  # build prompt/ctx, no network</text>
   </g>
 
-  <!-- CONFIG/LINKS -->
-  <g transform="translate(24,930)">
-    <text class="h2" x="0" y="0">Configuration & Docs</text>
-    <rect class="panel" x="0" y="16" width="1152" height="120" rx="12"/>
-    <text class="text" x="18" y="52">Full flag reference, sections/flags mapping, and Windows quick start → README_HOOKS.md</text>
-    <text class="text" x="18" y="82">Architecture → docs/ARCHITECTURE.md • Project Structure → docs/PROJECT_STRUCTURE.md • Testing → docs/TESTING.md</text>
-  </g>
+  <!-- CONFIG & DOCS -->
+  <text x="24" y="820" font-size="28" font-weight="600" font-family="Segoe UI,Arial" fill="#E5E7EB">Configuration & Docs</text>
+  <rect x="24" y="835" width="1152" height="110" rx="12" fill="#0D1324"/>
+  <text x="40" y="872" font-family="Segoe UI,Arial" font-size="16" fill="#D1D8E5">Full flag reference & sections mapping → README_HOOKS.md</text>
+  <text x="40" y="898" font-family="Segoe UI,Arial" font-size="16" fill="#D1D8E5">Architecture → docs/ARCHITECTURE.md • Project Structure → docs/PROJECT_STRUCTURE.md • Testing → docs/TESTING.md</text>
 
   <!-- ARCHITECTURE TREE -->
-  <g transform="translate(24,1088)">
-    <text class="h2" x="0" y="0">Architecture</text>
-    <rect class="panel" x="0" y="16" width="1152" height="300" rx="12"/>
-    <g transform="translate(18,52)">
-      <text class="mono" x="0" y="0">ast-sentinel/</text>
-      <text class="mono" x="0" y="24">├── src/</text>
-      <text class="mono" x="0" y="48">│   ├── bin/ (pretooluse, posttooluse, userpromptsubmit)</text>
-      <text class="mono" x="0" y="72">│   ├── analysis/ (ast, metrics, duplicates, deps, project)</text>
-      <text class="mono" x="0" y="96">│   └── validation/ (diff formatter)</text>
-      <text class="mono" x="0" y="120">├── tests/ (e2e + unit)</text>
-      <text class="mono" x="0" y="144">├── .github/workflows/ (ci.yml, release.yml)</text>
-      <text class="mono" x="0" y="168">└── docs/ (README_HOOKS.md, ARCHITECTURE.md, PROJECT_STRUCTURE.md, TESTING.md)</text>
-    </g>
+  <text x="24" y="980" font-size="28" font-weight="600" font-family="Segoe UI,Arial" fill="#E5E7EB">Architecture</text>
+  <rect x="24" y="995" width="1152" height="240" rx="12" fill="#0D1324"/>
+  <g font-family="Consolas,Menlo,monospace" font-size="15" fill="#D1D8E5">
+    <text x="40" y="1025">ast-sentinel/</text>
+    <text x="40" y="1047">├── src/</text>
+    <text x="40" y="1069">│   ├── bin/ (pretooluse, posttooluse, userpromptsubmit)</text>
+    <text x="40" y="1091">│   ├── analysis/ (ast, metrics, duplicates, deps, project)</text>
+    <text x="40" y="1113">│   └── validation/ (diff formatter)</text>
+    <text x="40" y="1135">├── tests/ (e2e + unit)</text>
+    <text x="40" y="1157">├── .github/workflows/ (ci.yml, release.yml)</text>
+    <text x="40" y="1179">└── docs/ (README_HOOKS.md, ARCHITECTURE.md, PROJECT_STRUCTURE.md, TESTING.md)</text>
   </g>
 
   <!-- RELEASE PROCESS -->
-  <g transform="translate(24,1420)">
-    <text class="h2" x="0" y="0">Release Process</text>
-    <rect class="panel" x="0" y="16" width="1152" height="170" rx="12"/>
-    <g transform="translate(18,50)">
-      <text class="text" x="0" y="0">Tags → Releases (CI):</text>
-      <rect class="chip" x="0" y="12" width="570" height="94" rx="8"/>
-      <text class="mono" x="14" y="34"># Update Cargo.toml version, then:</text>
-      <text class="mono" x="14" y="56">git tag v0.2.0</text>
-      <text class="mono" x="14" y="78">git push origin v0.2.0</text>
-      <text class="muted" x="600" y="34">Artifacts: windows‑x86_64.zip / linux‑x86_64.tar.gz + SHA256SUMS</text>
-    </g>
+  <text x="24" y="1260" font-size="28" font-weight="600" font-family="Segoe UI,Arial" fill="#E5E7EB">Release Process</text>
+  <rect x="24" y="1275" width="1152" height="150" rx="12" fill="#0D1324"/>
+  <g font-family="Consolas,Menlo,monospace" font-size="15" fill="#D1D8E5">
+    <text x="40" y="1305"># Update Cargo.toml version, then:</text>
+    <text x="40" y="1327">git tag v0.2.0</text>
+    <text x="40" y="1349">git push origin v0.2.0</text>
+    <text x="600" y="1332" font-family="Segoe UI,Arial" fill="#9AA4B2">Artifacts: windows‑x86_64.zip / linux‑x86_64.tar.gz + SHA256SUMS</text>
   </g>
 
   <!-- FOOTER -->
-  <g transform="translate(24,1620)">
-    <line x1="0" y1="0" x2="1152" y2="0" class="rule"/>
-    <text class="mono muted" x="0" y="28">AST Sentinel — deterministic validation hooks for Claude Code • © MIT</text>
-  </g>
+  <line x1="24" y1="1450" x2="1176" y2="1450" stroke="#1F2937" stroke-width="1"/>
+  <text x="24" y="1476" font-family="Consolas,Menlo,monospace" font-size="14" fill="#9AA4B2">AST Sentinel — deterministic validation hooks for Claude Code • © MIT</text>
 </svg>
-
