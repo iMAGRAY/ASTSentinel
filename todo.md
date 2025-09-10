@@ -33,7 +33,7 @@ ID D — PostToolUse: AST Аналитика 2.0 (diff‑aware, структур
   Критерий: unit‑тест детерминизма/капов; e2e — context ≤ лимита (ГОТОВО).
 
 ID E — UserPromptSubmit: компактный AST‑контекст
-- [-] E1. Секции «Project Summary» + «Risk/Health snapshot»
+- [+] E1. Секции «Project Summary» + «Risk/Health snapshot»
   Критерий: snapshot‑тест формата; размер ≤ лимита.
 
 ID F — Языковые правила (точность)
@@ -109,3 +109,4 @@ ID Z — База (готово)
   - Добавлен e2e‑скрипт `scripts/net_check.ps1` и тест `tests/e2e/test_net_check.ps1`; локальный прогон: PASS.
   - Реализованы Contract‑check unit+e2e: `tests/e2e_pretooluse_contract.rs`; deny при уменьшении арности (Python), allow при сохранении сигнатуры (JS). Запуск: `cargo test --bin pretooluse`.
   - D2: добавлены unit‑тесты сущностных срезов и фильтра по диффу в `src/bin/posttooluse.rs` (unit_*), а также e2e `tests/e2e_posttooluse_entity_snippets.rs`. Документирован `AST_ENTITY_SNIPPETS`. Все тесты: PASS.
+  - E1: реализован компактный контекст для UserPromptSubmit (Project Summary + Risk/Health snapshot) с лимитом (`USERPROMPT_CONTEXT_LIMIT`, по умолчанию 4000). Добавлен юнит‑тест `tests/unit_userpromptsubmit_snapshot.rs`. Все тесты: PASS.
