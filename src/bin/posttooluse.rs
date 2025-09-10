@@ -835,9 +835,23 @@ fn build_next_steps(score: &QualityScore) -> String {
     if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::SqlInjection)) {
         s.push_str("- Use parameterized queries; avoid concatenating SQL with inputs.\n");
     }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::CommandInjection)) {
+        s.push_str("- Avoid shell concatenation; use exec APIs with args arrays and validation.\n");
+    }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::PathTraversal)) {
+        s.push_str("- Normalize and validate paths; restrict to allowed roots.\n");
+    }
     if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)) { s.push_str("- Reduce function parameters (>5). Consider grouping.\n"); }
     if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)) { s.push_str("- Flatten deep nesting (>4). Extract helpers/early returns.\n"); }
     if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HighComplexity)) { s.push_str("- Reduce cyclomatic complexity. Split large functions.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::LongLine)) { s.push_str("- Wrap lines >120 chars; split expressions/format strings; adjust formatter width if needed.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)) { s.push_str("- Remove dead/unreachable code after return/raise/break; keep control flow linear.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnusedImports)) { s.push_str("- Remove unused imports to reduce noise and speed up builds.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnusedVariables)) { s.push_str("- Remove or underscore unused variables to clarify intent.\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::NamingConvention)) { s.push_str("- Align names with project conventions (snake_case for Python, camelCase for JS/TS).\n"); }
+    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::MissingDocumentation)) { s.push_str("- Add short docstrings/comments for public APIs (what, params, returns).\n"); }
+    // Always recommend tests for changed areas
+    s.push_str("- Add/Update unit tests covering changed functions and edge cases.\n");
     if s.trim_end() == "=== NEXT STEPS ===" { s.push_str("- Looks good. Proceed with implementation and tests.\n"); }
     s
 }
@@ -1013,7 +1027,7 @@ async fn format_analysis_prompt(
     .await
 }
 
-// Tests live in the larger tests module further below
+    // Tests live in the larger tests module further below
 
 /// Format the analysis prompt with instructions, project context, conversation, and AST analysis
 async fn format_analysis_prompt_with_ast(
@@ -3225,6 +3239,43 @@ def f3():\n  return 3\n";
         let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 2, 10_000);
         let headers = out.lines().filter(|l| l.starts_with("- [")).count();
         assert_eq!(headers, 2);
+    }
+
+    #[test]
+    fn unit_next_steps_recommendations_cover_common_categories() {
+        use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueCategory, IssueSeverity, QualityScore};
+        let mut score = QualityScore {
+            total_score: 900,
+            functionality_score: 300,
+            reliability_score: 200,
+            maintainability_score: 200,
+            performance_score: 100,
+            security_score: 50,
+            standards_score: 50,
+            concrete_issues: Vec::new(),
+        };
+        let mut push = |cat: IssueCategory| {
+            score.concrete_issues.push(ConcreteIssue {
+                severity: IssueSeverity::Major,
+                category: cat,
+                message: String::new(),
+                file: String::new(),
+                line: 1,
+                column: 1,
+                rule_id: "TST".into(),
+                points_deducted: 0,
+            });
+        };
+        push(IssueCategory::UnreachableCode);
+        push(IssueCategory::LongLine);
+        push(IssueCategory::UnusedImports);
+        push(IssueCategory::MissingDocumentation);
+        let steps = build_next_steps(&score);
+        assert!(steps.contains("Unreachable") || steps.contains("dead/unreachable"));
+        assert!(steps.contains("Wrap lines") || steps.contains(">120"));
+        assert!(steps.contains("unused imports"));
+        assert!(steps.contains("docstrings") || steps.contains("public APIs"));
+        assert!(steps.contains("Add/Update unit tests"));
     }
 
     #[tokio::test]
