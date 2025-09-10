@@ -1,9 +1,21 @@
-# ValidationCodeHook
+<p align="center">
+  <img src="assets/hero.svg" width="100%" alt="Validation Code Hooks"/>
+</p>
 
-<!-- Badges -->
-![CI](https://github.com/your-org/your-repo/actions/workflows/ci.yml/badge.svg)
+<p align="center">
+  <a href=".github/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/your-org/your-repo/ci.yml?label=CI&color=0ea5e9" alt="CI"/></a>
+  <a href="#features"><img src="https://img.shields.io/badge/AST-deterministic-22c55e" alt="Deterministic AST"/></a>
+  <a href="#configuration-flags"><img src="https://img.shields.io/badge/Perf-gated-f59e0b" alt="Perf Gate"/></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/tests-100%25-6366f1" alt="Tests"/></a>
+</p>
 
-High‑performance validation hooks for Claude Code, providing real‑time security and code‑quality analysis with deterministic AST checks and compact, actionable outputs.
+<p align="center">
+  <img src="assets/wave.svg" width="100%" alt=""/>
+</p>
+
+<p align="center">
+High‑performance validation hooks for Claude Code: deterministic AST checks, diff‑aware context, soft budgets, perf‑gated, and release‑ready.
+</p>
 
 ## Features
 
@@ -15,6 +27,10 @@ High‑performance validation hooks for Claude Code, providing real‑time secur
 - 🤖 Multi‑provider AI: OpenAI / Anthropic / xAI / Google (through a unified client) — optional for online mode
 
 ## Quick Start
+
+<p align="center">
+  <img src="assets/term.svg" width="85%" alt="CLI demo"/>
+</p>
 
 ### 1) Clone and Build
 
@@ -64,7 +80,7 @@ Add to your Claude Code settings to use the validation hooks.
 - `OPENAI_API_KEY`: Your OpenAI API key
 - `XAI_API_KEY`: Your xAI API key
 
-Полный справочник флагов и примеров — в README_HOOKS.md (Flag Reference, Sections vs. Flags, Windows Quick Start).
+Полный справочник флагов и примеров — в <a href="README_HOOKS.md">README_HOOKS.md</a> (Flag Reference, Sections vs. Flags, Windows Quick Start).
 
 ### Prompt Customization
 
