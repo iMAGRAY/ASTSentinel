@@ -1,2 +1,0 @@
-password = 'supersecret'
-print('ok')

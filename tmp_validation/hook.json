@@ -1,1 +1,0 @@
-{"tool_name":"Write","tool_input":{"file_path":"tmp_validation/sample.py", "content":""},"cwd":"tmp_validation","hook_event_name":"PostToolUse"}
