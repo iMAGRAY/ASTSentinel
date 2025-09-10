@@ -52,6 +52,7 @@ Edit `.env` file to configure:
   - По умолчанию включено во всех режимах; выключить: `AST_SNIPPETS=0`.
   - `AST_MAX_SNIPPETS` (default: `3`, range `1..50`) — максимум сниппетов.
   - `AST_SNIPPETS_MAX_CHARS` (default: `1500`, range `200..20000`) — предел символов секции.
+  - `AST_ENTITY_SNIPPETS` (default: `1`) — включить сущностные срезы (функция/метод/класс) вместо «плоских» окон по строкам. Поддерживаются Python/JS/TS; при невозможности выделить сущность автоматически выполняется fallback к `CHANGE CONTEXT` на основе строк.
 
 ### Non‑modifying tools
 - Инструменты, которые не изменяют код (`ReadFile`, `Search`, etc.), проходят транзитом: `additionalContext` будет пустым.

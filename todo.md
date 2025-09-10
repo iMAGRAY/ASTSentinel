@@ -27,7 +27,7 @@ ID C — PreToolUse: безопасность без «перебора»
 ID D — PostToolUse: AST Аналитика 2.0 (diff‑aware, структурировано)
 - [+] D1. Секции additionalContext: Change Summary, Risk Report (Critical/Major), Code Health, API Contract, Next Steps (готово в AST‑only и обычном потоке)
   Критерий: golden‑snapshot (структура/порядок); cap по символам.
-- [-] D2. Diff‑aware AST Slice: только затронутые функции/файлы + микроконтекст
+- [+] D2. Diff‑aware AST Slice: только затронутые функции/файлы + микроконтекст
   Критерий: совпадение с diff; нет постороннего шума. (БАЗОВЫЕ сниппеты и фильтр по изменённым строкам — ГОТОВО; сущностные срезы — реализованы для Python/JS/TS)
 - [+] D3. Cap‑логика: Critical — все, Major top‑N, Minor top‑K (env) + общий cap; сортировка severity→line→rule_id
   Критерий: unit‑тест детерминизма/капов; e2e — context ≤ лимита (ГОТОВО).
@@ -108,3 +108,4 @@ ID Z — База (готово)
   - Вывод: Интернет‑доступ рабочий; DNS+TLS+HTTP/2/3 заголовки корректно получены.
   - Добавлен e2e‑скрипт `scripts/net_check.ps1` и тест `tests/e2e/test_net_check.ps1`; локальный прогон: PASS.
   - Реализованы Contract‑check unit+e2e: `tests/e2e_pretooluse_contract.rs`; deny при уменьшении арности (Python), allow при сохранении сигнатуры (JS). Запуск: `cargo test --bin pretooluse`.
+  - D2: добавлены unit‑тесты сущностных срезов и фильтра по диффу в `src/bin/posttooluse.rs` (unit_*), а также e2e `tests/e2e_posttooluse_entity_snippets.rs`. Документирован `AST_ENTITY_SNIPPETS`. Все тесты: PASS.

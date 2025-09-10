@@ -1172,17 +1172,22 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
         let cwd = std::env::current_dir()
             .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
 
+        // Canonicalize both cwd and the target path to resolve symlinks, relative parts and Windows UNC/\\?\ prefixes
+        let cwd_canon = cwd
+            .canonicalize()
+            .unwrap_or(cwd.clone());
+
         // Canonicalize to resolve symlinks and relative paths
         let canonical = path_obj
             .canonicalize()
             .map_err(|e| anyhow::anyhow!("Failed to canonicalize path: {}", e))?;
 
         // Ensure the canonical path is within the current working directory
-        if !canonical.starts_with(&cwd) {
+        if !canonical.starts_with(&cwd_canon) {
             anyhow::bail!(
                 "Invalid file path: path is outside working directory. Path: {:?}, CWD: {:?}",
                 canonical,
-                cwd
+                cwd_canon
             );
         }
     }
@@ -2918,7 +2923,12 @@ mod tests {
         // These should fail validation
         assert!(validate_transcript_path("../../etc/passwd").is_err());
         assert!(validate_transcript_path("~/secrets").is_err());
-        assert!(validate_transcript_path("\\\\server\\share").is_err());
+        // UNC: на Windows допустим, на non-Windows — запрещён
+        if cfg!(windows) {
+            assert!(validate_transcript_path(r"\\\\server\\share").is_ok());
+        } else {
+            assert!(validate_transcript_path("\\\\server\\share").is_err());
+        }
         assert!(validate_transcript_path("file%2e%2e/secrets").is_err());
         assert!(validate_transcript_path("file\0with\0nulls").is_err());
 
@@ -3052,6 +3062,102 @@ mod tests {
         let message_count = summary.matches("user:").count();
         assert!(message_count < 10);
         assert!(message_count > 0); // Should have at least one message
+    }
+
+    // ===== Diff-aware AST Slice: unit tests =====
+    use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueCategory, IssueSeverity, QualityScore};
+
+    fn mk_quality_score(lines: &[usize]) -> QualityScore {
+        let mut s = QualityScore {
+            total_score: 1000,
+            functionality_score: 300,
+            reliability_score: 200,
+            maintainability_score: 200,
+            performance_score: 150,
+            security_score: 100,
+            standards_score: 50,
+            concrete_issues: Vec::new(),
+        };
+        for &ln in lines {
+            s.concrete_issues.push(ConcreteIssue {
+                severity: IssueSeverity::Major,
+                category: IssueCategory::LongMethod,
+                message: format!("issue at {}", ln),
+                file: String::new(),
+                line: ln,
+                column: 1,
+                rule_id: "TST001".to_string(),
+                points_deducted: 0,
+            });
+        }
+        s
+    }
+
+    #[test]
+    fn unit_extract_changed_lines_and_filter_match_plus_lines() {
+        let diff = "--- a/file\n+++ b/file\n@@ -4,3 +4,3 @@\n  4   same\n  5 - old\n  5 + new\n  6   same\n";
+        let changed = extract_changed_lines(diff, 0);
+        assert!(changed.contains(&5));
+        let score = mk_quality_score(&[2, 5, 10]);
+        let filtered = filter_issues_to_diff(&score, diff, 0);
+        assert_eq!(filtered.concrete_issues.len(), 1);
+        assert_eq!(filtered.concrete_issues[0].line, 5);
+    }
+
+    fn has_marked_line_for(out: &str, target: usize) -> bool {
+        for l in out.lines() {
+            let lt = l.trim_start();
+            if !lt.starts_with('>') { continue; }
+            if let Some(pipe_idx) = lt.find('|') {
+                let num_part = &lt[1..pipe_idx];
+                let num = num_part.trim();
+                if let Ok(n) = num.parse::<usize>() { if n == target { return true; } }
+            }
+        }
+        false
+    }
+
+    #[test]
+    fn unit_entity_snippet_python_captures_function_scope() {
+        let lang = SupportedLanguage::Python;
+        let content = "\n\
+def add(a, b):\n\
+    s = a + b\n\
+    return s\n\
+\n";
+        let score = mk_quality_score(&[3]);
+        let mut changed = std::collections::BTreeSet::new();
+        changed.insert(3usize);
+        let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 3, 2000);
+        assert!(out.contains("=== CHANGE CONTEXT ==="));
+        assert!(has_marked_line_for(&out, 3));
+    }
+
+    #[test]
+    fn unit_entity_snippet_js_captures_function_scope() {
+        let lang = SupportedLanguage::JavaScript;
+        let content = "\nfunction sum(a, b){\n  const c = a + b;\n  return c;\n}\n";
+        let score = mk_quality_score(&[3]);
+        let mut changed = std::collections::BTreeSet::new();
+        changed.insert(3usize);
+        let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 3, 2000);
+        assert!(out.contains("=== CHANGE CONTEXT ==="));
+        assert!(has_marked_line_for(&out, 3));
+    }
+
+    #[test]
+    fn unit_entity_snippet_respects_max_snippets_cap() {
+        let lang = SupportedLanguage::Python;
+        let content = "\n\
+def f1():\n  return 1\n\n\
+def f2():\n  return 2\n\n\
+def f3():\n  return 3\n";
+        let score = mk_quality_score(&[2, 5, 8]);
+        let mut changed = std::collections::BTreeSet::new();
+        for &ln in &[2usize, 5, 8] { changed.insert(ln); }
+        let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 2, 10_000);
+        let headers = out.lines().filter(|l| l.starts_with("- [")).count();
+        assert_eq!(headers, 2);
     }
 
     #[tokio::test]
