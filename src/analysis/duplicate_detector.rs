@@ -323,6 +323,29 @@ impl DuplicateDetector {
         report.push_str(&parts.join(", "));
         report.push('\n');
 
+        // Optional per-directory summary (top-K)
+        let top_dirs: usize = std::env::var("DUP_REPORT_TOP_DIRS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(0, 20);
+        if top_dirs > 0 {
+            use std::collections::HashMap as Map;
+            let mut dir_counts: Map<String, usize> = Map::new();
+            for g in groups {
+                for f in &g.files {
+                    if let Some(parent) = f.path.parent().and_then(|p| p.to_str()) {
+                        *dir_counts.entry(parent.to_string()).or_insert(0) += 1;
+                    }
+                }
+            }
+            let mut dir_list: Vec<(String, usize)> = dir_counts.into_iter().collect();
+            dir_list.sort_by(|a,b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            let mut parts = Vec::new();
+            for (i,(d,c)) in dir_list.into_iter().enumerate() { if i>=top_dirs { break; } parts.push(format!("{}: {}", d, c)); }
+            if !parts.is_empty() {
+                report.push_str("Топ директорий: ");
+                report.push_str(&parts.join(", "));
+                report.push('\n');
+            }
+        }
+
         let shown_groups = groups.iter().take(max_groups);
         let hidden_groups = groups.len().saturating_sub(max_groups);
 

@@ -41,6 +41,14 @@ async fn main() -> Result<()> {
 
     // Process hook silently without debug output
 
+    // Fast-fail if cwd is provided but does not exist
+    if let Some(cwd) = hook_input.cwd.as_deref() {
+        if !std::path::Path::new(cwd).exists() {
+            println!("Project analysis unavailable");
+            return Ok(());
+        }
+    }
+
     // Build compact, deterministic context for UserPromptSubmit
     match build_compact_userprompt_context(&hook_input).await {
         Ok(analysis_context) => {

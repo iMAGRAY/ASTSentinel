@@ -33,6 +33,9 @@ fn unit_duplicate_detector_finds_duplicates_and_conflicts() {
     assert!(report.contains("КРИТИЧНО"));
     assert!(report.contains("Сводка по типам"));
 
+    // Per-directory summary present
+    assert!(report.contains("Топ директорий"));
+
     // If multiple ExactDuplicate groups exist, the largest (by total size) should appear first among that type
     // Create two more exact duplicate groups with different sizes
     std::fs::write(root.join("big1.bin"), vec![1u8; 2048]).unwrap();
