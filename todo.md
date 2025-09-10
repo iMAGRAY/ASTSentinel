@@ -45,6 +45,8 @@ J — Покрытие UserPromptSubmit/Observability
   Критерий: `tests/e2e_posttooluse_quick_tips.rs` проходит на Windows/Unix матрице
 - [+] J2. AST_TIMINGS — e2e для PostToolUse (AST_ONLY)
   Критерий: `tests/e2e_posttooluse_timings.rs` обнаруживает секцию `=== TIMINGS (ms) ===`
+- [+] J3. UserPromptSubmit fallback/ошибки — e2e: невалидный JSON → дефолтный ввод; несуществующий CWD → "Project analysis unavailable"
+  Критерий: `tests/e2e_userpromptsubmit_more.rs` проходит на Windows/Unix матрице
 
 K — Документация
 - [+] K1. README_HOOKS обновлён для soft‑budget и единообразного вывода
