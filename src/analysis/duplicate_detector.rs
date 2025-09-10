@@ -322,6 +322,12 @@ impl DuplicateDetector {
         pushp(ConflictType::SimilarName, "Similar", &mut parts);
         report.push_str(&parts.join(", "));
         report.push('\n');
+        // Grand totals
+        let total_groups = groups.len();
+        let mut total_files = 0usize; let mut total_bytes: u64 = 0;
+        for g in groups { total_files += g.files.len(); total_bytes += g.files.iter().map(|f| f.size).sum::<u64>(); }
+        let kb = (total_bytes as f64 / 1024.0).round() as u64;
+        report.push_str(&format!("Итого: групп {} , файлов {} (~{} KB)\n", total_groups, total_files, kb));
 
         // Optional per-directory summary (top-K)
         let top_dirs: usize = std::env::var("DUP_REPORT_TOP_DIRS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(0, 20);
