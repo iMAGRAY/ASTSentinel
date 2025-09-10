@@ -1,0 +1,17 @@
+# COMPREHENSIVE PROJECT CONTEXT
+
+=== PROJECT SUMMARY ===
+Files: 2
+LOC: 3
+Top languages: py: 1
+Tests share: 0%
+Docs share: 0%
+Complexity (avg cyclomatic/cognitive): 0.0/0.0
+Dependencies: total 2, outdated 0
+
+---
+
+=== RISK/HEALTH SNAPSHOT ===
+Issues: total 0 (Critical 0 / Major 0 / Minor 0)
+High-complexity files: 0 (score>7)
+

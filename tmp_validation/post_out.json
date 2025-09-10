@@ -1,0 +1,1 @@
+{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"<Deterministic Score: 1000/1000>\nConcrete Issues Found (sorted):\n• Line 4: Unreachable code after return statement [AST002] (-30 pts)\n\n[ФОРМАТИРОВАНИЕ] black formatter not available - skipping Python formatting \n\n"}}

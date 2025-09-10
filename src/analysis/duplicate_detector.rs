@@ -19,7 +19,7 @@ pub struct DuplicateGroup {
     pub conflict_type: ConflictType,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum ConflictType {
     ExactDuplicate,  // Same content, different names
     SimilarName,     // test.js, test2.js, test_old.js
@@ -129,10 +129,7 @@ impl DuplicateDetector {
         // 1. Find exact content duplicates
         let mut hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
         for file in &self.files {
-            hash_map
-                .entry(file.hash.clone())
-                .or_default()
-                .push(file);
+            hash_map.entry(file.hash.clone()).or_default().push(file);
         }
 
         for (hash, files) in hash_map {
@@ -203,10 +200,12 @@ impl DuplicateDetector {
 
         let sum = |g: &DuplicateGroup| -> u64 { g.files.iter().map(|f| f.size).sum() };
 
-        groups.sort_by(|a, b| prio(&a.conflict_type)
-            .cmp(&prio(&b.conflict_type))
-            .then_with(|| sum(b).cmp(&sum(a))) // larger groups first within same type
-            .then_with(|| a.pattern.cmp(&b.pattern)));
+        groups.sort_by(|a, b| {
+            prio(&a.conflict_type)
+                .cmp(&prio(&b.conflict_type))
+                .then_with(|| sum(b).cmp(&sum(a))) // larger groups first within same type
+                .then_with(|| a.pattern.cmp(&b.pattern))
+        });
         groups
     }
 
@@ -290,10 +289,39 @@ impl DuplicateDetector {
         }
 
         // Soft caps to keep report compact
-        let max_groups: usize = std::env::var("DUP_REPORT_MAX_GROUPS").ok().and_then(|v| v.parse().ok()).unwrap_or(20).clamp(1, 200);
-        let max_files: usize = std::env::var("DUP_REPORT_MAX_FILES").ok().and_then(|v| v.parse().ok()).unwrap_or(10).clamp(1, 200);
+        let max_groups: usize = std::env::var("DUP_REPORT_MAX_GROUPS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20)
+            .clamp(1, 200);
+        let max_files: usize = std::env::var("DUP_REPORT_MAX_FILES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10)
+            .clamp(1, 200);
 
         let mut report = String::from("\n🔴 **КРИТИЧНО: Обнаружены дубликаты/конфликты файлов**\n");
+
+        // Summary per conflict type
+        let mut counts: std::collections::HashMap<ConflictType, usize> =
+            std::collections::HashMap::new();
+        for g in groups {
+            *counts.entry(g.conflict_type.clone()).or_insert(0) += 1;
+        }
+        report.push_str("Сводка по типам: ");
+        let mut parts = Vec::new();
+        let pushp = |t: ConflictType, name: &str, v: &mut Vec<String>| {
+            if let Some(c) = counts.get(&t) {
+                v.push(format!("{}:{}", name, c));
+            }
+        };
+        pushp(ConflictType::ExactDuplicate, "Exact", &mut parts);
+        pushp(ConflictType::VersionConflict, "Version", &mut parts);
+        pushp(ConflictType::BackupFile, "Backup", &mut parts);
+        pushp(ConflictType::TempFile, "Temp", &mut parts);
+        pushp(ConflictType::SimilarName, "Similar", &mut parts);
+        report.push_str(&parts.join(", "));
+        report.push('\n');
 
         let shown_groups = groups.iter().take(max_groups);
         let hidden_groups = groups.len().saturating_sub(max_groups);
@@ -320,7 +348,9 @@ impl DuplicateDetector {
                     .then_with(|| b.modified.cmp(&a.modified))
             });
 
-            if sorted_files.len() > max_files { sorted_files.truncate(max_files); }
+            if sorted_files.len() > max_files {
+                sorted_files.truncate(max_files);
+            }
             let hidden_files = group.files.len().saturating_sub(max_files);
 
             for (i, file) in sorted_files.iter().enumerate() {
@@ -349,7 +379,10 @@ impl DuplicateDetector {
             }
 
             if hidden_files > 0 {
-                report.push_str(&format!("  ... и ещё {} файлов скрыто по лимиту\n", hidden_files));
+                report.push_str(&format!(
+                    "  ... и ещё {} файлов скрыто по лимиту\n",
+                    hidden_files
+                ));
             }
 
             // Add recommendation
@@ -365,7 +398,10 @@ impl DuplicateDetector {
         }
 
         if hidden_groups > 0 {
-            report.push_str(&format!("\n... и ещё {} групп скрыто по лимиту\n", hidden_groups));
+            report.push_str(&format!(
+                "\n... и ещё {} групп скрыто по лимиту\n",
+                hidden_groups
+            ));
         }
 
         report

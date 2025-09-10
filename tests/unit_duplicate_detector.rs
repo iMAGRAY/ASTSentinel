@@ -31,6 +31,7 @@ fn unit_duplicate_detector_finds_duplicates_and_conflicts() {
     // Format report sanity
     let report = det.format_report(&groups);
     assert!(report.contains("КРИТИЧНО"));
+    assert!(report.contains("Сводка по типам"));
 
     // If multiple ExactDuplicate groups exist, the largest (by total size) should appear first among that type
     // Create two more exact duplicate groups with different sizes
