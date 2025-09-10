@@ -293,7 +293,26 @@ fn build_entity_context_snippets(
             let k = cur.kind();
             let is_entity = match language {
                 SupportedLanguage::Python => k == "function_definition" || k == "class_definition",
-                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "function_declaration" || k == "method_definition" || k == "class_declaration" || k == "class" || k == "class_body",
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                    if k == "function_declaration"
+                        || k == "function_expression"
+                        || k == "arrow_function"
+                        || k == "method_definition"
+                        || k == "class_declaration"
+                    { true } else if k == "pair" || k == "property_assignment" {
+                        // Object literal shorthand or function-valued property
+                        let mut has_params_or_func = false;
+                        for i in 0..cur.child_count() {
+                            if let Some(ch) = cur.child(i) {
+                                let ck = ch.kind();
+                                if ck == "formal_parameters" || ck == "function" || ck == "function_expression" || ck == "arrow_function" {
+                                    has_params_or_func = true; break;
+                                }
+                            }
+                        }
+                        has_params_or_func
+                    } else { false }
+                }
                 _ => false,
             };
             if is_entity { found = Some(cur); break; }
