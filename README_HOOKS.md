@@ -205,3 +205,15 @@ See docs/PLAYBOOK_AST_FLAGS.md for before/after examples and quick commands.
    - `set DUP_REPORT_MAX_FILES=5`
    - `set DUP_REPORT_TOP_DIRS=3`
 
+### Sections vs. Flags
+
+| Section            | Produced in                  | Controlled by                 |
+|--------------------|------------------------------|-------------------------------|
+| CHANGE SUMMARY     | PostToolUse (all modes)      | —                             |
+| RISK REPORT        | PostToolUse (all modes)      | `AST_MAX_*`, `AST_DIFF_*`     |
+| QUICK TIPS         | PostToolUse (AST_ONLY/online)| `QUICK_TIPS*`                 |
+| CHANGE CONTEXT     | PostToolUse (all modes)      | `AST_SNIPPETS*`, `AST_ENTITY_SNIPPETS` |
+| CODE HEALTH        | PostToolUse (all modes)      | —                             |
+| API CONTRACT       | PostToolUse (all modes)      | `API_CONTRACT`                |
+| NEXT STEPS         | PostToolUse (all modes)      | —                             |
+| TIMINGS            | PostToolUse (AST_ONLY)       | `AST_TIMINGS`                 |

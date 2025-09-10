@@ -170,3 +170,11 @@ L — Deps & Duplicates hardening
 M — Snapshots
 - [+] M1. UserPromptSubmit golden shape — стабильный порядок секций и ключевые строки
   Критерий: `tests/unit_userpromptsubmit_golden.rs` проходит; проверяются заголовки и счётчики
+- [+] M2. PostToolUse golden DRY_RUN — порядок секций (+ API CONTRACT при наличии old/new)
+  Критерий: `tests/e2e_posttooluse_golden_dry_run.rs` проходит
+- [+] M3. PostToolUse golden AST_ONLY — порядок секций и присутствие API CONTRACT
+  Критерий: `tests/e2e_posttooluse_golden_ast_only.rs` проходит
+
+N — Docs Finalization
+- [+] N1. README_HOOKS: Flag Reference + Windows Quick Start
+- [+] N2. Table: Sections vs. Flags
