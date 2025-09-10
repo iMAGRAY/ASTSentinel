@@ -44,8 +44,8 @@ async fn main() -> Result<()> {
 
     // Process hook silently without debug output
 
-    // Perform comprehensive project analysis
-    match analyze_project_for_ai_context(&hook_input).await {
+    // Build compact, deterministic context for UserPromptSubmit
+    match build_compact_userprompt_context(&hook_input).await {
         Ok(analysis_context) => {
             // Output directly as text for UserPromptSubmit hook
             println!("{}", analysis_context);
@@ -59,85 +59,163 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Perform comprehensive project analysis for AI context
-async fn analyze_project_for_ai_context(hook_input: &HookInput) -> Result<String> {
+/// Build compact, deterministic context (E1): Project Summary + Risk/Health snapshot
+async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<String> {
     let working_dir = hook_input.cwd.as_deref().unwrap_or(".");
-    let mut context_parts = Vec::new();
 
-    // Starting comprehensive project analysis
+    // 1) Project scan + metrics
+    let (structure, metrics, _inc) = scan_project_with_cache(working_dir, None, None)
+        .context("scan_project_with_cache")?;
 
-    // 1. Project structure with metrics
-    match scan_project_with_cache(working_dir, None, None) {
-        Ok((structure, metrics, incremental)) => {
-            // Found files in project
-            
-            let formatted_structure = format_project_structure_for_ai_with_metrics(
-                &structure,
-                Some(&metrics),
-                structure.files.len() > 100, // Use compression for large projects
+    // Top languages by file_count
+    let mut langs: Vec<(String, u32)> = metrics
+        .code_by_language
+        .iter()
+        .map(|(k, v)| (k.clone(), v.file_count as u32))
+        .collect();
+    langs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let top_langs = langs
+        .iter()
+        .take(3)
+        .map(|(k, v)| format!("{}: {}", k, v))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    // 2) Dependencies (summary only)
+    let deps = analyze_project_dependencies(Path::new(working_dir)).await.unwrap_or_default();
+
+    // 3) Risk/Health snapshot across project files
+    let rh = compute_risk_health_snapshot(working_dir).await;
+
+    // === Sections ===
+    let mut out = String::new();
+    out.push_str("# COMPREHENSIVE PROJECT CONTEXT\n");
+    out.push_str("\n=== PROJECT SUMMARY ===\n");
+    out.push_str(&format!(
+        "Files: {}\nLOC: {}\nTop languages: {}\nTests share: {:.0}%\nDocs share: {:.0}%\nComplexity (avg cyclomatic/cognitive): {:.1}/{:.1}\n",
+        structure.total_files,
+        metrics.total_lines_of_code,
+        if top_langs.is_empty() { "n/a".to_string() } else { top_langs },
+        metrics.test_coverage_estimate * 100.0,
+        metrics.documentation_ratio * 100.0,
+        metrics.average_cyclomatic_complexity,
+        metrics.average_cognitive_complexity
+    ));
+    out.push_str(&format!(
+        "Dependencies: total {}, outdated {}\n",
+        deps.total_count, deps.outdated_count
+    ));
+
+    out.push_str("\n---\n\n=== RISK/HEALTH SNAPSHOT ===\n");
+    if let Some(r) = rh {
+        out.push_str(&format!(
+            "Issues: total {} (Critical {} / Major {} / Minor {})\n",
+            r.total, r.critical, r.major, r.minor
+        ));
+        if !r.top_categories.is_empty() {
+            out.push_str("Top categories: ");
+            out.push_str(
+                &r.top_categories
+                    .iter()
+                    .map(|(k, v)| format!("{}:{}", k, v))
+                    .collect::<Vec<_>>()
+                    .join(", "),
             );
-
-            let mut project_info = format!("# PROJECT ANALYSIS\n{}", formatted_structure);
-            
-            if let Some(inc) = incremental {
-                project_info.push_str(&format!("\n{}", inc));
-            }
-            
-            context_parts.push(project_info);
+            out.push('\n');
         }
-        Err(e) => {
-            // Project scan failed, continue without project structure info
-            eprintln!("Warning: Could not analyze project structure: {}", e);
-        }
-    }
-
-    // 2. Dependencies analysis
-    match analyze_project_dependencies(Path::new(working_dir)).await {
-        Ok(deps) => {
-            // Analyzed dependencies
-            context_parts.push(format!("\n# DEPENDENCIES\n{}", deps.format_for_ai()));
-        }
-        Err(e) => {
-            // Dependencies analysis failed, continue without dependency info
-            eprintln!("Warning: Could not analyze project dependencies: {}", e);
-        }
-    }
-
-    // 3. Comprehensive AST analysis for all code files
-    let ast_analysis = perform_project_wide_ast_analysis(working_dir).await;
-    if !ast_analysis.is_empty() {
-        context_parts.push(format!("\n# CODE QUALITY ANALYSIS\n{}", ast_analysis));
-    }
-
-    // 4. Duplicate file detection
-    let mut detector = DuplicateDetector::new();
-    match detector.scan_directory(Path::new(working_dir)) {
-        Ok(_) => {
-            let duplicates = detector.find_duplicates();
-            if !duplicates.is_empty() {
-                // Found duplicate groups
-                let duplicate_report = detector.format_report(&duplicates);
-                context_parts.push(format!("\n# FILE CONFLICTS\n{}", duplicate_report));
-            }
-        }
-        Err(e) => {
-            // Duplicate detection failed, continue without conflict detection
-            eprintln!("Warning: Could not detect duplicate files: {}", e);
-        }
-    }
-
-    let final_context = if !context_parts.is_empty() {
-        format!(
-            "# COMPREHENSIVE PROJECT CONTEXT\n\
-            This context provides a complete view of the project for better AI understanding.\n\n{}",
-            context_parts.join("\n")
-        )
+        out.push_str(&format!(
+            "High-complexity files: {} (score>7)\n",
+            metrics.high_complexity_files
+        ));
     } else {
-        String::new()
-    };
+        out.push_str("No issues detected.\n");
+    }
 
-    // Generated context
-    Ok(final_context)
+    // Truncate deterministically (no code fences), default 4000 chars
+    let lim = std::env::var("USERPROMPT_CONTEXT_LIMIT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map(|n: usize| n.clamp(1000, 8000))
+        .unwrap_or(4000);
+    Ok(truncate_utf8_safe(&out, lim))
+}
+
+struct RiskHealth {
+    total: usize,
+    critical: usize,
+    major: usize,
+    minor: usize,
+    top_categories: Vec<(String, usize)>,
+}
+
+async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
+    use rust_validation_hooks::analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
+    use std::collections::HashMap;
+
+    let mut total = 0usize;
+    let mut crit = 0usize; let mut maj = 0usize; let mut min = 0usize;
+    let mut by_cat: HashMap<String, usize> = HashMap::new();
+
+    if let Ok(entries) = std::fs::read_dir(working_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if let Some(lang) = SupportedLanguage::from_extension(ext) {
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            // Skip huge files to keep latency low
+                            if content.len() > 500_000 { continue; }
+                            let scorer = AstQualityScorer::new();
+                            if let Ok(q) = scorer.analyze(&content, lang) {
+                                total += q.concrete_issues.len();
+                                for i in q.concrete_issues {
+                                    match i.severity {
+                                        IssueSeverity::Critical => crit+=1,
+                                        IssueSeverity::Major => maj+=1,
+                                        IssueSeverity::Minor => min+=1,
+                                    }
+                                    *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if path.is_dir() {
+                // Shallow: only top-level dirs; recursion omitted for speed
+                if let Ok(files) = std::fs::read_dir(&path) {
+                    for f in files.flatten() {
+                        let fp = f.path();
+                        if !fp.is_file() { continue; }
+                        if let Some(ext) = fp.extension().and_then(|e| e.to_str()) {
+                            if let Some(lang) = SupportedLanguage::from_extension(ext) {
+                                if let Ok(content) = std::fs::read_to_string(&fp) {
+                                    if content.len() > 300_000 { continue; }
+                                    let scorer = AstQualityScorer::new();
+                                    if let Ok(q) = scorer.analyze(&content, lang) {
+                                        total += q.concrete_issues.len();
+                                        for i in q.concrete_issues {
+                                            match i.severity {
+                                                IssueSeverity::Critical => crit+=1,
+                                                IssueSeverity::Major => maj+=1,
+                                                IssueSeverity::Minor => min+=1,
+                                            }
+                                            *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if total == 0 { return Some(RiskHealth { total, critical: 0, major: 0, minor: 0, top_categories: Vec::new() }); }
+    let mut cats: Vec<(String, usize)> = by_cat.into_iter().collect();
+    cats.sort_by(|a,b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    cats.truncate(5);
+    Some(RiskHealth { total, critical: crit, major: maj, minor: min, top_categories: cats })
 }
 
 /// Perform AST analysis across all code files in the project
