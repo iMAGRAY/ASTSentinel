@@ -23,7 +23,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
-      - name: Perf gate
+      - name: Perf gate (strict)
+        env:
+          PERF_GATE_STRICT: "1"
         run: |
-          python scripts/perf_gate.py --baseline reports/benchmarks/baseline --threshold 0.2 || echo "Perf gate reported regressions" && exit 0
-
+          python scripts/perf_gate.py --baseline reports/benchmarks/baseline --threshold 0.2 --strict

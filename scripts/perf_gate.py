@@ -36,6 +36,7 @@ def main():
     p.add_argument('--baseline', required=True, help='Path to baseline directory')
     p.add_argument('--criterion-dir', default=os.path.join('target', 'criterion'))
     p.add_argument('--threshold', type=float, default=0.2, help='Allowed regression ratio (e.g., 0.2 = 20%)')
+    p.add_argument('--strict', action='store_true', help='Fail with non-zero exit on regressions')
     args = p.parse_args()
 
     baseline_dir = os.path.normpath(args.baseline)
@@ -69,7 +70,10 @@ def main():
         for rel, base, cur in failures:
             delta = (cur / base) - 1.0
             print(f" - {rel}: baseline={base:.2f}, current={cur:.2f}, regression={delta*100:.1f}%")
-        return 1
+        if args.strict or os.getenv('PERF_GATE_STRICT'):
+            return 1
+        else:
+            return 0
     else:
         print("No perf regressions above threshold.")
         return 0
