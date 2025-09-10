@@ -25,6 +25,7 @@ use rust_validation_hooks::analysis::ast::languages::LanguageCache;
 use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
 // Use code formatting service for automatic code formatting
 use rust_validation_hooks::formatting::FormattingService;
+use rust_validation_hooks::messages::glossary::build_quick_tips;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolKind {
@@ -111,6 +112,19 @@ fn build_risk_report(score: &QualityScore) -> String {
     if combined.is_empty() { s.push_str("No issues detected.\n"); return s; }
     for i in &combined { s.push_str(&format!("- [{:?}] Line {}: {} [{}]\n", i.severity, i.line, i.message, i.rule_id)); }
     if total_all > combined.len() { s.push_str(&format!("… truncated: showing {} of {} issues\n", combined.len(), total_all)); }
+    s
+}
+
+fn build_quick_tips_section(score: &QualityScore) -> String {
+    let enabled = std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true);
+    if !enabled { return String::new(); }
+    let max_tips = std::env::var("QUICK_TIPS_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(6).clamp(1, 20);
+    let max_line = std::env::var("QUICK_TIPS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(120).clamp(60, 180);
+    let tips = build_quick_tips(score, max_tips, max_line);
+    if tips.is_empty() { return String::new(); }
+    let mut s = String::new();
+    s.push_str("=== QUICK TIPS ===\n");
+    for t in tips { s.push_str("- "); s.push_str(&t); s.push('\n'); }
     s
 }
 
@@ -2413,6 +2427,7 @@ async fn main() -> Result<()> {
                 (filtered, snips)
             } else { (ast_score.clone(), String::new()) };
             final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
+            let tips = build_quick_tips_section(&filtered); if !tips.is_empty() { final_response.push_str(&tips); final_response.push('\n'); }
             if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
             final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
             final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
@@ -2706,6 +2721,7 @@ async fn main() -> Result<()> {
                     (filtered, snips)
                 } else { (ast_score.clone(), String::new()) };
                 final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
+                let tips = build_quick_tips_section(&filtered); if !tips.is_empty() { final_response.push_str(&tips); final_response.push('\n'); }
                 if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
                 final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
                 let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
