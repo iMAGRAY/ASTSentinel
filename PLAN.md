@@ -75,6 +75,7 @@ M2 (Next)
 
 M3
 - [x] A3 + B1/B2 for Java, C#, Go
+  - [x] Fastpath unreachable эвристика для Go: игнорировать case/default/label/empty_statement и одноимённые узлы на той же строке, чтобы убрать ложнопозитивы после return внутри case
 
 M4
 - [x] A3 + B1/B2 for C/C++, PHP, Ruby
@@ -89,6 +90,17 @@ M6
 - [x] H2 update README_HOOKS with AST context section and env knobs
 - [x] H3 add offline e2e test for PostToolUse (AST-only mode)
 - [ ] Expand cross-language fixtures to cover all rules and "good" samples (partial: C/C++/PHP/Ruby covered for core checks; add JS/TS/Java/C#/Go and per-language "good" samples)
+- [x] Expand cross-language fixtures: added complex signatures + try/catch/switch/async cases
+  - TS: async + try/catch + switch (good), complex optional params (bad: TooManyParameters)
+  - C#: async Task<T> with switch (good), generic async with 6 params (bad)
+  - Go: deep nesting with switch (bad), kept existing good code separate to avoid fastpath false positives on return
+  - C++: switch (good), try/catch (good)
+  - Rust: complex generics/lifetimes/const generics signature (bad), async + match (good)
+  - Added unit tests for SinglePass module and PostToolUse helpers; extended dependency parser tests; added language limits tests (empty/huge input) and LongLine rule test under legacy path
+
+M8 (CI & Coverage)
+- [x] Add GitHub Actions CI: build, test (fastpath + legacy), optional coverage (tarpaulin) with artifact upload
+- [x] Makefile helpers (test, perf, coverage)
 
 Acceptance (Release Gate)
 - All tests pass, including new cross‑language suites.

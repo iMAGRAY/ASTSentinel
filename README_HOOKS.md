@@ -20,6 +20,7 @@ Edit `.env` file to configure:
 - `ADDITIONAL_CONTEXT_LIMIT_CHARS` (default: `100000`, range `10000..1000000`) — max size of additional context; safely truncated on UTF‑8 boundaries.
 - `AST_ANALYSIS_TIMEOUT_SECS` (default: `8`, range `1..30`) — per‑file AST analysis timeout to avoid stalls on pathological inputs.
 - `AST_TIMINGS` (set to any value to enable) — include a brief per‑file timings summary (p50/p95/p99/mean) at the end of project‑wide AST analysis.
+- `FILE_READ_TIMEOUT` (seconds, default: 10) — timeout for safe file reads inside hooks.
 
 ### PostToolUse Additional Context
 - Hook attaches deterministic AST insights to `additionalContext`:
@@ -54,6 +55,20 @@ Edit `.env` file to configure:
 ### Perf Gate (бенчмарки Criterion)
 - Сохранить эталон: `cargo bench --bench ast_perf` затем `python scripts/perf_gate_save.py --out reports/benchmarks/baseline`
 - Проверить регрессии (>20% по среднему времени): `python scripts/perf_gate.py --baseline reports/benchmarks/baseline --threshold 0.2`
+ - Получить сводку бейзлайна в один файл: `python scripts/perf_baseline_summary.py --baseline reports/benchmarks/baseline > reports/benchmarks/baseline_summary.json`
+
+### Windows: пути и безопасность
+
+Хуки валидируют пути, не блокируя валидные Windows‑пути:
+- Поддерживаются backslash‑пути и UNC; проверка «UNC на non‑Windows» срабатывает только вне Windows.
+- Больше нет blanket‑запрета `..`, `~`, `$` как подстрок — валидность определяет каноникализация и проверка, что путь остаётся в рамках рабочей директории/разрешённых директорий.
+- Для `~` запрещён только опасный префикс `~/` (на non‑Windows).
+- Gitignore‑паттерны сопоставляются кроссплатформенно: все разделители пути нормализуются к `/` перед сопоставлением.
+
+Примеры:
+- `C:\\proj\\src\\main.rs` — ок, если подпадает под рабочую директорию.
+- `\\\\server\\share\\logs.txt` — ок на Windows; на non‑Windows отклоняется как UNC.
+- `~/secrets.txt` — отклоняется на non‑Windows (только префикс), обычные имена с `~` внутри разрешены.
 
 ## Hook Binaries
 - `pretooluse.exe` - Pre-execution validation

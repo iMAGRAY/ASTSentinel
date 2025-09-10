@@ -4,8 +4,14 @@
 - [x] Добавить интеграционный тест проектного AST-анализа в posttooluse (детерминизм + критические находки).
 - [x] Актуализировать README_HOOKS по дополнительному контексту PostToolUse (AST + границы).
 - [x] Расширить кросс-языковые фикстуры: добавлены fastpath-тесты для JS/TS/Java/C#/Go (unreachable, creds/sql) + «good code» для JS/Java.
-  - [x] Добавить «good code» образцы для TypeScript/C#/Go и дополнительные негативные кейсы (unreachable/creds/sql) — добавлены.
-  - [ ] Углубить TS/C#/Go негативные кейсы (сложные nesting/params) — следующий шаг.
+  - [x] Добавить «good code» для TypeScript/C#/Go и дополнительные негативные кейсы (unreachable/creds/sql).
+  - [x] Углубить TS/C#/Go негативные кейсы (сложные сигнатуры, try/catch/switch, async) и расширенные good/bad:
+    - TS: async + try/catch + switch (good), 6 optional typed params (bad: TooManyParameters)
+    - C#: async Task + switch (good), generic async с 6 параметрами (bad: TooManyParameters)
+    - Go: глубокая вложенность с switch (bad). Примечание: «good switch + return» избегаем из-за fastpath-эвристики unreachable после return; оставлен отдельный «good code» без switch
+    - C++: switch (good), try/catch (good)
+    - Rust: сложная сигнатура с lifetime/generics/const (bad: TooManyParameters), async + match (good)
+  - [x] Исправить ложнопозитив Unreachable в Go fastpath: игнорировать case/default/label/empty_statement и соседние узлы на той же строке после return
   - [x] Rust: включить syn‑анализ в AstQualityScorer (unwrap/panic, unreachable, params, nesting, creds/sql, long lines) + тесты.
 - [x] E2E: интеграционный тест PostToolUse (AST-only режим без сети).
 - [x] Причесать doctest’ы форматтеров или изолировать их от CI (помечены как no_run; устойчивы без внешних бинарей).

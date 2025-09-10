@@ -448,6 +448,46 @@ mod tests {
         assert_eq!(pillow.current_version, "10.0.0");
     }
 
+    #[tokio::test]
+    async fn test_parse_package_json_invalid_errors() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("package.json");
+        let content = "{ invalid_json: true"; // malformed
+        let mut file = File::create(&file_path).await.unwrap();
+        file.write_all(content.as_bytes()).await.unwrap();
+        drop(file);
+        let res = parse_package_json(&file_path).await;
+        assert!(res.is_err(), "Expected parse error for invalid package.json");
+    }
+
+    #[tokio::test]
+    async fn test_parse_cargo_toml() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("Cargo.toml");
+
+        let content = r#"[package]
+name = "demo"
+version = "0.1.0"
+
+[dependencies]
+serde = "1.0"
+clap = { version = "4.0", features = ["derive"] }
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+"#;
+
+        let mut file = File::create(&file_path).await.unwrap();
+        file.write_all(content.as_bytes()).await.unwrap();
+        drop(file);
+
+        let deps = parse_cargo_toml(&file_path).await.unwrap();
+        // Expect 3 deps collected (serde, clap, tokio)
+        assert!(deps.iter().any(|d| d.name == "serde" && d.current_version == "1.0" && !d.is_dev_dependency));
+        assert!(deps.iter().any(|d| d.name == "clap" && d.current_version == "4.0" && !d.is_dev_dependency));
+        assert!(deps.iter().any(|d| d.name == "tokio" && d.current_version == "1.0" && d.is_dev_dependency));
+    }
+
     #[test]
     fn test_clean_version_string() {
         assert_eq!(clean_version_string("^4.18.0"), "4.18.0");

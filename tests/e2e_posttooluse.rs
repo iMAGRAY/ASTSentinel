@@ -181,6 +181,163 @@ fn e2e_posttooluse_dry_run_multiedit_prompt_diff() {
     assert!(prompt_text.contains("Applied") || prompt_text.contains("Edit #1"));
 }
 
+#[cfg(windows)]
+#[test]
+fn e2e_posttooluse_windows_transcript_backslash_path() {
+    use std::io::Write;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path();
+    // Prepare prompts
+    let prompts = dir.join("prompts");
+    std::fs::create_dir_all(&prompts).unwrap();
+    std::fs::write(prompts.join("post_edit_validation.txt"), "Validate changes.").unwrap();
+    std::fs::write(prompts.join("output_template.txt"), "TEMPLATE").unwrap();
+    // Transcript JSONL
+    let transcript = dir.join("transcript.jsonl");
+    std::fs::write(&transcript, "{\"role\":\"user\",\"content\":\"Do it\"}\n").unwrap();
+    let win_transcript = transcript.to_string_lossy().replace('/', "\\");
+    // Code file
+    let file_path = dir.join("file.py");
+    std::fs::write(&file_path, "print('x')\n").unwrap();
+    let hook_input = serde_json::json!({
+        "tool_name": "Write",
+        "tool_input": {"file_path": file_path.to_string_lossy(), "content": "print('y')\n"},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse",
+        "transcript_path": win_transcript
+    });
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .env("POSTTOOL_DRY_RUN", "1")
+        .env("DEBUG_HOOKS", "true")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().expect("wait");
+    assert!(out.status.success());
+}
+
+#[test]
+fn e2e_posttooluse_write_aliases() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path();
+
+    // Use WriteFile alias
+    let file_path = dir.join("alias.ts");
+    let code = "function f(){ return 1 }\n";
+    let hook_input = serde_json::json!({
+        "tool_name": "WriteFile",
+        "tool_input": {"file_path": file_path.to_string_lossy(), "content": code},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse"
+    });
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    // additionalContext must be a string; may be empty for clean code
+    assert!(ctx.is_empty() || ctx.contains("Deterministic") || ctx.contains("Concrete Issues"));
+}
+
+#[test]
+fn e2e_posttooluse_append_alias() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path();
+    let file_path = dir.join("append.py");
+    std::fs::write(&file_path, "print('a')\n").unwrap();
+    let hook_input = serde_json::json!({
+        "tool_name": "AppendToFile",
+        "tool_input": {"file_path": file_path.to_string_lossy(), "content": "print('b')\n"},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse"
+    });
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    // Context may be empty if no issues; ensure it is a string
+    assert!(ctx.is_empty() || ctx.contains("Deterministic") || ctx.contains("Concrete Issues"));
+}
+
+#[cfg(windows)]
+#[test]
+fn e2e_posttooluse_windows_writefile_backslash_path() {
+    use std::io::Write;
+    // Windows-specific: verify backslash paths are accepted
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path();
+    let file_path = dir.join("win_alias.ts");
+
+    // Create content to write
+    let code = "function f(){ return 1 }\n";
+
+    // Build backslash file path string
+    let win_path = file_path.to_string_lossy().replace('/', "\\");
+
+    let hook_input = serde_json::json!({
+        "tool_name": "WriteFile",
+        "tool_input": {"file_path": win_path, "content": code},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse"
+    });
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "posttooluse should succeed with backslash path");
+}
+
+#[cfg(windows)]
+#[test]
+fn e2e_posttooluse_windows_append_backslash_path() {
+    use std::io::Write;
+    let temp = tempfile::tempdir().expect("tempdir");
+    let dir = temp.path();
+    let file_path = dir.join("append_win.py");
+    std::fs::write(&file_path, "print('a')\n").unwrap();
+    let win_path = file_path.to_string_lossy().replace('/', "\\");
+    let hook_input = serde_json::json!({
+        "tool_name": "AppendToFile",
+        "tool_input": {"file_path": win_path, "content": "print('b')\n"},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse"
+    });
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+}
+
 #[test]
 fn e2e_posttooluse_dry_run_with_transcript_and_limit() {
     let temp = tempdir().expect("tempdir");
@@ -226,6 +383,43 @@ fn e2e_posttooluse_dry_run_with_transcript_and_limit() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
     assert!(ctx.len() <= 10_000, "context length {} exceeds limit", ctx.len());
+}
+
+#[test]
+fn e2e_posttooluse_dry_run_additional_context_limit_enforced() {
+    let temp = tempdir().expect("tempdir");
+    let dir = temp.path();
+    let prompts = dir.join("prompts");
+    std::fs::create_dir_all(&prompts).unwrap();
+    std::fs::write(prompts.join("post_edit_validation.txt"), "Validate changes.").unwrap();
+    std::fs::write(prompts.join("output_template.txt"), "TEMPLATE").unwrap();
+    // Create file with many long lines to blow up context
+    let file_path = dir.join("big.ts");
+    let long_line = "x".repeat(500);
+    let mut code = String::new();
+    for _ in 0..200 { code.push_str(&long_line); code.push('\n'); }
+    std::fs::write(&file_path, &code).unwrap();
+    let hook_input = serde_json::json!({
+        "tool_name": "Write",
+        "tool_input": {"file_path": file_path.to_string_lossy(), "content": code},
+        "cwd": dir.to_string_lossy(),
+        "hook_event_name": "PostToolUse"
+    });
+    let bin = env!("CARGO_BIN_EXE_posttooluse");
+    let mut child = std::process::Command::new(bin)
+        .current_dir(dir)
+        .env("POSTTOOL_DRY_RUN", "1")
+        .env("ADDITIONAL_CONTEXT_LIMIT_CHARS", "10000")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn().expect("spawn");
+    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
+    assert!(ctx.len() <= 10100, "context must be limited by ADDITIONAL_CONTEXT_LIMIT_CHARS lower bound");
 }
 
 #[test]

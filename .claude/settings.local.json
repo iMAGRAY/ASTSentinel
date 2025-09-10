@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo build:*)",
+      "Bash(target/release/rust-validation-hooks.exe:*)",
+      "Bash(target/release/posttooluse.exe:*)",
+      "Bash(cargo test:*)",
+      "Bash(grep:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

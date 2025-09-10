@@ -46,9 +46,55 @@ impl SinglePassEngine {
                 matches!(node.kind(), "return_statement" | "return_expression" | "return")
             };
             if is_return {
+                // Conservative unreachable detection: skip label/switch-case/catch/else tokens and empty statements
                 if let Some(next) = node.next_sibling() {
                     let k = next.kind();
-                    if k != "}" && k != "comment" {
+                    let skip = match language {
+                        SupportedLanguage::Go => {
+                            // In Go, after a return inside a case, the next sibling at this level might be a case clause
+                            // or an empty statement; do not flag these as unreachable.
+                            k == "}"
+                                || k == "comment"
+                                || k == "empty_statement"
+                                || k.contains("case")
+                                || k.contains("default")
+                                || k.contains("label")
+                                // Go parser may place an implicit semicolon token sibling on the same line
+                                || next.start_position().row == node.start_position().row
+                        }
+                        SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                            k == "}"
+                                || k == "comment"
+                                || k == "empty_statement"
+                                || k == "switch_case"
+                                || k == "switch_default"
+                                || k == "labeled_statement"
+                        }
+                        SupportedLanguage::Java => {
+                            k == "}"
+                                || k == "comment"
+                                || k == "block"
+                                || k.contains("switch") && k.contains("label")
+                                || k.contains("labeled")
+                        }
+                        SupportedLanguage::C | SupportedLanguage::Cpp => {
+                            k == "}"
+                                || k == "comment"
+                                || k == "empty_statement"
+                                || k == "labeled_statement"
+                                || k.contains("case")
+                                || k.contains("default")
+                        }
+                        SupportedLanguage::Php => {
+                            k == "}"
+                                || k == "comment"
+                                || k == "empty_statement"
+                                || k == "switch_case"
+                                || k == "switch_default"
+                        }
+                        _ => k == "}" || k == "comment" || k == "empty_statement",
+                    };
+                    if !skip {
                         issues.push(ConcreteIssue {
                             severity: IssueSeverity::Major,
                             category: IssueCategory::UnreachableCode,
@@ -63,7 +109,7 @@ impl SinglePassEngine {
                 }
             }
 
-            // Минимальные проверки безопасности для Python/C#/Go/Php
+            // Минимальные проверки безопасности для Python/C#/Go/Php/JS/TS
             let kind = node.kind();
             match language {
                 SupportedLanguage::Python => {
@@ -168,10 +214,83 @@ impl SinglePassEngine {
                         }
                     }
                 }
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                    // Simple SQL detection inside string literals and creds in assignments
+                    if kind == "string" {
+                        if let Ok(text) = node.utf8_text(src_bytes) {
+                            // Remove quotes for heuristic
+                            let lower = text.trim_matches(['"', '\'']).to_string();
+                            if (lower.contains("select") && lower.contains("where"))
+                                || (lower.contains("insert") && lower.contains("values"))
+                                || (lower.contains("update") && lower.contains("set"))
+                                || (lower.contains("delete") && lower.contains("from"))
+                            {
+                                issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::SqlInjection, message: "Possible SQL in string literal — validate parameterization".to_string(), file: String::new(), line: node.start_position().row + 1, column: node.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
+                            }
+                        }
+                    }
+                    // Heuristic: if inside an assignment, check left identifier names for creds
+                    if likely_assignment_context(language, &node) {
+                        // Walk up to find declarator/assignment and try to extract identifier
+                        let mut cur = node;
+                        let mut found = None;
+                        let mut up = 0;
+                        while up < 4 {
+                            if let Some(p) = cur.parent() { cur = p; up += 1; } else { break; }
+                            let k = cur.kind();
+                            if k == "variable_declarator" || k == "assignment_expression" { found = Some(cur); break; }
+                        }
+                        if let Some(ctx) = found {
+                            // Try to find identifier on the left
+                            if let Some(left) = ctx.child(0) {
+                                if let Ok(name) = left.utf8_text(src_bytes) {
+                                    let lname = name.to_ascii_lowercase();
+                                    if lname.contains("password") || lname.contains("secret") || lname.contains("api_key") || lname.contains("token") {
+                                        issues.push(ConcreteIssue { severity: IssueSeverity::Critical, category: IssueCategory::HardcodedCredentials, message: "Hardcoded credentials in assignment".to_string(), file: String::new(), line: left.start_position().row + 1, column: left.start_position().column + 1, rule_id: "SEC001".to_string(), points_deducted: 50 });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
                 _ => {}
             }
         }
         issues
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::ast::languages::LanguageCache;
+
+    #[cfg(feature = "ast_fastpath")]
+    #[test]
+    fn go_switch_returns_no_unreachable() {
+        let code = r#"package main
+func pick(x int) string {
+  switch x {
+    case 1: return "one"
+    case 2: return "two"
+    default: return "other"
+  }
+}
+"#;
+        let mut parser = LanguageCache::create_parser_with_language(SupportedLanguage::Go).unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        let issues = SinglePassEngine::analyze(&tree, code, SupportedLanguage::Go);
+        assert!(issues.into_iter().all(|i| !matches!(i.category, IssueCategory::UnreachableCode)));
+    }
+
+    #[cfg(feature = "ast_fastpath")]
+    #[test]
+    fn ts_too_many_params_detected() {
+        let code = "function f(a?: number,b?: number,c?: number,d?: number,e?: number,f?: number){ return 1 }";
+        let mut parser = LanguageCache::create_parser_with_language(SupportedLanguage::TypeScript).unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        let issues = SinglePassEngine::analyze(&tree, code, SupportedLanguage::TypeScript);
+        assert!(issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)));
     }
 }
 
@@ -181,6 +300,9 @@ fn likely_assignment_context(lang: SupportedLanguage, node: &tree_sitter::Node) 
         match lang {
             SupportedLanguage::CSharp => k.contains("assignment") || k.contains("declarator") || k.contains("variable_declaration"),
             SupportedLanguage::Go => k.contains("assignment") || k.contains("declaration") || k.contains("short_var_declaration"),
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                k == "variable_declarator" || k == "assignment_expression" || k == "lexical_declaration" || k == "variable_declaration"
+            }
             _ => false,
         }
     };
@@ -255,7 +377,13 @@ fn count_param_nodes(lang: SupportedLanguage, list: &tree_sitter::Node) -> u32 {
             let k = c.node().kind();
             let is_param = match lang {
                 SupportedLanguage::Python => matches!(k, "identifier" | "typed_parameter" | "default_parameter" | "list_splat_pattern"),
-                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => matches!(k, "identifier" | "formal_parameter" | "rest_parameter" | "object_pattern" | "array_pattern"),
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => matches!(
+                    k,
+                    // JS params
+                    "identifier" | "formal_parameter" | "rest_parameter" | "object_pattern" | "array_pattern"
+                    // TS-specific params
+                    | "required_parameter" | "optional_parameter"
+                ),
                 SupportedLanguage::Java => matches!(k, "formal_parameter" | "receiver_parameter" | "spread_parameter"),
                 SupportedLanguage::CSharp => matches!(k, "parameter" | "parameter_array"),
                 SupportedLanguage::Go => matches!(k, "parameter_declaration" | "variadic_parameter_declaration"),

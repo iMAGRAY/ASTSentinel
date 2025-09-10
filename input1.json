@@ -1,0 +1,6 @@
+{
+  "tool_name": "Write",
+  "tool_input": {"file_path": "bad.py", "content": "password = 'supersecret'\nprint('ok')\n"},
+  "cwd": ".",
+  "hook_event_name": "PostToolUse"
+}

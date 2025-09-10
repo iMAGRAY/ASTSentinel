@@ -25,12 +25,54 @@ use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
 // Use code formatting service for automatic code formatting
 use rust_validation_hooks::formatting::FormattingService;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ToolKind {
+    Write,
+    Edit,
+    MultiEdit,
+    Other,
+}
+
+fn normalize_tool_name(name: &str) -> (ToolKind, bool /* is_append */) {
+    let n = name.to_ascii_lowercase();
+    let is_append = n.contains("append");
+    if matches!(
+        n.as_str(),
+        "write"
+            | "writefile"
+            | "createfile"
+            | "create"
+            | "savefile"
+            | "save"
+            | "appendtofile"
+            | "append"
+    ) {
+        return (ToolKind::Write, is_append);
+    }
+    if matches!(
+        n.as_str(),
+        "edit" | "replace" | "editfile" | "replaceinfile" | "modify"
+    ) {
+        return (ToolKind::Edit, false);
+    }
+    if matches!(
+        n.as_str(),
+        "multiedit" | "applyedits" | "multireplace" | "batchedit"
+    ) {
+        return (ToolKind::MultiEdit, false);
+    }
+    (ToolKind::Other, false)
+}
+
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
 
 /// Check if a path should be ignored based on gitignore patterns
 /// Implements proper glob-style pattern matching instead of simple string contains
 fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> bool {
-    let path_str = path.to_str().unwrap_or("");
+    // Normalize separators for cross-platform matching (Windows \\ -> /)
+    let raw = path.to_string_lossy();
+    let normalized = raw.replace('\\', "/");
+    let path_str = normalized.as_str();
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     for pattern in gitignore_patterns {
@@ -184,6 +226,8 @@ async fn format_analysis_prompt(
     )
     .await
 }
+
+// Tests live in the larger tests module further below
 
 /// Format the analysis prompt with instructions, project context, conversation, and AST analysis
 async fn format_analysis_prompt_with_ast(
@@ -350,19 +394,11 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
         }
     }
 
-    // Check for path traversal patterns
-    const TRAVERSAL_PATTERNS: &[&str] = &[
-        "..", // parent directory
-        "~",  // home directory expansion
-        "$",  // variable expansion
-    ];
-
-    for pattern in TRAVERSAL_PATTERNS {
-        if path.contains(pattern) {
-            anyhow::bail!(
-                "Invalid file path: contains potential traversal pattern: {}",
-                pattern
-            );
+    // Do not pre-reject ".."/"~"/"$" substrings blindly — rely on canonicalization and scope checks below.
+    // Special-case only unsafe home-expansion prefix on non-Windows.
+    if !cfg!(windows) {
+        if path.starts_with("~/") || path.starts_with("~\\") {
+            anyhow::bail!("Invalid file path: leading ~ home shortcut not allowed");
         }
     }
 
@@ -482,8 +518,8 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
     // Read file content using actual path
     let file_content = read_file_content_safe(actual_file_path).await?;
 
-    match hook_input.tool_name.as_str() {
-        "Edit" => {
+    match normalize_tool_name(&hook_input.tool_name).0 {
+        ToolKind::Edit => {
             // Extract and validate required fields for Edit operation
             let old_string = hook_input
                 .tool_input
@@ -521,7 +557,7 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
             Ok(result)
         }
 
-        "MultiEdit" => {
+        ToolKind::MultiEdit => {
             // Extract and validate edits array
             let edits_array = hook_input
                 .tool_input
@@ -563,7 +599,7 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
             ))
         }
 
-        "Write" => {
+        ToolKind::Write => {
             // Extract and validate content field
             let new_content = hook_input
                 .tool_input
@@ -571,16 +607,33 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
                 .and_then(|v| v.as_str())
                 .context("Write operation missing required 'content' field")?;
 
+            // If this is an append-like tool and we have current file content, build full new content
+            let combined_new = if normalize_tool_name(&hook_input.tool_name).1 {
+                if let Some(existing) = file_content.as_deref() {
+                    let mut s = String::with_capacity(existing.len() + new_content.len() + 1);
+                    s.push_str(existing);
+                    if !existing.ends_with('\n') && !new_content.is_empty() {
+                        s.push('\n');
+                    }
+                    s.push_str(new_content);
+                    Some(s)
+                } else {
+                    Some(new_content.to_string())
+                }
+            } else {
+                Some(new_content.to_string())
+            };
+
             // Return unified diff for clear change visibility with +/- markers
             Ok(format_code_diff(
                 display_path,
                 file_content.as_deref(),
-                Some(new_content),
+                combined_new.as_deref(),
                 3, // context lines
             ))
         }
 
-        _ => {
+        ToolKind::Other => {
             // Not a code modification operation
             Ok(String::new())
         }
@@ -620,13 +673,18 @@ fn validate_transcript_path(path: &str) -> Result<()> {
         "$",  // variable expansion
         "./", ".\\", // current directory traversal
         "../", "..\\", // parent directory traversal
-        "\\\\", // UNC path
+        // UNC handled below conditionally by OS
     ];
 
     for pattern in TRAVERSAL_PATTERNS {
         if path.contains(pattern) {
             anyhow::bail!("Path contains potential traversal pattern: {}", pattern);
         }
+    }
+
+    // UNC pre-check: only disallow on non-Windows
+    if path.contains("\\\\") && !cfg!(windows) {
+        anyhow::bail!("Path contains UNC pattern on non-Windows system");
     }
 
     let path_obj = Path::new(path);
@@ -1446,20 +1504,20 @@ async fn main() -> Result<()> {
                 eprintln!("DEBUG: Could not read file content for: {}", file_path);
             }
             // Fallback to extracting partial content from tool_input if file read fails
-            match hook_input.tool_name.as_str() {
-                "Write" => hook_input
+            match normalize_tool_name(&hook_input.tool_name).0 {
+                ToolKind::Write => hook_input
                     .tool_input
                     .get("content")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                "Edit" => hook_input
+                ToolKind::Edit => hook_input
                     .tool_input
                     .get("new_string")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
                     .to_string(),
-                "MultiEdit" => {
+                ToolKind::MultiEdit => {
                     // For MultiEdit, try to aggregate all new_strings for partial analysis
                     // This gives us at least some content to analyze, even if not the full file
                     // Note: We preserve order of edits and limit memory usage
@@ -1511,7 +1569,7 @@ async fn main() -> Result<()> {
                         String::new()
                     }
                 }
-                _ => String::new(),
+                ToolKind::Other => String::new(),
             }
         }
     };
@@ -2028,6 +2086,7 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // std::fs already imported elsewhere in this tests module
     use std::fs;
     use std::io::Write;
     use tempfile::tempdir;
@@ -2227,6 +2286,67 @@ mod tests {
         assert_eq!(message_count, 5);
     }
 
+    #[test]
+    fn normalize_tool_name_aliases() {
+        let cases = [
+            ("Write", ToolKind::Write, false),
+            ("WriteFile", ToolKind::Write, false),
+            ("CreateFile", ToolKind::Write, false),
+            ("AppendToFile", ToolKind::Write, true),
+            ("Append", ToolKind::Write, true),
+            ("Edit", ToolKind::Edit, false),
+            ("ReplaceInFile", ToolKind::Edit, false),
+            ("MultiEdit", ToolKind::MultiEdit, false),
+            ("BatchEdit", ToolKind::MultiEdit, false),
+            ("SomethingElse", ToolKind::Other, false),
+        ];
+        for (name, kind, append) in cases {
+            let (k, a) = normalize_tool_name(name);
+            assert_eq!(k, kind, "kind mismatch for {}", name);
+            assert_eq!(a, append, "append mismatch for {}", name);
+        }
+    }
+
+    #[test]
+    fn should_ignore_path_normalizes_windows_separators() {
+        let path = std::path::Path::new("dir\\node_modules\\file.js");
+        let patterns = vec!["node_modules/".to_string()];
+        assert!(should_ignore_path(path, &patterns));
+    }
+
+    #[test]
+    fn validate_file_path_rejects_home_prefix_on_unix() {
+        if !cfg!(windows) {
+            let res = validate_file_path("~/secrets.txt");
+            assert!(res.is_err(), "expected ~/ to be rejected on non-Windows");
+        }
+    }
+
+    #[test]
+    fn validate_file_path_allows_existing_under_cwd() {
+        let cwd = std::env::current_dir().unwrap();
+        let test_path = cwd.join(".tmp_validate_path_test.txt");
+        fs::write(&test_path, "ok").unwrap();
+        let res = validate_file_path(test_path.to_str().unwrap());
+        fs::remove_file(&test_path).unwrap();
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_file_path_rejects_outside_cwd() {
+        // Create two temp dirs and place file in other_dir, then set CWD to dir
+        let dir = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let file_outside = other.path().join("outside.txt");
+        fs::write(&file_outside, "x").unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+        let res = validate_file_path(file_outside.to_str().unwrap());
+        // Restore CWD
+        std::env::set_current_dir(prev).unwrap();
+        assert!(res.is_err(), "expected path outside working dir to be rejected");
+    }
+
     #[tokio::test]
     async fn test_read_transcript_summary_char_limit_reached_before_message_limit() {
         let dir = tempdir().unwrap();
@@ -2336,6 +2456,31 @@ mod tests {
         assert!(summary.contains("текст"));
         assert!(summary.contains("中文"));
         assert!(summary.contains("مرحبا"));
+    }
+
+    #[test]
+    #[cfg(not(windows))]
+    fn validate_transcript_path_rejects_unc_on_non_windows() {
+        let unc = r"\\server\share\file.jsonl";
+        let err = validate_transcript_path(unc).unwrap_err();
+        assert!(format!("{}", err).to_lowercase().contains("unc"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn validate_transcript_path_allows_backslash_under_temp_on_windows() {
+        use std::io::Write;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("transcript.jsonl");
+        // Create file
+        {
+            let mut f = std::fs::File::create(&file).unwrap();
+            let _ = writeln!(f, "{{}}\n");
+        }
+        // Build backslash path string
+        let p = file.to_string_lossy().replace('/', "\\");
+        // Should be allowed by validation on Windows
+        assert!(validate_transcript_path(&p).is_ok());
     }
 
     #[tokio::test]

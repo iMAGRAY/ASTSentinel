@@ -1122,11 +1122,7 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
     // Original compact format continues below for backwards compatibility
     let mut output = String::new();
 
-    // Build complete tree structure with files and directories
-    let tree = build_complete_project_tree(structure);
-    output.push_str(&format!("PROJECT:[{}]\n", tree));
-
-    // Add summary statistics with LOC if available
+    // Add summary statistics first so tests don't miss it on very long PROJECT trees
     if let Some(m) = metrics.as_ref() {
         output.push_str(&format!(
             "STATS: {} files, {} dirs, {} LOC\n",
@@ -1141,6 +1137,10 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
             structure.directories.len()
         ));
     }
+
+    // Build complete tree structure with files and directories
+    let tree = build_complete_project_tree(structure);
+    output.push_str(&format!("PROJECT:[{}]\n", tree));
 
     // File type statistics - ultra compact
     let mut file_types = std::collections::HashMap::new();

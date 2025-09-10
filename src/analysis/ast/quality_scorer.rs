@@ -163,7 +163,7 @@ impl AstQualityScorer {
 
             // Parse via syn
             if let Ok(ast) = syn::parse_file(source) {
-                let mut v = RustAstVisitor::new(source);
+                let mut v = RustAstVisitor::new();
                 v.visit_file(&ast);
                 // Apply category-to-score mapping consistently
                 for issue in v.issues {
@@ -173,7 +173,7 @@ impl AstQualityScorer {
                         IssueCategory::DeadCode | IssueCategory::UnreachableCode => result.functionality_score = result.functionality_score.saturating_sub(20),
                         IssueCategory::NullPointerRisk => result.reliability_score = result.reliability_score.saturating_sub(40),
                         IssueCategory::ResourceLeak => result.reliability_score = result.reliability_score.saturating_sub(50),
-                        IssueCategory::HighComplexity => result.maintainability_score = result.maintainability_score.saturating_sub(issue.points_deducted),
+                        IssueCategory::HighComplexity | IssueCategory::LongMethod => result.maintainability_score = result.maintainability_score.saturating_sub(issue.points_deducted),
                         IssueCategory::SqlInjection => result.security_score = result.security_score.saturating_sub(50),
                         IssueCategory::HardcodedCredentials => result.security_score = result.security_score.saturating_sub(50),
                         _ => {}
@@ -374,14 +374,13 @@ fn security_overlay_scan(source: &str, _kind: &str) -> Vec<ConcreteIssue> {
 // =========================
 // Rust syn-based visitor
 // =========================
-struct RustAstVisitor<'a> {
-    src: &'a str,
+struct RustAstVisitor {
     issues: Vec<ConcreteIssue>,
 }
 
-impl<'a> RustAstVisitor<'a> {
-    fn new(src: &'a str) -> Self {
-        Self { src, issues: Vec::new() }
+impl RustAstVisitor {
+    fn new() -> Self {
+        Self { issues: Vec::new() }
     }
 
     fn push_issue(&mut self, severity: IssueSeverity, category: IssueCategory, message: impl Into<String>) {
@@ -439,7 +438,7 @@ impl<'a> RustAstVisitor<'a> {
 
     fn calc_max_nesting(&self, expr: &Expr, depth: u32) -> u32 {
         use syn::{ExprForLoop, ExprIf, ExprLoop, ExprMatch, ExprWhile};
-        let d = match expr {
+        match expr {
             Expr::If(ExprIf { then_branch, else_branch, .. }) => {
                 let then_d = self.calc_block_depth(then_branch, depth + 1);
                 let else_d = if let Some((_, else_expr)) = else_branch {
@@ -459,8 +458,7 @@ impl<'a> RustAstVisitor<'a> {
             }
             Expr::Block(b) => self.calc_block_depth(&b.block, depth),
             _ => depth,
-        };
-        d
+        }
     }
 
     fn calc_block_depth(&self, block: &syn::Block, depth: u32) -> u32 {
@@ -474,8 +472,8 @@ impl<'a> RustAstVisitor<'a> {
     }
 }
 
-impl<'a> Visit<'a> for RustAstVisitor<'a> {
-    fn visit_item_fn(&mut self, i: &'a syn::ItemFn) {
+impl<'a> Visit<'a> for RustAstVisitor {
+    fn visit_item_fn(&mut self, i: &syn::ItemFn) {
         // TooManyParameters
         if i.sig.inputs.len() > 5 {
             self.push_issue(
@@ -493,38 +491,61 @@ impl<'a> Visit<'a> for RustAstVisitor<'a> {
                 format!("Deep nesting detected (level {})", max_depth),
             );
         }
+        // Long method (approx by number of statements in block)
+        if i.block.stmts.len() > 50 {
+            self.push_issue(
+                IssueSeverity::Minor,
+                IssueCategory::LongMethod,
+                format!("Long method ({} statements > 50)", i.block.stmts.len()),
+            );
+        }
+
         // Unreachable after return
         self.scan_block_unreachable(&i.block);
 
         syn::visit::visit_item_fn(self, i);
     }
 
-    fn visit_expr_method_call(&mut self, m: &'a syn::ExprMethodCall) {
-        if m.method == "unwrap" {
+    fn visit_expr_method_call(&mut self, m: &syn::ExprMethodCall) {
+        if m.method == "unwrap" || m.method == "expect" {
             self.push_issue(
                 IssueSeverity::Major,
                 IssueCategory::UnhandledError,
-                "Using .unwrap() without error handling",
+                "Using .unwrap()/expect() without error handling",
             );
         }
         syn::visit::visit_expr_method_call(self, m);
     }
 
-    fn visit_expr_macro(&mut self, mac: &'a syn::ExprMacro) {
+    fn visit_expr_macro(&mut self, mac: &syn::ExprMacro) {
         // panic! macro call
         if let Some(seg) = mac.mac.path.segments.last() {
-            if seg.ident == "panic" {
+            if seg.ident == "panic" || seg.ident == "todo" || seg.ident == "unimplemented" {
                 self.push_issue(
                     IssueSeverity::Major,
                     IssueCategory::UnhandledError,
-                    "panic! macro used",
+                    "panic!/todo!/unimplemented! macro used",
                 );
             }
         }
         syn::visit::visit_expr_macro(self, mac);
     }
 
-    fn visit_stmt(&mut self, s: &'a Stmt) {
+    fn visit_stmt(&mut self, s: &Stmt) {
+        // Detect macro statements like panic!/todo!/unimplemented! used as a standalone stmt
+        if let Stmt::Macro(mac_stmt) = s {
+            if let Some(seg) = mac_stmt.mac.path.segments.last() {
+                let ident = seg.ident.to_string();
+                if ident == "panic" || ident == "todo" || ident == "unimplemented" {
+                    self.push_issue(
+                        IssueSeverity::Major,
+                        IssueCategory::UnhandledError,
+                        "panic!/todo!/unimplemented! macro used",
+                    );
+                }
+            }
+        }
+
         // Look for string literal creds / SQL in simple let-bindings
         if let Stmt::Local(local) = s {
             let pat_ident = match &local.pat {
@@ -535,7 +556,6 @@ impl<'a> Visit<'a> for RustAstVisitor<'a> {
                 let name = pat_ident.to_string().to_lowercase();
                 if let Expr::Lit(syn::ExprLit { lit: syn::Lit::Str(lit), .. }) = &*init.expr {
                     let val = lit.value();
-                    let low = val.to_lowercase();
                     if name.contains("password") || name.contains("api_key") || name.contains("secret") || name.contains("token") {
                         self.push_issue(
                             IssueSeverity::Critical,
@@ -558,6 +578,12 @@ impl<'a> Visit<'a> for RustAstVisitor<'a> {
             }
         }
         syn::visit::visit_stmt(self, s);
+    }
+
+    fn visit_block(&mut self, b: &syn::Block) {
+        // Scan for unreachable inside nested blocks as well
+        self.scan_block_unreachable(b);
+        syn::visit::visit_block(self, b);
     }
 }
 

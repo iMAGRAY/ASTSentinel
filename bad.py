@@ -1,0 +1,2 @@
+password = 'supersecret'
+print('ok')

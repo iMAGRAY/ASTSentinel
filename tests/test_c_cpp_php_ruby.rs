@@ -22,6 +22,39 @@ fn cpp_unreachable_after_return() {
 }
 
 #[test]
+fn cpp_switch_good_code_has_no_issues() {
+    let code = r#"int pick(int x){
+  switch(x){
+    case 1: return 1;
+    case 2: return 2;
+    default: return 0;
+  }
+}
+"#;
+    let s = AstQualityScorer::new();
+    let res = s.analyze(code, SupportedLanguage::Cpp).unwrap();
+    assert!(res.concrete_issues.is_empty(), "expected no issues for simple C++ switch good code");
+}
+
+#[test]
+fn cpp_try_catch_good_code_has_no_issues() {
+    // Tree-sitter C++ may not count try/catch towards complexity; ensure it parses cleanly
+    let code = r#"#include <stdexcept>
+int f(int x){
+  try {
+    if (x == 0) throw std::runtime_error("err");
+    return x;
+  } catch (const std::exception&){
+    return -1;
+  }
+}
+"#;
+    let s = AstQualityScorer::new();
+    let res = s.analyze(code, SupportedLanguage::Cpp).unwrap();
+    assert!(res.concrete_issues.is_empty(), "expected no issues for C++ try/catch good code");
+}
+
+#[test]
 fn php_unreachable_after_return_and_creds() {
     let code = r#"<?php
 function foo(){

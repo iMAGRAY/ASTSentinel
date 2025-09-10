@@ -1,0 +1,6 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {"file_path": "app.py", "old_string": "print('ok')\n", "new_string": "password='x'\nprint('changed')\n"},
+  "cwd": ".",
+  "hook_event_name": "PostToolUse"
+}

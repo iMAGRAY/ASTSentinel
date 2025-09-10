@@ -1,5 +1,8 @@
 # ValidationCodeHook
 
+<!-- Badges -->
+![CI](https://github.com/your-org/your-repo/actions/workflows/ci.yml/badge.svg)
+
 High-performance validation hooks for Claude Code, providing real-time security and code quality analysis through AI-powered validation.
 
 ## Features
@@ -89,6 +92,11 @@ ValidationCodeHook/
 └── prompts/                  # Development prompts
 ```
 
+See also:
+- docs/ARCHITECTURE.md — detailed architecture
+- docs/PROJECT_STRUCTURE.md — project layout and modules
+
+
 ## Development
 
 ### Running Tests
@@ -96,6 +104,14 @@ ValidationCodeHook/
 ```bash
 cargo test
 ```
+
+Fastpath AST engine is enabled by default. To exercise both paths:
+- Fastpath: `cargo test --features ast_fastpath`
+- Legacy multipass: `cargo test --no-default-features`
+
+Coverage (recommended tool):
+- `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
+
 
 ### Building for Release
 
@@ -131,6 +147,21 @@ cargo build --release
 - Check Claude Code settings for hook configuration
 - Review stderr output for error messages
 
+## Windows Path Handling
+
+- Hooks validate and normalize paths cross‑platform. On Windows, backslash and UNC paths are supported.
+- Gitignore matching is separator‑agnostic (internally `\\` → `/`).
+- Dangerous blanket bans on substrings like `..`, `~`, `$` are removed; canonicalization and allowed directories checks enforce safety.
+- On non‑Windows, only the `~/` prefix is rejected; other `~` usages are allowed.
+
+Details: README_HOOKS.md → Windows section.
+
+## Docs
+- Architecture: docs/ARCHITECTURE.md
+- Project Structure: docs/PROJECT_STRUCTURE.md
+- Testing & Coverage: docs/TESTING.md
+- Hooks details: README_HOOKS.md
+
 ## Contributing
 
 1. Fork the repository
@@ -148,3 +179,9 @@ MIT License - see LICENSE file for details
 - Built for [Claude Code](https://claude.ai/code) by Anthropic
 - Powered by various AI providers (OpenAI, xAI, Anthropic, Google)
 - Written in Rust for performance and reliability
+To run in CI parity locally:
+- Fastpath: `cargo test --features ast_fastpath`
+- Legacy multipass: `cargo test --no-default-features`
+
+Coverage locally (Linux):
+- `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
