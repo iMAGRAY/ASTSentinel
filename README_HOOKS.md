@@ -217,3 +217,13 @@ See docs/PLAYBOOK_AST_FLAGS.md for before/after examples and quick commands.
 | API CONTRACT       | PostToolUse (all modes)      | `API_CONTRACT`                |
 | NEXT STEPS         | PostToolUse (all modes)      | —                             |
 | TIMINGS            | PostToolUse (AST_ONLY)       | `AST_TIMINGS`                 |
+
+### Duplicate Conflicts → Actions (шпаргалка)
+
+| Conflict Type     | Meaning                                        | Recommended Action                  |
+|-------------------|------------------------------------------------|-------------------------------------|
+| ExactDuplicate    | Same content in multiple files                 | Keep newest/largest; remove others  |
+| VersionConflict   | Variants like `_new`, `_old`, `copy`, `v2`     | Consolidate changes into single file|
+| BackupFile        | `.bak`, `.old`, `.backup`, trailing `~`        | Remove backup files                 |
+| TempFile          | `.tmp`, `.temp`, `.swp`                        | Remove temp files                   |
+| SimilarName       | Similar stems in same directory (likely drift) | Review and consolidate if needed    |
