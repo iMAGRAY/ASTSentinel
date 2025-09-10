@@ -15,7 +15,7 @@ ID B — PreToolUse: анти‑обман и здравый смысл (Diff‑
   Критерий: e2e — deny в prod, soft‑allow в test (смягчение по конфигу).
 - [+] B3. «Глушение исключений»: пустые catch/except без действий — блокировка
   Критерий: e2e — deny при замене реал. логики на глушение.
-- [-] B4. Contract‑check (упрощённо): упрощение сигнатур/игнор параметров
+- [+] B4. Contract‑check (упрощённо): упрощение сигнатур/игнор параметров
   Критерий: unit+e2e — ловим упрощение, не блокируем корректные рефакторы.
 
 ID C — PreToolUse: безопасность без «перебора»
@@ -107,3 +107,4 @@ ID Z — База (готово)
   - web.run: найден и открыт RFC 9114 (HTTP/3) на rfc-editor.org и datatracker.ietf.org; ссылки доступны.
   - Вывод: Интернет‑доступ рабочий; DNS+TLS+HTTP/2/3 заголовки корректно получены.
   - Добавлен e2e‑скрипт `scripts/net_check.ps1` и тест `tests/e2e/test_net_check.ps1`; локальный прогон: PASS.
+  - Реализованы Contract‑check unit+e2e: `tests/e2e_pretooluse_contract.rs`; deny при уменьшении арности (Python), allow при сохранении сигнатуры (JS). Запуск: `cargo test --bin pretooluse`.
