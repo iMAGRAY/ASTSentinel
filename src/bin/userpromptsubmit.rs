@@ -226,4 +226,3 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
 /// Perform AST analysis across all code files in the project
 
 // Removed unused project-wide AST analysis helpers
-}

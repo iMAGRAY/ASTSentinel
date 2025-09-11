@@ -6,10 +6,9 @@ use serde_json;
 use std::time::Duration;
 use url::Url;
 
-use crate::{
-    Config, GrokCodeAnalysis, GrokCodeIssue, GrokCodeMetrics, GrokCodeSuggestion,
-    SecurityValidation,
-};
+use crate::{Config, SecurityValidation};
+#[cfg(test)]
+use crate::{GrokCodeAnalysis, GrokCodeIssue, GrokCodeMetrics, GrokCodeSuggestion};
 use std::collections::HashMap;
 
 // AI-assisted code review structures for enhanced analysis with security constraints
