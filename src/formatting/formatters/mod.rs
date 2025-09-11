@@ -104,12 +104,7 @@ impl SecureCommandExecutor {
     }
 
     /// Execute a formatter command with full security measures
-    pub fn execute_formatter(
-        &self,
-        command: &str,
-        args: &[String],
-        input: Option<&str>,
-    ) -> Result<String> {
+    pub fn execute_formatter(&self, command: &str, args: &[String], input: Option<&str>) -> Result<String> {
         // Security validation
         self.validate_command_security(command, args)?;
 
@@ -138,8 +133,8 @@ impl SecureCommandExecutor {
 
     fn contains_dangerous_patterns(&self, input: &str) -> bool {
         let dangerous_patterns = [
-            ";", "&&", "||", "|", "`", "$", "$(", "${", "../", "~/", "/etc/", "&", ">", "<", ">>",
-            "<<", "\n", "\r", "\0",
+            ";", "&&", "||", "|", "`", "$", "$(", "${", "../", "~/", "/etc/", "&", ">", "<", ">>", "<<",
+            "\n", "\r", "\0",
         ];
 
         for pattern in &dangerous_patterns {
@@ -208,11 +203,7 @@ impl SecureCommandExecutor {
         Ok(cmd)
     }
 
-    fn execute_with_security_limits(
-        &self,
-        mut cmd: Command,
-        input: Option<&str>,
-    ) -> Result<String> {
+    fn execute_with_security_limits(&self, mut cmd: Command, input: Option<&str>) -> Result<String> {
         use std::sync::mpsc;
         use std::thread;
         use std::time::Instant;

@@ -31,10 +31,7 @@ mod integration_tests {
             result.contains("+     console.log(\"MODIFIED LINE\")"),
             "Should show added line"
         );
-        assert!(
-            result.contains("return true"),
-            "Should contain return statement"
-        );
+        assert!(result.contains("return true"), "Should contain return statement");
     }
 
     #[test]
@@ -43,8 +40,7 @@ mod integration_tests {
         let old_string = "console.log(\"Hello\");";
         let new_string = "console.log(\"Hello, Modified!\");";
 
-        let result =
-            format_edit_full_context("test.js", Some(file_content), old_string, new_string);
+        let result = format_edit_full_context("test.js", Some(file_content), old_string, new_string);
 
         println!("\n=== EDIT FULL CONTEXT OUTPUT ===");
         println!("{}", result);

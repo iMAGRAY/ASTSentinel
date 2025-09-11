@@ -23,9 +23,15 @@ fn unit_userpromptsubmit_golden_minimal_project() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn userpromptsubmit");
+        .spawn()
+        .expect("spawn userpromptsubmit");
 
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let txt = String::from_utf8_lossy(&out.stdout);
@@ -37,6 +43,9 @@ fn unit_userpromptsubmit_golden_minimal_project() {
     assert!(idx_title < idx_summary && idx_summary < idx_risk);
 
     assert!(txt.contains("Files: 1"), "should report single file: {}", txt);
-    assert!(txt.contains("Dependencies: total 0"), "deps count should be zero: {}", txt);
+    assert!(
+        txt.contains("Dependencies: total 0"),
+        "deps count should be zero: {}",
+        txt
+    );
 }
-

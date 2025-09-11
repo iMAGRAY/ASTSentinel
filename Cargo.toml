@@ -28,6 +28,7 @@ toml = "0.8"
 tokio = { version = "1.0", features = ["full"] }
 reqwest = { version = "0.12", features = ["json"] }
 anyhow = "1.0"
+thiserror = "1.0"
 clap = { version = "4.0", features = ["derive"] }
 dotenv = "0.15"
 chrono = "0.4"
@@ -44,6 +45,8 @@ url = "2.5"
 rand = "0.8"
 libc = "0.2"
 globset = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 
 # AST parsers for multiple languages
 tree-sitter = "0.22"
@@ -83,4 +86,3 @@ codegen-units = 1
 panic = "abort"
 strip = true
 opt-level = "z"
-

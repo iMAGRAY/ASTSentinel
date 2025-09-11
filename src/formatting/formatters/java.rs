@@ -67,9 +67,9 @@ impl CodeFormatter for JavaFormatter {
         // Check if google-java-format is available - graceful degradation
         if !self.is_available() {
             let mut result = FormatResult::unchanged(code.to_string());
-            result.messages.push(
-                "google-java-format formatter not available - skipping Java formatting".to_string(),
-            );
+            result
+                .messages
+                .push("google-java-format formatter not available - skipping Java formatting".to_string());
             return Ok(result);
         }
 
@@ -89,9 +89,7 @@ impl CodeFormatter for JavaFormatter {
                 // If google-java-format fails, it might be due to syntax errors
                 // Return the original code with error message
                 let mut result = FormatResult::unchanged(code.to_string());
-                result
-                    .messages
-                    .push(format!("google-java-format failed: {}", e));
+                result.messages.push(format!("google-java-format failed: {}", e));
                 Ok(result)
             }
         }
@@ -265,10 +263,7 @@ public int getAge(){return age;}
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "google-java-format formatting of complex code failed: {}",
-                        e
-                    );
+                    eprintln!("google-java-format formatting of complex code failed: {}", e);
                 }
             }
         }
@@ -342,7 +337,8 @@ public void save(T entity){cache.put(entity.getId(),entity);}
                 return;
             }
 
-            let invalid_code = "public class Broken {\npublic void method( {\nSystem.out.println(\"missing brace\";\n}"; // Missing closing brace and parenthesis
+            let invalid_code =
+                "public class Broken {\npublic void method( {\nSystem.out.println(\"missing brace\";\n}"; // Missing closing brace and parenthesis
             let result = formatter.format_code(invalid_code);
 
             match result {
@@ -381,10 +377,7 @@ public void save(T entity){cache.put(entity.getId(),entity);}
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "google-java-format formatting of method chains failed: {}",
-                        e
-                    );
+                    eprintln!("google-java-format formatting of method chains failed: {}", e);
                 }
             }
         }

@@ -178,11 +178,7 @@ impl TomlFormatter {
 
                 // Validate section name
                 let inner = trimmed.trim_start_matches('[').trim_end_matches(']');
-                if inner
-                    .trim_start_matches('[')
-                    .trim_end_matches(']')
-                    .is_empty()
-                {
+                if inner.trim_start_matches('[').trim_end_matches(']').is_empty() {
                     return Err(anyhow::anyhow!(
                         "TOML syntax error at line {}: Empty section name",
                         line_num + 1
@@ -246,14 +242,8 @@ impl TomlFormatter {
                 r#"(?i)api[_-]?key\s*=\s*["'][^"']+["']"#,
                 "Hardcoded API key detected",
             ),
-            (
-                r#"(?i)secret\s*=\s*["'][^"']+["']"#,
-                "Hardcoded secret detected",
-            ),
-            (
-                r#"(?i)token\s*=\s*["'][^"']+["']"#,
-                "Hardcoded token detected",
-            ),
+            (r#"(?i)secret\s*=\s*["'][^"']+["']"#, "Hardcoded secret detected"),
+            (r#"(?i)token\s*=\s*["'][^"']+["']"#, "Hardcoded token detected"),
         ];
 
         for (pattern, warning) in security_patterns {
@@ -386,11 +376,7 @@ impl TomlSection {
     }
 
     fn is_empty(&self) -> bool {
-        self.lines.is_empty()
-            || self
-                .lines
-                .iter()
-                .all(|line| matches!(line, TomlLine::Empty))
+        self.lines.is_empty() || self.lines.iter().all(|line| matches!(line, TomlLine::Empty))
     }
 
     fn format(&self) -> Result<String> {

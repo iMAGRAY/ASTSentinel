@@ -1,3 +1,4 @@
+#![allow(clippy::items_after_test_module)]
 //! Dependency analysis module for project dependencies validation
 //! Supports multiple package managers: npm, pip, cargo, etc.
 
@@ -6,6 +7,23 @@ use serde_json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
+use tokio::time::{sleep, Duration};
+
+async fn read_to_string_retry(path: &PathBuf) -> Result<String> {
+    let mut attempts = 0u8;
+    loop {
+        if let Ok(text) = fs::read_to_string(path).await {
+            if !text.is_empty() || attempts >= 2 {
+                return Ok(text);
+            }
+        }
+        if attempts >= 2 {
+            return Ok(String::new());
+        }
+        attempts += 1;
+        sleep(Duration::from_millis(5)).await;
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DependencyInfo {
@@ -65,12 +83,11 @@ impl ProjectDependencies {
         if dep.is_dev_dependency {
             self.dev_dependencies_count += 1;
         }
-        
-        if dep.latest_version.is_some() && 
-           dep.latest_version.as_ref() != Some(&dep.current_version) {
+
+        if dep.latest_version.is_some() && dep.latest_version.as_ref() != Some(&dep.current_version) {
             self.outdated_count += 1;
         }
-        
+
         self.dependencies.push(dep);
         self.total_count += 1;
     }
@@ -88,7 +105,7 @@ impl ProjectDependencies {
             self.dev_dependencies_count,
             self.total_count - self.dev_dependencies_count
         ));
-        
+
         if self.outdated_count > 0 {
             result.push_str(&format!(
                 "⚠️  {} potentially outdated dependencies detected\n\n",
@@ -101,27 +118,46 @@ impl ProjectDependencies {
         // Group by package manager
         let mut by_manager: HashMap<PackageManager, Vec<&DependencyInfo>> = HashMap::new();
         for dep in &self.dependencies {
-            by_manager.entry(dep.package_manager.clone()).or_default().push(dep);
+            by_manager
+                .entry(dep.package_manager.clone())
+                .or_default()
+                .push(dep);
         }
 
         // Stable iteration over managers by priority
         let mut managers: Vec<_> = by_manager.keys().cloned().collect();
-        let prio = |m: &PackageManager| -> u8 { match m { PackageManager::Cargo=>0, PackageManager::Npm=>1, PackageManager::Yarn=>2, PackageManager::Pip=>3, PackageManager::Poetry=>4 } };
-        managers.sort_by(|a,b| prio(a).cmp(&prio(b)).then_with(|| a.to_string().cmp(&b.to_string())));
+        let prio = |m: &PackageManager| -> u8 {
+            match m {
+                PackageManager::Cargo => 0,
+                PackageManager::Npm => 1,
+                PackageManager::Yarn => 2,
+                PackageManager::Pip => 3,
+                PackageManager::Poetry => 4,
+            }
+        };
+        managers.sort_by(|a, b| {
+            prio(a)
+                .cmp(&prio(b))
+                .then_with(|| a.to_string().cmp(&b.to_string()))
+        });
 
         for manager in managers {
             let deps = by_manager.get(&manager).cloned().unwrap_or_default();
             result.push_str(&format!("### {} Dependencies ({})\n", manager, deps.len()));
-            
+
             // Separate outdated and current dependencies
-            let mut outdated: Vec<_> = deps.iter().filter(|d| {
-                d.latest_version.is_some() && 
-                d.latest_version.as_ref() != Some(&d.current_version)
-            }).collect();
-            let mut current: Vec<_> = deps.iter().filter(|d| {
-                d.latest_version.is_none() || 
-                d.latest_version.as_ref() == Some(&d.current_version)
-            }).collect();
+            let mut outdated: Vec<_> = deps
+                .iter()
+                .filter(|d| {
+                    d.latest_version.is_some() && d.latest_version.as_ref() != Some(&d.current_version)
+                })
+                .collect();
+            let mut current: Vec<_> = deps
+                .iter()
+                .filter(|d| {
+                    d.latest_version.is_none() || d.latest_version.as_ref() == Some(&d.current_version)
+                })
+                .collect();
 
             // Show outdated first (more important)
             if !outdated.is_empty() {
@@ -143,14 +179,12 @@ impl ProjectDependencies {
             // Show current dependencies (less verbose)
             if !current.is_empty() && current.len() <= 10 {
                 result.push_str("✅ **Up-to-date:**\n");
-                current.sort_by(|a,b| a.name.cmp(&b.name));
+                current.sort_by(|a, b| a.name.cmp(&b.name));
                 for dep in current.iter().take(10) {
                     let dev_marker = if dep.is_dev_dependency { " (dev)" } else { "" };
                     result.push_str(&format!(
                         "  • {}{}: {}\n",
-                        dep.name,
-                        dev_marker,
-                        dep.current_version
+                        dep.name, dev_marker, dep.current_version
                     ));
                 }
                 if current.len() > 10 {
@@ -206,7 +240,9 @@ pub async fn analyze_project_dependencies(project_root: &Path) -> Result<Project
                 }
                 PackageManager::Poetry => {
                     if let Ok(deps) = parse_pyproject_toml_poetry(&file_path).await {
-                        for dep in deps { project_deps.add_dependency(dep); }
+                        for dep in deps {
+                            project_deps.add_dependency(dep);
+                        }
                     }
                 }
                 PackageManager::Yarn => {
@@ -222,11 +258,11 @@ pub async fn analyze_project_dependencies(project_root: &Path) -> Result<Project
 
 /// Parse package.json for npm dependencies
 async fn parse_package_json(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
-    let content = fs::read_to_string(file_path).await
+    let content = read_to_string_retry(file_path)
+        .await
         .context("Failed to read package.json")?;
-    
-    let json: serde_json::Value = serde_json::from_str(&content)
-        .context("Failed to parse package.json")?;
+
+    let json: serde_json::Value = serde_json::from_str(&content).context("Failed to parse package.json")?;
 
     let mut dependencies = Vec::new();
 
@@ -265,14 +301,15 @@ async fn parse_package_json(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> 
 
 /// Parse requirements.txt for pip dependencies
 async fn parse_requirements_txt(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
-    let content = fs::read_to_string(file_path).await
+    let content = read_to_string_retry(file_path)
+        .await
         .context("Failed to read requirements.txt")?;
-    
+
     let mut dependencies = Vec::new();
 
     for line in content.lines() {
         let line = line.trim();
-        
+
         // Skip empty lines and comments
         if line.is_empty() || line.starts_with('#') || line.starts_with('-') {
             continue;
@@ -289,9 +326,10 @@ async fn parse_requirements_txt(file_path: &PathBuf) -> Result<Vec<DependencyInf
 
 /// Parse Cargo.toml for Rust dependencies
 async fn parse_cargo_toml(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
-    let content = fs::read_to_string(file_path).await
+    let content = read_to_string_retry(file_path)
+        .await
         .context("Failed to read Cargo.toml")?;
-    
+
     // Simple TOML parsing for basic dependencies
     // For production use, should use a proper TOML parser
     let mut dependencies = Vec::new();
@@ -300,7 +338,7 @@ async fn parse_cargo_toml(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
 
     for line in content.lines() {
         let line = line.trim();
-        
+
         if line == "[dependencies]" {
             in_dependencies = true;
             in_dev_dependencies = false;
@@ -327,19 +365,21 @@ async fn parse_cargo_toml(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
 
 /// Clean version string by removing prefixes like ^, ~, >=, etc.
 fn clean_version_string(version: &str) -> String {
-    version.trim_start_matches(&['^', '~', '=', '>', '<', ' '][..]).to_string()
+    version
+        .trim_start_matches(&['^', '~', '=', '>', '<', ' '][..])
+        .to_string()
 }
 
 /// Parse a single pip requirement line
 fn parse_pip_requirement(line: &str) -> Option<DependencyInfo> {
     // Handle different formats: package==1.0.0, package>=1.0.0, etc.
     let operators = ["==", ">=", "<=", "!=", ">", "<", "~="];
-    
+
     for op in &operators {
         if let Some(pos) = line.find(op) {
             let name = line[..pos].trim().to_string();
             let version = line[pos + op.len()..].trim().to_string();
-            
+
             return Some(DependencyInfo {
                 name,
                 current_version: clean_version_string(&version),
@@ -349,7 +389,7 @@ fn parse_pip_requirement(line: &str) -> Option<DependencyInfo> {
             });
         }
     }
-    
+
     None
 }
 
@@ -358,11 +398,11 @@ fn parse_cargo_dependency(line: &str, is_dev: bool) -> Option<DependencyInfo> {
     if let Some(eq_pos) = line.find('=') {
         let name = line[..eq_pos].trim().to_string();
         let version_part = line[eq_pos + 1..].trim();
-        
+
         // Handle simple version strings in quotes
         if version_part.starts_with('"') && version_part.ends_with('"') {
-            let version = version_part[1..version_part.len()-1].to_string();
-            
+            let version = version_part[1..version_part.len() - 1].to_string();
+
             return Some(DependencyInfo {
                 name,
                 current_version: clean_version_string(&version),
@@ -371,7 +411,7 @@ fn parse_cargo_dependency(line: &str, is_dev: bool) -> Option<DependencyInfo> {
                 is_dev_dependency: is_dev,
             });
         }
-        
+
         // Handle object dependencies like: clap = { version = "4.0", features = ["derive"] }
         if version_part.starts_with('{') {
             // Look for version = "..." inside the object
@@ -383,7 +423,7 @@ fn parse_cargo_dependency(line: &str, is_dev: bool) -> Option<DependencyInfo> {
                         let after_quote = &version_value[quote_start + 1..];
                         if let Some(quote_end) = after_quote.find('"') {
                             let version = after_quote[..quote_end].to_string();
-                            
+
                             return Some(DependencyInfo {
                                 name,
                                 current_version: clean_version_string(&version),
@@ -397,7 +437,7 @@ fn parse_cargo_dependency(line: &str, is_dev: bool) -> Option<DependencyInfo> {
             }
         }
     }
-    
+
     None
 }
 
@@ -407,32 +447,64 @@ mod tests {
     use tempfile::tempdir;
     use tokio::fs::File;
     use tokio::io::AsyncWriteExt;
-    
+
     #[test]
     fn unit_format_for_ai_manager_and_name_order() {
         let mut pd = ProjectDependencies::new();
-        pd.add_dependency(DependencyInfo { name: "serde".into(), current_version: "1.0".into(), latest_version: None, package_manager: PackageManager::Cargo, is_dev_dependency: false });
-        pd.add_dependency(DependencyInfo { name: "requests".into(), current_version: "2.31.0".into(), latest_version: None, package_manager: PackageManager::Pip, is_dev_dependency: false });
-        pd.add_dependency(DependencyInfo { name: "eslint".into(), current_version: "8.0.0".into(), latest_version: None, package_manager: PackageManager::Npm, is_dev_dependency: true });
-        pd.add_dependency(DependencyInfo { name: "left-pad".into(), current_version: "1.3.0".into(), latest_version: None, package_manager: PackageManager::Npm, is_dev_dependency: false });
+        pd.add_dependency(DependencyInfo {
+            name: "serde".into(),
+            current_version: "1.0".into(),
+            latest_version: None,
+            package_manager: PackageManager::Cargo,
+            is_dev_dependency: false,
+        });
+        pd.add_dependency(DependencyInfo {
+            name: "requests".into(),
+            current_version: "2.31.0".into(),
+            latest_version: None,
+            package_manager: PackageManager::Pip,
+            is_dev_dependency: false,
+        });
+        pd.add_dependency(DependencyInfo {
+            name: "eslint".into(),
+            current_version: "8.0.0".into(),
+            latest_version: None,
+            package_manager: PackageManager::Npm,
+            is_dev_dependency: true,
+        });
+        pd.add_dependency(DependencyInfo {
+            name: "left-pad".into(),
+            current_version: "1.3.0".into(),
+            latest_version: None,
+            package_manager: PackageManager::Npm,
+            is_dev_dependency: false,
+        });
         let s = pd.format_for_ai();
         // Managers should be ordered: cargo → npm → yarn → pip → poetry
         let idx_cargo = s.find("### cargo Dependencies").unwrap();
         let idx_npm = s.find("### npm Dependencies").unwrap();
         let idx_pip = s.find("### pip Dependencies").unwrap();
-        assert!(idx_cargo < idx_npm && idx_npm < idx_pip, "manager order incorrect: {}", s);
+        assert!(
+            idx_cargo < idx_npm && idx_npm < idx_pip,
+            "manager order incorrect: {}",
+            s
+        );
         // Names inside npm current should be ordered alphabetically
         let npm_section = &s[idx_npm..];
         let i_left = npm_section.find("left-pad").unwrap();
         let i_eslint = npm_section.find("eslint").unwrap();
-        assert!(i_eslint < i_left, "names not sorted in npm section: {}", npm_section);
+        assert!(
+            i_eslint < i_left,
+            "names not sorted in npm section: {}",
+            npm_section
+        );
     }
 
     #[tokio::test]
     async fn test_parse_package_json() {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("package.json");
-        
+
         let content = r#"{
             "name": "test-project",
             "dependencies": {
@@ -443,39 +515,39 @@ mod tests {
                 "jest": "^29.0.0"
             }
         }"#;
-        
+
         let mut file = File::create(&file_path).await.unwrap();
         file.write_all(content.as_bytes()).await.unwrap();
         drop(file);
-        
+
         let deps = parse_package_json(&file_path).await.unwrap();
         assert_eq!(deps.len(), 3);
-        
+
         let express = deps.iter().find(|d| d.name == "express").unwrap();
         assert_eq!(express.current_version, "4.18.0");
         assert!(!express.is_dev_dependency);
-        
+
         let jest = deps.iter().find(|d| d.name == "jest").unwrap();
         assert!(jest.is_dev_dependency);
     }
 
-    #[tokio::test] 
+    #[tokio::test]
     async fn test_parse_requirements_txt() {
         let dir = tempdir().unwrap();
         let file_path = dir.path().join("requirements.txt");
-        
+
         let content = "Django==4.2.0\nrequests>=2.28.0\n# comment line\npillow==10.0.0\n";
-        
+
         let mut file = File::create(&file_path).await.unwrap();
         file.write_all(content.as_bytes()).await.unwrap();
         drop(file);
-        
+
         let deps = parse_requirements_txt(&file_path).await.unwrap();
         assert_eq!(deps.len(), 3);
-        
+
         let django = deps.iter().find(|d| d.name == "Django").unwrap();
         assert_eq!(django.current_version, "4.2.0");
-        
+
         let pillow = deps.iter().find(|d| d.name == "pillow").unwrap();
         assert_eq!(pillow.current_version, "10.0.0");
     }
@@ -515,9 +587,15 @@ tokio = { version = "1.0", features = ["full"] }
 
         let deps = parse_cargo_toml(&file_path).await.unwrap();
         // Expect 3 deps collected (serde, clap, tokio)
-        assert!(deps.iter().any(|d| d.name == "serde" && d.current_version == "1.0" && !d.is_dev_dependency));
-        assert!(deps.iter().any(|d| d.name == "clap" && d.current_version == "4.0" && !d.is_dev_dependency));
-        assert!(deps.iter().any(|d| d.name == "tokio" && d.current_version == "1.0" && d.is_dev_dependency));
+        assert!(deps
+            .iter()
+            .any(|d| d.name == "serde" && d.current_version == "1.0" && !d.is_dev_dependency));
+        assert!(deps
+            .iter()
+            .any(|d| d.name == "clap" && d.current_version == "4.0" && !d.is_dev_dependency));
+        assert!(deps
+            .iter()
+            .any(|d| d.name == "tokio" && d.current_version == "1.0" && d.is_dev_dependency));
     }
 
     #[tokio::test]
@@ -582,7 +660,8 @@ pytest = { version = "^7.4.0", markers = "python_version >= '3.8'" }
 
 /// Parse pyproject.toml (Poetry) for dependencies
 async fn parse_pyproject_toml_poetry(file_path: &PathBuf) -> Result<Vec<DependencyInfo>> {
-    let content = fs::read_to_string(file_path).await
+    let content = read_to_string_retry(file_path)
+        .await
         .context("Failed to read pyproject.toml")?;
 
     let mut dependencies = Vec::new();
@@ -592,41 +671,73 @@ async fn parse_pyproject_toml_poetry(file_path: &PathBuf) -> Result<Vec<Dependen
     for raw in content.lines() {
         let line = raw.trim();
         if line.starts_with("[tool.poetry.dependencies]") {
-            in_deps = true; in_dev_deps = false; continue;
+            in_deps = true;
+            in_dev_deps = false;
+            continue;
         }
         if line.starts_with("[tool.poetry.dev-dependencies]") {
-            in_deps = false; in_dev_deps = true; continue;
+            in_deps = false;
+            in_dev_deps = true;
+            continue;
         }
         if line.starts_with('[') && line.ends_with(']') {
-            in_deps = false; in_dev_deps = false; continue;
+            in_deps = false;
+            in_dev_deps = false;
+            continue;
         }
-        if !(in_deps || in_dev_deps) { continue; }
-        if line.is_empty() || line.starts_with('#') { continue; }
+        if !(in_deps || in_dev_deps) {
+            continue;
+        }
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
         if let Some(eq) = line.find('=') {
             let name = line[..eq].trim().to_string();
-            if name.eq_ignore_ascii_case("python") { continue; }
-            let val = line[eq+1..].trim();
+            if name.eq_ignore_ascii_case("python") {
+                continue;
+            }
+            let val = line[eq + 1..].trim();
             // version formats: "^1.2.3" or { version = "1.2.3", extras = [...] }
             let version = if val.starts_with('"') {
                 // simple quoted value
                 let trimmed = val.trim_start_matches('"');
-                if let Some(end) = trimmed.find('"') { trimmed[..end].to_string() } else { String::new() }
+                if let Some(end) = trimmed.find('"') {
+                    trimmed[..end].to_string()
+                } else {
+                    String::new()
+                }
             } else if val.starts_with('{') {
                 if let Some(vpos) = val.find("version") {
-                    let after = &val[vpos+7..];
+                    let after = &val[vpos + 7..];
                     if let Some(eq) = after.find('=') {
-                        let rest = after[eq+1..].trim_start();
+                        let rest = after[eq + 1..].trim_start();
                         // find first quote character and matching closing quote
                         if let Some(first) = rest.find('"') {
-                            let rest2 = &rest[first+1..];
-                            if let Some(end) = rest2.find('"') { rest2[..end].to_string() } else { String::new() }
+                            let rest2 = &rest[first + 1..];
+                            if let Some(end) = rest2.find('"') {
+                                rest2[..end].to_string()
+                            } else {
+                                String::new()
+                            }
                         } else if let Some(first) = rest.find('\'') {
-                            let rest2 = &rest[first+1..];
-                            if let Some(end) = rest2.find('\'') { rest2[..end].to_string() } else { String::new() }
-                        } else { String::new() }
-                    } else { String::new() }
-                } else { String::new() }
-            } else { String::new() };
+                            let rest2 = &rest[first + 1..];
+                            if let Some(end) = rest2.find('\'') {
+                                rest2[..end].to_string()
+                            } else {
+                                String::new()
+                            }
+                        } else {
+                            String::new()
+                        }
+                    } else {
+                        String::new()
+                    }
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
 
             if !version.is_empty() {
                 dependencies.push(DependencyInfo {

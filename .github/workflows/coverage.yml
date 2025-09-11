@@ -1,0 +1,62 @@
+name: Coverage
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+
+jobs:
+  tarpaulin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
+
+      - name: Generate coverage (LCOV)
+        env:
+          RUST_LOG: info
+          LOG_JSON: "1"
+        run: |
+          set -euxo pipefail
+          cargo tarpaulin --out Lcov --timeout 120 --engine llvm -- --test-threads=1
+          mkdir -p coverage
+          mv lcov.info coverage/lcov.info || mv tarpaulin/lcov.info coverage/lcov.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+
+      - name: Update local SVG coverage badge (default branch only)
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euxo pipefail
+          # Compute percent from LCOV (sum of LH/LF across files)
+          PCT=$(awk 'BEGIN{lh=0;lf=0} /^LH:/{lh+=substr($0,4)} /^LF:/{lf+=substr($0,4)} END{ if (lf>0) printf "%d\n", (lh*100/lf); else print 0 }' coverage/lcov.info)
+          echo "coverage %: $PCT"
+          # Update assets/badges/coverage.svg number (expects ">NN%<" once)
+          sed -i -E "s/>[0-9]+%<\//>${PCT}%<\//" assets/badges/coverage.svg
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add assets/badges/coverage.svg
+          git commit -m "docs(badge): update coverage badge to ${PCT}% (@codex)" || echo "no badge changes"
+          git push
+
+      - name: Upload HTML coverage (optional)
+        if: ${{ false }}
+        run: |
+          # Enable later if desired: cargo tarpaulin --out Html
+          true

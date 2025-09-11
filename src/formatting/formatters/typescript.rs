@@ -73,9 +73,9 @@ impl CodeFormatter for TypeScriptFormatter {
         // Check if prettier is available - graceful degradation
         if !self.is_available() {
             let mut result = FormatResult::unchanged(code.to_string());
-            result.messages.push(
-                "prettier formatter not available - skipping TypeScript formatting".to_string(),
-            );
+            result
+                .messages
+                .push("prettier formatter not available - skipping TypeScript formatting".to_string());
             return Ok(result);
         }
 
@@ -83,10 +83,7 @@ impl CodeFormatter for TypeScriptFormatter {
         let args = self.get_prettier_args();
 
         // Execute prettier with stdin input
-        match self
-            .executor
-            .execute_formatter("prettier", &args, Some(code))
-        {
+        match self.executor.execute_formatter("prettier", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)
@@ -277,7 +274,8 @@ public getActiveUsers():T[]{return this.users.filter(u=>u.status==='active');}
                 return;
             }
 
-            let generics_code = "function identity<T>(arg:T):T{return arg;}const result:string=identity<string>('hello');";
+            let generics_code =
+                "function identity<T>(arg:T):T{return arg;}const result:string=identity<string>('hello');";
             let result = formatter.format_code(generics_code);
 
             match result {

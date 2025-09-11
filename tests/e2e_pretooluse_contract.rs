@@ -52,9 +52,13 @@ result = add(1, 2)
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let decision = v["hookSpecificOutput"]["permissionDecision"].as_str().unwrap();
-    let reason = v["hookSpecificOutput"]["permissionDecisionReason"].as_str().unwrap();
+    let reason = v["hookSpecificOutput"]["permissionDecisionReason"]
+        .as_str()
+        .unwrap();
     assert_eq!(decision, "deny");
-    assert!(reason.to_ascii_lowercase().contains("contract") || reason.to_ascii_lowercase().contains("контракт"));
+    assert!(
+        reason.to_ascii_lowercase().contains("contract") || reason.to_ascii_lowercase().contains("контракт")
+    );
 }
 
 // e2e: безопасный рефакторинг (JS) без изменения сигнатуры должен allow при низкой чувствительности
@@ -114,4 +118,3 @@ const r = sum(1, 2);
     let decision = v["hookSpecificOutput"]["permissionDecision"].as_str().unwrap();
     assert_eq!(decision, "allow");
 }
-

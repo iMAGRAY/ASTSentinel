@@ -3,7 +3,7 @@ use rust_validation_hooks::analysis::ast::{AstQualityScorer, SupportedLanguage};
 use std::fs;
 
 fn bench_language(c: &mut Criterion, name: &str, path: &str, lang: SupportedLanguage) {
-    let content = fs::read_to_string(path).expect(&format!("Failed to read {}", path));
+    let content = fs::read_to_string(path).unwrap_or_else(|_| panic!("Failed to read {}", path));
     let size = content.len() as u64;
     let mut group = c.benchmark_group(format!("ast_quality_{}", name));
     group.throughput(Throughput::Bytes(size));
@@ -40,31 +40,11 @@ fn bench_more_languages(c: &mut Criterion) {
         "test_data/sample_java.java",
         SupportedLanguage::Java,
     );
-    bench_language(
-        c,
-        "cs_small",
-        "test_data/sample_cs.cs",
-        SupportedLanguage::CSharp,
-    );
-    bench_language(
-        c,
-        "go_small",
-        "test_data/sample_go.go",
-        SupportedLanguage::Go,
-    );
+    bench_language(c, "cs_small", "test_data/sample_cs.cs", SupportedLanguage::CSharp);
+    bench_language(c, "go_small", "test_data/sample_go.go", SupportedLanguage::Go);
     bench_language(c, "c_small", "test_data/sample_c.c", SupportedLanguage::C);
-    bench_language(
-        c,
-        "cpp_small",
-        "test_data/sample_cpp.cpp",
-        SupportedLanguage::Cpp,
-    );
-    bench_language(
-        c,
-        "php_small",
-        "test_data/sample_php.php",
-        SupportedLanguage::Php,
-    );
+    bench_language(c, "cpp_small", "test_data/sample_cpp.cpp", SupportedLanguage::Cpp);
+    bench_language(c, "php_small", "test_data/sample_php.php", SupportedLanguage::Php);
     bench_language(
         c,
         "ruby_small",

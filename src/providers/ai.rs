@@ -391,7 +391,6 @@ pub struct UniversalAIClient {
 }
 
 impl UniversalAIClient {
-
     #[cfg(test)]
     #[allow(dead_code)]
     fn get_code_analysis_schema(&self) -> serde_json::Value {
@@ -418,11 +417,7 @@ impl UniversalAIClient {
     }
 
     /// Validate security using the configured pretool provider
-    pub async fn validate_security_pretool(
-        &self,
-        code: &str,
-        prompt: &str,
-    ) -> Result<SecurityValidation> {
+    pub async fn validate_security_pretool(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
         match self.config.pretool_provider {
             AIProvider::OpenAI => {
                 // Check if it's GPT-5 (uses different API)
@@ -531,18 +526,15 @@ impl UniversalAIClient {
 
         // Log only in debug mode
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!(
-                "[DEBUG] GPT-5 response length: {} chars",
-                response_text.len()
-            );
+            tracing::debug!(len = response_text.len(), "GPT-5 response length");
             if response_text.len() < 500 {
-                eprintln!("[DEBUG] GPT-5 response: {response_text}");
+                tracing::debug!(response=%response_text, "GPT-5 response");
             }
         }
 
         // Parse as ChatCompletionResponse
-        let gpt5_response: ChatCompletionResponse = serde_json::from_str(&response_text)
-            .with_context(|| {
+        let gpt5_response: ChatCompletionResponse =
+            serde_json::from_str(&response_text).with_context(|| {
                 format!(
                     "Failed to parse GPT-5 response. First 200 chars: {}",
                     &response_text.chars().take(200).collect::<String>()
@@ -563,10 +555,7 @@ impl UniversalAIClient {
 
         // Log only in debug mode
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!(
-                "[DEBUG] GPT-5 content to parse: {}",
-                &json_text.chars().take(200).collect::<String>()
-            );
+            tracing::debug!(snippet=%json_text.chars().take(200).collect::<String>(), "GPT-5 content to parse");
         }
 
         // Try to parse as SecurityValidation with better error handling
@@ -649,15 +638,9 @@ impl UniversalAIClient {
     }
 
     /// Anthropic (Claude) implementation
-    async fn validate_with_anthropic(
-        &self,
-        code: &str,
-        prompt: &str,
-    ) -> Result<SecurityValidation> {
+    async fn validate_with_anthropic(&self, code: &str, prompt: &str) -> Result<SecurityValidation> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
-        let base_url = self
-            .config
-            .get_base_url_for_provider(&AIProvider::Anthropic);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
 
         let request_body = serde_json::json!({
             "model": self.config.pretool_model,
@@ -801,10 +784,7 @@ impl UniversalAIClient {
     // (removed unused structured code analysis schema)
 
     /// Parse OpenAI-compatible response
-    async fn parse_openai_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<SecurityValidation> {
+    async fn parse_openai_response(&self, response: reqwest::Response) -> Result<SecurityValidation> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("API error: {}", error_text));
@@ -825,10 +805,7 @@ impl UniversalAIClient {
             content: String,
         }
 
-        let api_response: OpenAIResponse = response
-            .json()
-            .await
-            .context("Failed to parse API response")?;
+        let api_response: OpenAIResponse = response.json().await.context("Failed to parse API response")?;
 
         let content = api_response
             .choices
@@ -845,10 +822,7 @@ impl UniversalAIClient {
     }
 
     /// Parse Anthropic response
-    async fn parse_anthropic_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<SecurityValidation> {
+    async fn parse_anthropic_response(&self, response: reqwest::Response) -> Result<SecurityValidation> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Anthropic API error: {}", error_text));
@@ -876,17 +850,14 @@ impl UniversalAIClient {
             .text
             .clone();
 
-        let validation: SecurityValidation = serde_json::from_str(&text)
-            .context("Failed to parse security validation from Anthropic")?;
+        let validation: SecurityValidation =
+            serde_json::from_str(&text).context("Failed to parse security validation from Anthropic")?;
 
         Ok(validation)
     }
 
     /// Parse Google response
-    async fn parse_google_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<SecurityValidation> {
+    async fn parse_google_response(&self, response: reqwest::Response) -> Result<SecurityValidation> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Google API error: {}", error_text));
@@ -912,10 +883,8 @@ impl UniversalAIClient {
             text: String,
         }
 
-        let api_response: GoogleResponse = response
-            .json()
-            .await
-            .context("Failed to parse Google response")?;
+        let api_response: GoogleResponse =
+            response.json().await.context("Failed to parse Google response")?;
 
         let text = api_response
             .candidates
@@ -925,8 +894,8 @@ impl UniversalAIClient {
             .text
             .clone();
 
-        let validation: SecurityValidation = serde_json::from_str(&text)
-            .context("Failed to parse security validation from Google")?;
+        let validation: SecurityValidation =
+            serde_json::from_str(&text).context("Failed to parse security validation from Google")?;
 
         Ok(validation)
     }
@@ -994,15 +963,10 @@ impl UniversalAIClient {
             output_text: String,
         }
 
-        let gpt5_response: Gpt5Response = response
-            .json()
-            .await
-            .context("Failed to parse GPT-5 response")?;
+        let gpt5_response: Gpt5Response = response.json().await.context("Failed to parse GPT-5 response")?;
 
         // Try to parse new format first, fallback to old format
-        if let Ok(new_format) =
-            serde_json::from_str::<serde_json::Value>(&gpt5_response.output_text)
-        {
+        if let Ok(new_format) = serde_json::from_str::<serde_json::Value>(&gpt5_response.output_text) {
             if new_format.get("validation_result").is_some() {
                 // Convert new format to old GrokCodeAnalysis format
                 return self.convert_new_format_to_grok_analysis(new_format);
@@ -1054,10 +1018,7 @@ impl UniversalAIClient {
             output_text: String,
         }
 
-        let gpt5_response: Gpt5Response = response
-            .json()
-            .await
-            .context("Failed to parse GPT-5 response")?;
+        let gpt5_response: Gpt5Response = response.json().await.context("Failed to parse GPT-5 response")?;
 
         Ok(gpt5_response.output_text)
     }
@@ -1114,10 +1075,7 @@ impl UniversalAIClient {
             content: String,
         }
 
-        let chat_response: ChatResponse = response
-            .json()
-            .await
-            .context("Failed to parse OpenAI response")?;
+        let chat_response: ChatResponse = response.json().await.context("Failed to parse OpenAI response")?;
 
         chat_response
             .choices
@@ -1129,9 +1087,7 @@ impl UniversalAIClient {
     /// Analyze with Anthropic and return raw response
     async fn analyze_with_anthropic_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
-        let base_url = self
-            .config
-            .get_base_url_for_provider(&AIProvider::Anthropic);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
 
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
@@ -1239,10 +1195,8 @@ impl UniversalAIClient {
             text: String,
         }
 
-        let google_response: GoogleResponse = response
-            .json()
-            .await
-            .context("Failed to parse Google response")?;
+        let google_response: GoogleResponse =
+            response.json().await.context("Failed to parse Google response")?;
 
         google_response
             .candidates
@@ -1303,10 +1257,7 @@ impl UniversalAIClient {
             content: String,
         }
 
-        let xai_response: XaiResponse = response
-            .json()
-            .await
-            .context("Failed to parse xAI response")?;
+        let xai_response: XaiResponse = response.json().await.context("Failed to parse xAI response")?;
 
         xai_response
             .choices
@@ -1318,10 +1269,7 @@ impl UniversalAIClient {
     /// Convert new validation format to GrokCodeAnalysis format
     #[cfg(test)]
     #[allow(dead_code)]
-    fn convert_new_format_to_grok_analysis(
-        &self,
-        new_format: serde_json::Value,
-    ) -> Result<GrokCodeAnalysis> {
+    fn convert_new_format_to_grok_analysis(&self, new_format: serde_json::Value) -> Result<GrokCodeAnalysis> {
         let validation_result = new_format
             .get("validation_result")
             .ok_or_else(|| anyhow::anyhow!("Missing validation_result in response"))?;
@@ -1402,10 +1350,7 @@ impl UniversalAIClient {
         {
             for improvement in improvements {
                 if let Some(imp_obj) = improvement.as_object() {
-                    let priority = imp_obj
-                        .get("priority")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("P2");
+                    let priority = imp_obj.get("priority").and_then(|v| v.as_str()).unwrap_or("P2");
 
                     let severity = match priority {
                         "P0" | "P1" => "major",
@@ -1553,9 +1498,7 @@ impl UniversalAIClient {
     #[allow(dead_code)]
     async fn analyze_with_anthropic(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
-        let base_url = self
-            .config
-            .get_base_url_for_provider(&AIProvider::Anthropic);
+        let base_url = self.config.get_base_url_for_provider(&AIProvider::Anthropic);
 
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
@@ -1673,10 +1616,7 @@ impl UniversalAIClient {
 
     #[cfg(test)]
     #[allow(dead_code)]
-    async fn parse_openai_analysis_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<GrokCodeAnalysis> {
+    async fn parse_openai_analysis_response(&self, response: reqwest::Response) -> Result<GrokCodeAnalysis> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("API error: {}", error_text));
@@ -1697,10 +1637,7 @@ impl UniversalAIClient {
             content: String,
         }
 
-        let api_response: OpenAIResponse = response
-            .json()
-            .await
-            .context("Failed to parse API response")?;
+        let api_response: OpenAIResponse = response.json().await.context("Failed to parse API response")?;
 
         let content = api_response
             .choices
@@ -1757,10 +1694,7 @@ impl UniversalAIClient {
 
     #[cfg(test)]
     #[allow(dead_code)]
-    async fn parse_google_analysis_response(
-        &self,
-        response: reqwest::Response,
-    ) -> Result<GrokCodeAnalysis> {
+    async fn parse_google_analysis_response(&self, response: reqwest::Response) -> Result<GrokCodeAnalysis> {
         if !response.status().is_success() {
             let error_text = response.text().await.unwrap_or_default();
             return Err(anyhow::anyhow!("Google API error: {}", error_text));
@@ -1786,10 +1720,8 @@ impl UniversalAIClient {
             text: String,
         }
 
-        let api_response: GoogleResponse = response
-            .json()
-            .await
-            .context("Failed to parse Google response")?;
+        let api_response: GoogleResponse =
+            response.json().await.context("Failed to parse Google response")?;
 
         let text = api_response
             .candidates
@@ -1820,9 +1752,7 @@ impl UniversalAIClient {
             // Check if this is an incomplete message - we'll accept incomplete content for now
             if let Some(status) = output_item.get("status").and_then(|v| v.as_str()) {
                 if status == "incomplete" {
-                    eprintln!(
-                        "Warning: GPT-5 returned incomplete response, extracting partial content"
-                    );
+                    tracing::warn!("GPT-5 returned incomplete response, extracting partial content");
                 }
             }
 
@@ -1832,10 +1762,7 @@ impl UniversalAIClient {
                     if let Some(text_content) = content_entry.get("text").and_then(|v| v.as_str()) {
                         let trimmed_text = text_content.trim();
                         if !trimmed_text.is_empty() {
-                            eprintln!(
-                                "Extracted {} characters from GPT-5 content",
-                                trimmed_text.len()
-                            );
+                            eprintln!("Extracted {} characters from GPT-5 content", trimmed_text.len());
 
                             // Handle mixed JSON response (schema + data)
                             // GPT-5 sometimes returns: {schema},\n{data}
@@ -1872,9 +1799,7 @@ impl UniversalAIClient {
                                             if brace_count == 0 && !current_json.is_empty() {
                                                 // Try to parse completed JSON
                                                 if let Ok(parsed) =
-                                                    serde_json::from_str::<serde_json::Value>(
-                                                        &current_json,
-                                                    )
+                                                    serde_json::from_str::<serde_json::Value>(&current_json)
                                                 {
                                                     // Check if this is data (has active_context) not schema
                                                     if parsed.get("active_context").is_some()
@@ -1882,7 +1807,7 @@ impl UniversalAIClient {
                                                         || parsed.get("key_insights").is_some()
                                                     {
                                                         last_valid_json = current_json.clone();
-                                                        eprintln!("Found valid data JSON object");
+                                                        tracing::debug!("Found valid data JSON object");
                                                     }
                                                 }
                                                 current_json.clear();
@@ -1906,17 +1831,14 @@ impl UniversalAIClient {
                                                 || parsed.get("key_insights").is_some()
                                             {
                                                 last_valid_json = current_json.clone();
-                                                eprintln!("Found valid data JSON object at end");
+                                                tracing::debug!("Found valid data JSON object at end");
                                             }
                                         }
                                     }
                                 }
 
                                 if !last_valid_json.is_empty() {
-                                    eprintln!(
-                                        "Returning extracted data JSON of {} chars",
-                                        last_valid_json.len()
-                                    );
+                                    tracing::debug!(chars=%last_valid_json.len(), "Returning extracted data JSON");
                                     return last_valid_json;
                                 }
                             }
@@ -1926,15 +1848,11 @@ impl UniversalAIClient {
                         }
                     }
                 }
-            } else if let Some(direct_content) = output_item.get("content").and_then(|v| v.as_str())
-            {
+            } else if let Some(direct_content) = output_item.get("content").and_then(|v| v.as_str()) {
                 // Fallback for direct string content
                 let trimmed_content = direct_content.trim();
                 if !trimmed_content.is_empty() {
-                    eprintln!(
-                        "Extracted {} characters from GPT-5 direct content",
-                        trimmed_content.len()
-                    );
+                    tracing::debug!(chars=%trimmed_content.len(), "Extracted GPT-5 direct content chars");
                     return trimmed_content.to_string();
                 }
             }
@@ -1977,7 +1895,7 @@ impl UniversalAIClient {
 
         // Debug logging for GPT-5 troubleshooting (only in debug mode)
         if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
-            eprintln!("GPT-5 Debug: Model = {}", model);
+            tracing::debug!(model=%model, "GPT-5 Debug: model");
         }
 
         // Implement retry logic for transient failures
@@ -1987,11 +1905,10 @@ impl UniversalAIClient {
         while retries > 0 {
             // Construct proper URL - build directly since base_url already includes /v1
             let responses_url_string = format!("{}/responses", base_url.trim_end_matches('/'));
-            let responses_url = Url::parse(&responses_url_string).with_context(|| {
-                format!("Failed to parse responses URL: {}", responses_url_string)
-            })?;
+            let responses_url = Url::parse(&responses_url_string)
+                .with_context(|| format!("Failed to parse responses URL: {}", responses_url_string))?;
 
-            eprintln!("GPT-5 Debug: Requesting URL = {}", responses_url);
+            tracing::debug!(url=%responses_url, "GPT-5 Debug: requesting URL");
 
             let response = self
                 .client
@@ -2014,59 +1931,42 @@ impl UniversalAIClient {
 
                         match resp.json::<Gpt5Response>().await {
                             Ok(gpt5_response) => {
-                                eprintln!("GPT-5 response received, extracting content...");
+                                tracing::debug!("GPT-5 response received, extracting content");
 
                                 // Try output_text first, then extract from output array
-                                let text_content = if let Some(output_text) =
-                                    gpt5_response.output_text
-                                {
-                                    eprintln!("Using output_text field");
+                                let text_content = if let Some(output_text) = gpt5_response.output_text {
+                                    tracing::debug!("Using output_text field");
                                     output_text
                                 } else if let Some(output) = gpt5_response.output {
-                                    eprintln!(
-                                        "Extracting from output array with {} items",
-                                        output.len()
-                                    );
-                                    eprintln!(
-                                        "Full output array: {}",
-                                        serde_json::to_string_pretty(&output).unwrap_or_default()
-                                    );
+                                    tracing::debug!(items=%output.len(), "Extracting from output array");
                                     Self::extract_text_from_output_array(&output)
                                 } else {
-                                    return Err(anyhow::anyhow!(
-                                        "No output content found in response"
-                                    ));
+                                    return Err(anyhow::anyhow!("No output content found in response"));
                                 };
 
                                 // Check if content is empty
                                 if text_content.trim().is_empty() {
                                     last_error = Some(anyhow::anyhow!("Response content is empty"));
-                                    eprintln!("GPT-5 response content is empty");
+                                    tracing::warn!("GPT-5 response content is empty");
                                 } else {
-                                    eprintln!("Parsing content of length: {}", text_content.len());
+                                    tracing::debug!(len=%text_content.len(), "Parsing content");
                                     // GPT-5 with JSON Schema should return valid JSON
                                     match serde_json::from_str::<serde_json::Value>(&text_content) {
                                         Ok(optimization) => {
-                                            eprintln!("GPT-5 returned valid JSON structure");
+                                            tracing::debug!("GPT-5 returned valid JSON structure");
                                             return Ok(optimization);
                                         }
                                         Err(e) => {
-                                            eprintln!(
-                                                "Failed to parse JSON response from GPT-5: {}",
-                                                e
-                                            );
-                                            eprintln!("Response content: {}", text_content);
-                                            last_error = Some(anyhow::anyhow!(
-                                                "GPT-5 JSON parsing failed: {}",
-                                                e
-                                            ));
+                                            tracing::warn!(error=%e, "Failed to parse JSON response from GPT-5");
+                                            tracing::debug!(content=%text_content, "Response content");
+                                            last_error =
+                                                Some(anyhow::anyhow!("GPT-5 JSON parsing failed: {}", e));
                                         }
                                     }
                                 }
                             }
                             Err(e) => {
-                                last_error =
-                                    Some(anyhow::anyhow!("Failed to parse response: {}", e));
+                                last_error = Some(anyhow::anyhow!("Failed to parse response: {}", e));
                             }
                         }
                     } else {
@@ -2099,7 +1999,7 @@ impl UniversalAIClient {
                 }
                 Err(e) => {
                     last_error = Some(anyhow::anyhow!("Network error: {}", e));
-                    eprintln!("Network error (attempt {}): {}", 4 - retries, e);
+                    tracing::warn!(attempt=%(4 - retries), error=%e, "Network error");
                 }
             }
 
@@ -2110,14 +2010,12 @@ impl UniversalAIClient {
                 let jitter = rand::random::<f64>() * 0.5 + 0.75; // 0.75 to 1.25 multiplier
                 let delay_ms = (base_delay_secs as f64 * 1000.0 * jitter) as u64;
                 let delay_with_jitter = delay_ms.clamp(100, 300_000); // Min 100ms, Max 5 minutes
-                tokio::time::sleep(Duration::from_secs_f64(delay_with_jitter as f64 / 1000.0))
-                    .await;
+                tokio::time::sleep(Duration::from_secs_f64(delay_with_jitter as f64 / 1000.0)).await;
             }
         }
 
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Failed to call GPT-5 after 3 attempts")))
     }
-
 
     // Removed deprecated text heuristics (detect_code_content/detect_error_content)
 

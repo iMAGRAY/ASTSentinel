@@ -9,9 +9,7 @@ fn test_real_project_scanning() {
     // Get current directory
     let current_dir = std::env::current_dir().expect("Failed to get current directory");
 
-    let current_dir_str = current_dir
-        .to_str()
-        .expect("Failed to convert path to string");
+    let current_dir_str = current_dir.to_str().expect("Failed to convert path to string");
 
     println!("Scanning directory: {}\n", current_dir_str);
 
@@ -24,19 +22,12 @@ fn test_real_project_scanning() {
     };
 
     // Scan the project
-    let structure =
-        scan_project_structure(current_dir_str, Some(config)).expect("Failed to scan project");
+    let structure = scan_project_structure(current_dir_str, Some(config)).expect("Failed to scan project");
 
     // Basic assertions
-    assert!(
-        !structure.root_path.is_empty(),
-        "Root path should not be empty"
-    );
+    assert!(!structure.root_path.is_empty(), "Root path should not be empty");
     assert!(structure.total_files > 0, "Should find at least some files");
-    assert!(
-        !structure.scan_timestamp.is_empty(),
-        "Timestamp should be set"
-    );
+    assert!(!structure.scan_timestamp.is_empty(), "Timestamp should be set");
 
     // Print results for manual verification
     println!("===== SCAN RESULTS =====");
@@ -76,22 +67,12 @@ fn test_real_project_scanning() {
     println!("\n===== AI CONTEXT FORMAT (max 1000 chars) =====");
     let ai_context = format_project_structure_for_ai(&structure, 1000);
     assert!(!ai_context.is_empty(), "AI context should not be empty");
-    assert!(
-        ai_context.len() <= 1000,
-        "AI context should respect max length"
-    );
+    assert!(ai_context.len() <= 1000, "AI context should respect max length");
     println!("{}", ai_context);
 
     // Check that we found some Rust files (since this is a Rust project)
-    let rust_files: Vec<_> = structure
-        .files
-        .iter()
-        .filter(|f| f.file_type == "rs")
-        .collect();
-    assert!(
-        !rust_files.is_empty(),
-        "Should find Rust files in a Rust project"
-    );
+    let rust_files: Vec<_> = structure.files.iter().filter(|f| f.file_type == "rs").collect();
+    assert!(!rust_files.is_empty(), "Should find Rust files in a Rust project");
 
     println!("\n✅ All assertions passed!");
 }

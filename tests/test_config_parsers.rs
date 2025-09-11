@@ -1,5 +1,5 @@
-use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
 use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
+use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
 
 #[test]
 fn test_json_parse_error_reports_minor_issue() {
@@ -24,7 +24,8 @@ fn test_yaml_hardcoded_credentials_detected() {
         score
             .concrete_issues
             .iter()
-            .any(|i| matches!(i.category, IssueCategory::HardcodedCredentials) && matches!(i.severity, IssueSeverity::Critical)),
+            .any(|i| matches!(i.category, IssueCategory::HardcodedCredentials)
+                && matches!(i.severity, IssueSeverity::Critical)),
         "Expected Critical HardcodedCredentials in YAML"
     );
 }

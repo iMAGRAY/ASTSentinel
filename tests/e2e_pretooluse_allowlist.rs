@@ -26,8 +26,14 @@ fn e2e_pretooluse_allow_default_salt_in_tests() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -59,8 +65,14 @@ fn e2e_pretooluse_ignore_globs_allows_ignored_path() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

@@ -26,8 +26,7 @@ mod tests {
         let old_string = "console.log(\"Hello\");";
         let new_string = "console.log(\"Hello, World!\");";
 
-        let result =
-            format_edit_full_context("test.js", Some(file_content), old_string, new_string);
+        let result = format_edit_full_context("test.js", Some(file_content), old_string, new_string);
 
         println!("Edit full context output:");
         println!("{}", result);

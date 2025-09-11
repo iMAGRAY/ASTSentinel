@@ -1,6 +1,6 @@
 use rust_validation_hooks::analysis::ast::languages::{LanguageCache, SupportedLanguage};
-use rust_validation_hooks::analysis::ast::single_pass::SinglePassEngine;
 use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
+use rust_validation_hooks::analysis::ast::single_pass::SinglePassEngine;
 
 #[test]
 fn py_unreachable_after_raise_in_try_block() {
@@ -15,7 +15,9 @@ fn py_unreachable_after_raise_in_try_block() {
     let mut parser = LanguageCache::create_parser_with_language(SupportedLanguage::Python).unwrap();
     let tree = parser.parse(code, None).unwrap();
     let issues = SinglePassEngine::analyze(&tree, code, SupportedLanguage::Python);
-    assert!(issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)));
+    assert!(issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::UnreachableCode)));
 }
 
 #[test]
@@ -32,7 +34,14 @@ fn py_unreachable_after_break_and_continue() {
     let mut parser = LanguageCache::create_parser_with_language(SupportedLanguage::Python).unwrap();
     let tree = parser.parse(code, None).unwrap();
     let issues = SinglePassEngine::analyze(&tree, code, SupportedLanguage::Python);
-    let cnt = issues.iter().filter(|i| matches!(i.category, IssueCategory::UnreachableCode)).count();
-    assert!(cnt >= 2, "expected >=2 unreachable, got {} (issues: {:?})", cnt, issues);
+    let cnt = issues
+        .iter()
+        .filter(|i| matches!(i.category, IssueCategory::UnreachableCode))
+        .count();
+    assert!(
+        cnt >= 2,
+        "expected >=2 unreachable, got {} (issues: {:?})",
+        cnt,
+        issues
+    );
 }
-

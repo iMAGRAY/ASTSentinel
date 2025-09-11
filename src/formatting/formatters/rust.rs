@@ -23,9 +23,7 @@ impl RustFormatter {
         let mut args = vec![];
 
         // Try to detect edition from Cargo.toml
-        let edition = self
-            .detect_rust_edition()
-            .unwrap_or_else(|| "2021".to_string());
+        let edition = self.detect_rust_edition().unwrap_or_else(|| "2021".to_string());
 
         // Ensure we emit formatted code to stdout when reading from stdin
         args.push("--emit".to_string());
@@ -122,10 +120,7 @@ impl CodeFormatter for RustFormatter {
         let args = self.get_rustfmt_args();
 
         // Execute rustfmt with stdin input
-        match self
-            .executor
-            .execute_formatter("rustfmt", &args, Some(code))
-        {
+        match self.executor.execute_formatter("rustfmt", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)
@@ -270,7 +265,10 @@ mod tests {
                 Ok(format_result) => {
                     // If formatter emitted messages (e.g., env-specific warnings), treat as skip
                     if !format_result.messages.is_empty() {
-                        eprintln!("Skipping assertions due to formatter messages: {:?}", format_result.messages);
+                        eprintln!(
+                            "Skipping assertions due to formatter messages: {:?}",
+                            format_result.messages
+                        );
                         return;
                     }
                     // Otherwise code either changed or was already valid; both fine
@@ -298,9 +296,13 @@ mod tests {
             let formatted = "fn main() {\n    println!(\"Hello\");\n}\n";
             let res = formatter.format_code(formatted).unwrap();
             // If formatter emitted messages (env warnings), skip strict assertions
-            if !res.messages.is_empty() { return; }
+            if !res.messages.is_empty() {
+                return;
+            }
             // Either unchanged or changed slightly; both are acceptable
-            if !res.changed { assert_eq!(res.formatted, formatted); }
+            if !res.changed {
+                assert_eq!(res.formatted, formatted);
+            }
         }
 
         #[test]

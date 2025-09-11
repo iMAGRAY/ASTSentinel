@@ -1,3 +1,15 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::dbg_macro
+    )
+)]
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -13,10 +25,7 @@ pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
     if visible_count <= max_chars {
         s.to_string()
     } else {
-        let truncated: String = visible_chars
-            .iter()
-            .take(max_chars.saturating_sub(1))
-            .collect();
+        let truncated: String = visible_chars.iter().take(max_chars.saturating_sub(1)).collect();
         format!("{truncated}…")
     }
 }
@@ -63,11 +72,13 @@ pub mod config;
 /// Short, action-oriented messages glossary
 pub mod messages;
 
+/// Telemetry: structured logging initialization (tracing)
+pub mod telemetry;
+
 // Re-export commonly used types for convenience
 pub use analysis::ast::{ComplexityVisitor, MultiLanguageAnalyzer, SupportedLanguage};
 pub use analysis::{
-    format_project_structure_for_ai, scan_project_structure, ComplexityMetrics, ProjectStructure,
-    ScanConfig,
+    format_project_structure_for_ai, scan_project_structure, ComplexityMetrics, ProjectStructure, ScanConfig,
 };
 pub use cache::ProjectCache;
 pub use formatting::{CodeFormatter, FormatResult, FormattingService};
@@ -103,10 +114,7 @@ pub struct PreToolUseHookOutput {
     pub hook_event_name: String,
     #[serde(rename = "permissionDecision")]
     pub permission_decision: String,
-    #[serde(
-        rename = "permissionDecisionReason",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "permissionDecisionReason", skip_serializing_if = "Option::is_none")]
     pub permission_decision_reason: Option<String>,
 }
 
@@ -360,9 +368,7 @@ impl Config {
             xai_api_key: String::new(),
 
             openai_base_url: providers::AIProvider::OpenAI.default_base_url().to_string(),
-            anthropic_base_url: providers::AIProvider::Anthropic
-                .default_base_url()
-                .to_string(),
+            anthropic_base_url: providers::AIProvider::Anthropic.default_base_url().to_string(),
             google_base_url: providers::AIProvider::Google.default_base_url().to_string(),
             xai_base_url: providers::AIProvider::XAI.default_base_url().to_string(),
 
@@ -379,30 +385,24 @@ impl Config {
             connect_timeout_secs: 30,
 
             // Provider-specific token limits (based on LLM API documentation)
-            gpt5_max_output_tokens: 12000, // Conservative limit for stability
+            gpt5_max_output_tokens: 12000,  // Conservative limit for stability
             claude_max_output_tokens: 4096, // Claude's typical max_tokens
             gemini_max_output_tokens: 8192, // Gemini reasonable limit
-            grok_max_output_tokens: 8192,  // Grok conservative limit
+            grok_max_output_tokens: 8192,   // Grok conservative limit
         }
     }
 
     /// Validate configuration and return errors if invalid
     pub fn validate(&self) -> Result<()> {
         // Validate API keys for required providers
-        if self
-            .get_api_key_for_provider(&self.pretool_provider)
-            .is_empty()
-        {
+        if self.get_api_key_for_provider(&self.pretool_provider).is_empty() {
             return Err(anyhow::anyhow!(
                 "API key missing for pretool provider: {}",
                 self.pretool_provider
             ));
         }
 
-        if self
-            .get_api_key_for_provider(&self.posttool_provider)
-            .is_empty()
-        {
+        if self.get_api_key_for_provider(&self.posttool_provider).is_empty() {
             return Err(anyhow::anyhow!(
                 "API key missing for posttool provider: {}",
                 self.posttool_provider
@@ -428,9 +428,7 @@ impl Config {
         }
 
         if self.request_timeout_secs == 0 || self.request_timeout_secs > 600 {
-            return Err(anyhow::anyhow!(
-                "request_timeout_secs must be between 1 and 600"
-            ));
+            return Err(anyhow::anyhow!("request_timeout_secs must be between 1 and 600"));
         }
 
         Ok(())
@@ -475,10 +473,10 @@ impl Config {
             if let Some(exe_dir) = exe_path.parent() {
                 // Load .env (production) and optionally override with .env.local (development)
                 let env_file = exe_dir.join(".env");
-                eprintln!("Looking for .env at: {env_file:?}");
+                tracing::debug!(path=?env_file, "Looking for .env");
 
                 if env_file.exists() {
-                    eprintln!(".env file found, loading...");
+                    tracing::debug!(".env file found, loading");
                     // Clear existing API keys to ensure .env takes priority
                     std::env::remove_var("OPENAI_API_KEY");
                     std::env::remove_var("ANTHROPIC_API_KEY");
@@ -486,22 +484,22 @@ impl Config {
                     std::env::remove_var("XAI_API_KEY");
 
                     if let Err(e) = dotenv::from_path(&env_file) {
-                        eprintln!("Failed to load .env: {e}");
+                        tracing::warn!(error=%e, "Failed to load .env");
                     } else {
-                        eprintln!(".env loaded successfully (cleared system variables first)");
+                        tracing::debug!(".env loaded successfully (cleared system variables first)");
                     }
                 } else {
-                    eprintln!(".env file not found");
+                    tracing::debug!(".env file not found");
                 }
 
                 // Additionally check for .env.local to override settings in development
                 let env_local = exe_dir.join(".env.local");
                 if env_local.exists() {
-                    eprintln!("Found .env.local, loading overrides...");
+                    tracing::debug!("Found .env.local, loading overrides");
                     if let Err(e) = dotenv::from_path(&env_local) {
-                        eprintln!("Failed to load .env.local: {e}");
+                        tracing::warn!(error=%e, "Failed to load .env.local");
                     } else {
-                        eprintln!(".env.local loaded successfully");
+                        tracing::debug!(".env.local loaded successfully");
                     }
                 }
             }
@@ -514,10 +512,8 @@ impl Config {
         let xai_api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
 
         // Parse provider selections with validation
-        let pretool_provider_str =
-            std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
-        let posttool_provider_str =
-            std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let pretool_provider_str = std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let posttool_provider_str = std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
 
         let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>()
             .with_context(|| format!("Invalid PRETOOL_PROVIDER: {pretool_provider_str}. Supported: openai, anthropic, google, xai"))?;
@@ -565,11 +561,8 @@ impl Config {
             // Load custom base URLs or use defaults
             openai_base_url: std::env::var("OPENAI_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::OpenAI.default_base_url().to_string()),
-            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| {
-                providers::AIProvider::Anthropic
-                    .default_base_url()
-                    .to_string()
-            }),
+            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::Anthropic.default_base_url().to_string()),
             google_base_url: std::env::var("GOOGLE_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::Google.default_base_url().to_string()),
             xai_base_url: std::env::var("XAI_BASE_URL")
@@ -577,8 +570,7 @@ impl Config {
 
             pretool_provider,
             posttool_provider,
-            pretool_model: std::env::var("PRETOOL_MODEL")
-                .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
+            pretool_model: std::env::var("PRETOOL_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string()),
             posttool_model: std::env::var("POSTTOOL_MODEL")
                 .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
             max_tokens,
@@ -634,7 +626,7 @@ impl Config {
                     std::env::remove_var("XAI_API_KEY");
 
                     if let Err(e) = dotenv::from_path(&env_file) {
-                        eprintln!("Warning: Failed to load .env: {e}");
+                        tracing::warn!(error=%e, "Failed to load .env");
                     }
                 }
 
@@ -642,7 +634,7 @@ impl Config {
                 let env_local = exe_dir.join(".env.local");
                 if env_local.exists() {
                     if let Err(e) = dotenv::from_path(&env_local) {
-                        eprintln!("Warning: Failed to load .env.local: {e}");
+                        tracing::warn!(error=%e, "Failed to load .env.local");
                     }
                 }
             }
@@ -655,10 +647,8 @@ impl Config {
         let xai_api_key = std::env::var("XAI_API_KEY").unwrap_or_default();
 
         // Parse provider selections with validation (but don't fail on missing keys)
-        let pretool_provider_str =
-            std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
-        let posttool_provider_str =
-            std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let pretool_provider_str = std::env::var("PRETOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
+        let posttool_provider_str = std::env::var("POSTTOOL_PROVIDER").unwrap_or_else(|_| "xai".to_string());
 
         let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>()
             .with_context(|| format!("Invalid PRETOOL_PROVIDER: {pretool_provider_str}. Supported: openai, anthropic, google, xai"))?;
@@ -706,11 +696,8 @@ impl Config {
             // Load custom base URLs or use defaults
             openai_base_url: std::env::var("OPENAI_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::OpenAI.default_base_url().to_string()),
-            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL").unwrap_or_else(|_| {
-                providers::AIProvider::Anthropic
-                    .default_base_url()
-                    .to_string()
-            }),
+            anthropic_base_url: std::env::var("ANTHROPIC_BASE_URL")
+                .unwrap_or_else(|_| providers::AIProvider::Anthropic.default_base_url().to_string()),
             google_base_url: std::env::var("GOOGLE_BASE_URL")
                 .unwrap_or_else(|_| providers::AIProvider::Google.default_base_url().to_string()),
             xai_base_url: std::env::var("XAI_BASE_URL")
@@ -718,8 +705,7 @@ impl Config {
 
             pretool_provider,
             posttool_provider,
-            pretool_model: std::env::var("PRETOOL_MODEL")
-                .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
+            pretool_model: std::env::var("PRETOOL_MODEL").unwrap_or_else(|_| "grok-code-fast-1".to_string()),
             posttool_model: std::env::var("POSTTOOL_MODEL")
                 .unwrap_or_else(|_| "grok-code-fast-1".to_string()),
             max_tokens,
@@ -762,9 +748,7 @@ impl Config {
         }
 
         if config.request_timeout_secs == 0 || config.request_timeout_secs > 600 {
-            return Err(anyhow::anyhow!(
-                "request_timeout_secs must be between 1 and 600"
-            ));
+            return Err(anyhow::anyhow!("request_timeout_secs must be between 1 and 600"));
         }
 
         Ok(config)
@@ -774,10 +758,10 @@ impl Config {
 /// File extension validation
 pub fn should_validate_file(file_path: &str) -> bool {
     let code_extensions = [
-        ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".py", ".pyw", ".pyc", ".pyo", ".java",
-        ".class", ".jar", ".cpp", ".c", ".cc", ".cxx", ".h", ".hpp", ".cs", ".vb", ".php", ".php3",
-        ".php4", ".php5", ".phtml", ".rb", ".rbw", ".go", ".rs", ".kt", ".kts", ".swift", ".sql",
-        ".sh", ".bash", ".zsh", ".fish", ".ps1", ".psm1", ".html", ".htm", ".xhtml",
+        ".js", ".ts", ".jsx", ".tsx", ".mjs", ".cjs", ".py", ".pyw", ".pyc", ".pyo", ".java", ".class",
+        ".jar", ".cpp", ".c", ".cc", ".cxx", ".h", ".hpp", ".cs", ".vb", ".php", ".php3", ".php4", ".php5",
+        ".phtml", ".rb", ".rbw", ".go", ".rs", ".kt", ".kts", ".swift", ".sql", ".sh", ".bash", ".zsh",
+        ".fish", ".ps1", ".psm1", ".html", ".htm", ".xhtml",
     ];
 
     code_extensions

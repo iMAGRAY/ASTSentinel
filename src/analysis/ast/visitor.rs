@@ -1,5 +1,5 @@
-use crate::analysis::ast::languages::SupportedLanguage;
 use crate::analysis::ast::kind_ids::{self, KindIds};
+use crate::analysis::ast::languages::SupportedLanguage;
 use crate::analysis::metrics::ComplexityMetrics;
 use anyhow::Result;
 /// Tree-sitter visitor for calculating complexity metrics across languages
@@ -91,10 +91,7 @@ impl ComplexityVisitor {
         // Log when no parameter list is found for debugging
         if !found_parameter_list {
             #[cfg(debug_assertions)]
-            eprintln!(
-                "Warning: No parameter list of type '{}' found in {} node",
-                parameter_list_type, self.language
-            );
+            tracing::debug!(ptype=%parameter_list_type, language=%self.language, "No parameter list found for function node");
         }
 
         Ok(())
@@ -107,7 +104,7 @@ impl ComplexityVisitor {
             Err(_e) => {
                 // Log error for debugging - this typically happens for Rust which uses syn instead
                 #[cfg(debug_assertions)]
-                eprintln!("Parameter validation error for {}: {}", self.language, _e);
+                tracing::debug!(language=%self.language, error=%_e, "Parameter validation error");
                 false
             }
         }
@@ -152,7 +149,8 @@ impl ComplexityVisitor {
                 self.enter_scope();
                 self.count_parameters(node, "parameter_list")?;
             }
-            "if_statement" | "for_statement" | "while_statement" | "foreach_statement" | "switch_statement" => {
+            "if_statement" | "for_statement" | "while_statement" | "foreach_statement"
+            | "switch_statement" => {
                 self.cyclomatic_complexity += 1;
                 if node_type != "switch_statement" {
                     self.cognitive_complexity += 1 + self.current_depth;
@@ -222,9 +220,7 @@ impl ComplexityVisitor {
             SupportedLanguage::Java => Ok(&["formal_parameters", "receiver_parameter"]),
             SupportedLanguage::CSharp => Ok(&["parameter_list", "formal_parameters"]),
             SupportedLanguage::Go => Ok(&["parameter_list", "parameters"]),
-            SupportedLanguage::C | SupportedLanguage::Cpp => {
-                Ok(&["parameter_list", "formal_parameters"])
-            }
+            SupportedLanguage::C | SupportedLanguage::Cpp => Ok(&["parameter_list", "formal_parameters"]),
             SupportedLanguage::Php => Ok(&["formal_parameters", "parameters"]),
             SupportedLanguage::Ruby => Ok(&["parameters", "block_parameters"]),
             // Rust should use syn crate, not Tree-sitter
@@ -258,13 +254,9 @@ impl ComplexityVisitor {
                 "object_pattern",
                 "array_pattern",
             ]),
-            SupportedLanguage::Java => {
-                Ok(&["formal_parameter", "receiver_parameter", "spread_parameter"])
-            }
+            SupportedLanguage::Java => Ok(&["formal_parameter", "receiver_parameter", "spread_parameter"]),
             SupportedLanguage::CSharp => Ok(&["parameter", "parameter_array"]),
-            SupportedLanguage::Go => {
-                Ok(&["parameter_declaration", "variadic_parameter_declaration"])
-            }
+            SupportedLanguage::Go => Ok(&["parameter_declaration", "variadic_parameter_declaration"]),
             SupportedLanguage::C | SupportedLanguage::Cpp => {
                 Ok(&["parameter_declaration", "abstract_declarator"])
             }
@@ -315,10 +307,7 @@ impl ComplexityVisitor {
 
     /// Find parameter node for arrow functions with different parameter structures
     /// Arrow functions can have: (a, b) => {}, a => {}, ({x, y}) => {}
-    fn find_arrow_function_parameter<'b>(
-        &self,
-        arrow_function_node: &Node<'b>,
-    ) -> Option<Node<'b>> {
+    fn find_arrow_function_parameter<'b>(&self, arrow_function_node: &Node<'b>) -> Option<Node<'b>> {
         let mut cursor = arrow_function_node.walk();
 
         if cursor.goto_first_child() {
@@ -398,7 +387,7 @@ impl ComplexityVisitor {
             SupportedLanguage::Rust => {
                 // Rust should use syn crate, not Tree-sitter - warn and fall back to generic
                 #[cfg(debug_assertions)]
-                eprintln!("Warning: Rust should use syn crate for AST analysis, not Tree-sitter");
+                tracing::debug!("Rust should use syn crate for AST analysis, not Tree-sitter");
                 self.process_generic_node(node_type, node)
             }
             SupportedLanguage::CSharp => self.process_csharp_node(node_type, node),
@@ -592,7 +581,7 @@ impl ComplexityVisitor {
             _ => {
                 // Only log truly unrecognized node types
                 #[cfg(debug_assertions)]
-                eprintln!("Unrecognized Python node type: {node_type}");
+                tracing::debug!(node=%node_type, "Unrecognized Python node type");
             }
         }
         Ok(())
@@ -757,7 +746,12 @@ impl ComplexityVisitor {
                 let _ = self.count_parameters(node, "parameters");
                 return Ok(());
             }
-            if k == ids.ruby_if || k == ids.ruby_elsif || k == ids.ruby_while || k == ids.ruby_for || k == ids.ruby_case {
+            if k == ids.ruby_if
+                || k == ids.ruby_elsif
+                || k == ids.ruby_while
+                || k == ids.ruby_for
+                || k == ids.ruby_case
+            {
                 self.cyclomatic_complexity += 1;
                 if k != ids.ruby_case {
                     self.cognitive_complexity += 1 + self.current_depth;
@@ -832,11 +826,7 @@ impl ComplexityVisitor {
         }
         match node_type {
             // Tree-sitter JavaScript actual node types
-            "function_declaration"
-            | "function_expression"
-            | "method_definition"
-            | "function"
-            | "async" => {
+            "function_declaration" | "function_expression" | "method_definition" | "function" | "async" => {
                 self.function_count += 1;
                 self.enter_scope();
                 // Try both parameter list types for JavaScript
@@ -852,14 +842,14 @@ impl ComplexityVisitor {
                 if self.count_parameters(node, "formal_parameters").is_err()
                     && self.count_parameters(node, "parameters").is_err()
                 {
-                        // For arrow functions, check if there's a direct identifier parameter
-                        if let Some(param_node) = self.find_arrow_function_parameter(node) {
-                            if param_node.kind() == "identifier" {
-                                self.parameter_count += 1;
-                            }
+                    // For arrow functions, check if there's a direct identifier parameter
+                    if let Some(param_node) = self.find_arrow_function_parameter(node) {
+                        if param_node.kind() == "identifier" {
+                            self.parameter_count += 1;
                         }
                     }
                 }
+            }
             "class_declaration" | "class" | "class_body" => {
                 self.enter_scope();
             }
@@ -868,8 +858,8 @@ impl ComplexityVisitor {
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "while_statement" | "for_statement" | "for_in_statement" | "for_of_statement"
-            | "while" | "for" => {
+            "while_statement" | "for_statement" | "for_in_statement" | "for_of_statement" | "while"
+            | "for" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
@@ -965,7 +955,7 @@ impl ComplexityVisitor {
             _ => {
                 // Only log truly unrecognized node types
                 #[cfg(debug_assertions)]
-                eprintln!("Unrecognized JavaScript/TypeScript node type: {node_type}");
+                tracing::debug!(node=%node_type, "Unrecognized JavaScript/TypeScript node type");
             }
         }
         Ok(())
@@ -982,7 +972,11 @@ impl ComplexityVisitor {
                 let _ = self.count_parameters(node, "formal_parameters");
                 return Ok(());
             }
-            if k == ids.java_if_statement || k == ids.java_for_statement || k == ids.java_while_statement || k == ids.java_switch_expression {
+            if k == ids.java_if_statement
+                || k == ids.java_for_statement
+                || k == ids.java_while_statement
+                || k == ids.java_switch_expression
+            {
                 self.cyclomatic_complexity += 1;
                 if k != ids.java_switch_expression {
                     self.cognitive_complexity += 1 + self.current_depth;
@@ -1011,7 +1005,11 @@ impl ComplexityVisitor {
             }
             "if_statement" | "for_statement" | "while_statement" | "switch_expression" => {
                 self.cyclomatic_complexity += 1;
-                self.cognitive_complexity += if node_type == "switch_expression" { 0 } else { 1 + self.current_depth };
+                self.cognitive_complexity += if node_type == "switch_expression" {
+                    0
+                } else {
+                    1 + self.current_depth
+                };
                 self.enter_scope();
             }
             "return_statement" => {
@@ -1019,7 +1017,7 @@ impl ComplexityVisitor {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!("Unhandled Java node type: {node_type}");
+                tracing::debug!(node=%node_type, "Unhandled Java node type");
             }
         }
         Ok(())
@@ -1066,7 +1064,7 @@ impl ComplexityVisitor {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!("Unhandled Zig node type: {node_type}");
+                tracing::debug!(node=%node_type, "Unhandled Zig node type");
             }
         }
         Ok(())
@@ -1109,7 +1107,7 @@ impl ComplexityVisitor {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!("Unhandled V Lang node type: {node_type}");
+                tracing::debug!(node=%node_type, "Unhandled V Lang node type");
             }
         }
         Ok(())
@@ -1151,7 +1149,7 @@ impl ComplexityVisitor {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!("Unhandled Gleam node type: {node_type}");
+                tracing::debug!(node=%node_type, "Unhandled Gleam node type");
             }
         }
         Ok(())
@@ -1193,9 +1191,8 @@ impl ComplexityVisitor {
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
             }
-            "while_statement" | "while_loop" | "for_statement" | "for_loop"
-            | "for_in_statement" | "for_of_statement" | "foreach_statement"
-            | "do_while_statement" | "repeat_statement" => {
+            "while_statement" | "while_loop" | "for_statement" | "for_loop" | "for_in_statement"
+            | "for_of_statement" | "foreach_statement" | "do_while_statement" | "repeat_statement" => {
                 self.cyclomatic_complexity += 1;
                 self.cognitive_complexity += 1 + self.current_depth;
                 self.enter_scope();
@@ -1216,10 +1213,7 @@ impl ComplexityVisitor {
             }
             _ => {
                 #[cfg(debug_assertions)]
-                eprintln!(
-                    "Unrecognized node type for {}: {}",
-                    self.language, node_type
-                );
+                tracing::debug!(language=%self.language, node=%node_type, "Unrecognized AST node type");
             }
         }
         Ok(())

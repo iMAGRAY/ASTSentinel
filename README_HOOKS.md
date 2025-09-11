@@ -10,6 +10,8 @@
   <a href="https://github.com/iMAGRAY/ValidationCodeHook/releases" title="Releases">
     <img src="assets/badges/release.svg" alt="Release: latest"/>
   </a>
+  &nbsp;
+  <img src="assets/badges/coverage.svg" alt="Coverage"/>
 </p>
 # AST Sentinel — Hooks Reference
 
@@ -30,6 +32,12 @@ Edit `.env` to configure:
 - Models for validation
 - Timeouts
 - Debug options
+
+### Logging
+- Default logger: structured text to stderr; stdout remains reserved for hook JSON/text.
+- Control level via `RUST_LOG` (e.g., `RUST_LOG=info` or `RUST_LOG=debug`).
+- JSON logs for CI/production: set `LOG_JSON=1` or `HOOK_LOG_JSON=1`.
+- Extra verbose paths honor `DEBUG_HOOKS=true` but still go through `tracing::debug`.
 
 ### AST Analysis Settings
 - `AST_MAX_ISSUES` (default: 100, range 10..500) — overall cap for AST issues in context (deterministic sorting: severity → line → rule_id)

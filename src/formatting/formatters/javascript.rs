@@ -73,9 +73,9 @@ impl CodeFormatter for JavaScriptFormatter {
         // Check if prettier is available - graceful degradation
         if !self.is_available() {
             let mut result = FormatResult::unchanged(code.to_string());
-            result.messages.push(
-                "prettier formatter not available - skipping JavaScript formatting".to_string(),
-            );
+            result
+                .messages
+                .push("prettier formatter not available - skipping JavaScript formatting".to_string());
             return Ok(result);
         }
 
@@ -83,10 +83,7 @@ impl CodeFormatter for JavaScriptFormatter {
         let args = self.get_prettier_args();
 
         // Execute prettier with stdin input
-        match self
-            .executor
-            .execute_formatter("prettier", &args, Some(code))
-        {
+        match self.executor.execute_formatter("prettier", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)

@@ -68,10 +68,7 @@ impl CodeFormatter for CFormatter {
         let args = self.get_clang_format_args();
 
         // Execute clang-format with stdin input
-        match self
-            .executor
-            .execute_formatter("clang-format", &args, Some(code))
-        {
+        match self.executor.execute_formatter("clang-format", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)
@@ -237,8 +234,7 @@ mod tests {
                 return;
             }
 
-            let unformatted_code =
-                "#include <stdio.h>\nint main(){printf(\"Hello, World!\");return 0;}";
+            let unformatted_code = "#include <stdio.h>\nint main(){printf(\"Hello, World!\");return 0;}";
             let result = formatter.format_code(unformatted_code);
 
             match result {
@@ -288,9 +284,7 @@ int main(){Employee*emp=create_employee("John Doe",30,50000.0);print_employee(em
                     if format_result.changed {
                         // Check that formatting improved the code structure
                         assert!(format_result.formatted.contains("typedef struct"));
-                        assert!(format_result
-                            .formatted
-                            .contains("Employee *create_employee"));
+                        assert!(format_result.formatted.contains("Employee *create_employee"));
                         assert!(format_result.formatted.contains("int main"));
                     }
                 }
@@ -309,7 +303,8 @@ int main(){Employee*emp=create_employee("John Doe",30,50000.0);print_employee(em
                 return;
             }
 
-            let pointer_code = "int*ptr;int arr[10];void func(int*p,int n){for(int i=0;i<n;i++){ptr[i]=arr[i]*2;}}";
+            let pointer_code =
+                "int*ptr;int arr[10];void func(int*p,int n){for(int i=0;i<n;i++){ptr[i]=arr[i]*2;}}";
             let result = formatter.format_code(pointer_code);
 
             match result {
@@ -363,8 +358,7 @@ int main(){Employee*emp=create_employee("John Doe",30,50000.0);print_employee(em
                 return;
             }
 
-            let invalid_code =
-                "#include <stdio.h>\nint main( {\nprintf(\"missing brace\";\nreturn 0;"; // Missing closing brace and parenthesis
+            let invalid_code = "#include <stdio.h>\nint main( {\nprintf(\"missing brace\";\nreturn 0;"; // Missing closing brace and parenthesis
             let result = formatter.format_code(invalid_code);
 
             match result {
@@ -402,10 +396,7 @@ int main(){Employee*emp=create_employee("John Doe",30,50000.0);print_employee(em
                     }
                 }
                 Err(e) => {
-                    eprintln!(
-                        "clang-format formatting of function declarations failed: {}",
-                        e
-                    );
+                    eprintln!("clang-format formatting of function declarations failed: {}", e);
                 }
             }
         }

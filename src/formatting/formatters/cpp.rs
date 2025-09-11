@@ -68,10 +68,7 @@ impl CodeFormatter for CppFormatter {
         let args = self.get_clang_format_args();
 
         // Execute clang-format with stdin input
-        match self
-            .executor
-            .execute_formatter("clang-format", &args, Some(code))
-        {
+        match self.executor.execute_formatter("clang-format", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)
@@ -275,7 +272,8 @@ mod tests {
                 return;
             }
 
-            let unformatted_code = "#include <iostream>\nint main(){std::cout<<\"Hello, World!\"<<std::endl;return 0;}";
+            let unformatted_code =
+                "#include <iostream>\nint main(){std::cout<<\"Hello, World!\"<<std::endl;return 0;}";
             let result = formatter.format_code(unformatted_code);
 
             match result {
@@ -433,7 +431,8 @@ return adults;}
                 return;
             }
 
-            let invalid_code = "#include <iostream>\nint main( {\nstd::cout<<\"missing brace\"<<std::endl;\nreturn 0;"; // Missing closing brace and parenthesis
+            let invalid_code =
+                "#include <iostream>\nint main( {\nstd::cout<<\"missing brace\"<<std::endl;\nreturn 0;"; // Missing closing brace and parenthesis
             let result = formatter.format_code(invalid_code);
 
             match result {

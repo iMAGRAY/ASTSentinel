@@ -23,7 +23,7 @@ impl RubyFormatter {
             "--stdin".to_string(),
             "stdin.rb".to_string(),
             "--format".to_string(),
-            "simple".to_string(), // Simple output format for parsing
+            "simple".to_string(),                  // Simple output format for parsing
             "--disable-uncorrectable".to_string(), // Add rubocop:todo for unfixable issues
         ]
     }
@@ -66,10 +66,7 @@ impl CodeFormatter for RubyFormatter {
         let args = self.get_rubocop_args();
 
         // Execute rubocop with stdin input
-        match self
-            .executor
-            .execute_formatter("rubocop", &args, Some(code))
-        {
+        match self.executor.execute_formatter("rubocop", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)
@@ -518,7 +515,8 @@ end
                 return;
             }
 
-            let string_code = "name='Alice';age=25;message=\"Hello, #{name}! You are #{age} years old.\";puts message";
+            let string_code =
+                "name='Alice';age=25;message=\"Hello, #{name}! You are #{age} years old.\";puts message";
             let result = formatter.format_code(string_code);
 
             match result {

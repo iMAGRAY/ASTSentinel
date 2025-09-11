@@ -29,7 +29,10 @@ fn e2e_userpromptsubmit_invalid_json_fallbacks_to_default() {
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let txt = String::from_utf8_lossy(&out.stdout);
-    assert!(txt.contains("=== PROJECT SUMMARY ==="), "must render summary on fallback");
+    assert!(
+        txt.contains("=== PROJECT SUMMARY ==="),
+        "must render summary on fallback"
+    );
     assert!(!txt.contains("Project analysis unavailable"));
 }
 
@@ -63,4 +66,3 @@ fn e2e_userpromptsubmit_nonexistent_cwd_prints_unavailable() {
     let txt = String::from_utf8_lossy(&out.stdout);
     assert!(txt.contains("Project analysis unavailable"));
 }
-

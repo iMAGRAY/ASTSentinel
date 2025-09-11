@@ -1,14 +1,18 @@
 #![cfg(feature = "ast_fastpath")] // These tests rely on single-pass engine parity
-use rust_validation_hooks::analysis::ast::{AstQualityScorer, SupportedLanguage, IssueSeverity};
 use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
+use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
 
 #[test]
 fn js_unreachable_after_return() {
     let code = "function f(){ return 1; var x = 2; }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::JavaScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in JavaScript after return");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in JavaScript after return"
+    );
 }
 
 #[test]
@@ -16,8 +20,12 @@ fn ts_unreachable_after_return() {
     let code = "function f(){ return 1; const x = 2; }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in TypeScript after return");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in TypeScript after return"
+    );
 }
 
 #[test]
@@ -25,8 +33,12 @@ fn ts_unreachable_in_try_catch() {
     let code = r#"function f(){ try { let x=1; return x; const y=2; } catch(e) { return 0; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode after return inside try (TS)");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode after return inside try (TS)"
+    );
 }
 
 #[test]
@@ -34,8 +46,12 @@ fn js_unreachable_in_catch_block() {
     let code = r#"function f(){ try { throw 1; } catch(e) { return 0; var z = 1; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::JavaScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode after return inside catch (JS)");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode after return inside catch (JS)"
+    );
 }
 
 #[test]
@@ -58,17 +74,25 @@ fn ts_async_try_catch_switch_good_code() {
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for TS async/try-catch/switch good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for TS async/try-catch/switch good code"
+    );
 }
 
 #[test]
 fn ts_too_many_parameters_typed() {
     // 6 typed parameters (>5) should trigger TooManyParameters in TS
-    let code = "function f(a: number,b: number,c: number,d: number,e: number,f: number): number { return 1; }";
+    let code =
+        "function f(a: number,b: number,c: number,d: number,e: number,f: number): number { return 1; }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
-        "expected TooManyParameters in TypeScript (6 > 5)");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
+        "expected TooManyParameters in TypeScript (6 > 5)"
+    );
 }
 
 #[test]
@@ -77,8 +101,12 @@ fn ts_arrow_destructured_and_rest_params_too_many() {
     let code = r#"const f = ({a,b},{c,d},{e,f}, g, h, ...rest) => { return 1 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
-        "expected TooManyParameters for arrow with destructured + rest params");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
+        "expected TooManyParameters for arrow with destructured + rest params"
+    );
 }
 
 #[test]
@@ -87,8 +115,12 @@ fn ts_too_many_parameters_complex_signature() {
     let code = "function f(a?: number,b?: number,c?: number,d?: number,e?: number,f?: number){ return 1 }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
-        "expected TooManyParameters in TS complex signature (6 > 5)");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
+        "expected TooManyParameters in TS complex signature (6 > 5)"
+    );
 }
 
 #[test]
@@ -96,8 +128,12 @@ fn java_unreachable_after_return() {
     let code = r#"class X { int f(){ return 1; int x = 2; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Java).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in Java after return");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in Java after return"
+    );
 }
 
 #[test]
@@ -107,11 +143,20 @@ fn csharp_hardcoded_credentials_and_sql() {
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::CSharp).unwrap();
     // Hardcoded creds should be Critical
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HardcodedCredentials) && matches!(i.severity, IssueSeverity::Critical)),
-        "expected Critical HardcodedCredentials in C# assignment");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::HardcodedCredentials)
+                && matches!(i.severity, IssueSeverity::Critical)),
+        "expected Critical HardcodedCredentials in C# assignment"
+    );
     // Possible SQL in string literal as a Major warning
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::SqlInjection)),
-        "expected SqlInjection warning in C# string literal");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::SqlInjection)),
+        "expected SqlInjection warning in C# string literal"
+    );
 }
 
 #[test]
@@ -133,7 +178,10 @@ class X {
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::CSharp).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for C# async/try-catch/switch good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for C# async/try-catch/switch good code"
+    );
 }
 
 #[test]
@@ -144,8 +192,12 @@ fn csharp_too_many_parameters_complex_signature() {
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::CSharp).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
-        "expected TooManyParameters in C# complex signature (6 > 5)");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
+        "expected TooManyParameters in C# complex signature (6 > 5)"
+    );
 }
 
 #[test]
@@ -155,8 +207,14 @@ func f(){ password := "p@ss"; query := "SELECT * FROM users WHERE id=1" }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Go).unwrap();
     assert!(
-        res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HardcodedCredentials) && matches!(i.severity, IssueSeverity::Critical))
-        || res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::SqlInjection)),
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::HardcodedCredentials)
+                && matches!(i.severity, IssueSeverity::Critical))
+            || res
+                .concrete_issues
+                .iter()
+                .any(|i| matches!(i.category, IssueCategory::SqlInjection)),
         "expected HardcodedCredentials (Critical) or SqlInjection warning in Go"
     );
 }
@@ -184,7 +242,10 @@ func pick(x int) string {
                 .collect::<Vec<_>>()
         );
     }
-    assert!(res.concrete_issues.is_empty(), "expected no issues for Go switch good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for Go switch good code"
+    );
 }
 
 #[test]
@@ -205,8 +266,12 @@ func bad(x int) int {
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Go).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)),
-        "expected DeepNesting in Go with nested if/switch");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::DeepNesting)),
+        "expected DeepNesting in Go with nested if/switch"
+    );
 }
 
 #[test]
@@ -214,7 +279,10 @@ fn js_good_code_has_no_issues() {
     let code = "function sum(a,b){ if(a>0 && b>0){ return a+b; } return 0 }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::JavaScript).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for simple JS good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for simple JS good code"
+    );
 }
 
 #[test]
@@ -222,7 +290,10 @@ fn java_good_code_has_no_issues() {
     let code = r#"class X { int sum(int a, int b){ if(a>0 && b>0){ return a+b; } return 0; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Java).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for simple Java good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for simple Java good code"
+    );
 }
 
 #[test]
@@ -230,7 +301,10 @@ fn ts_good_code_has_no_issues() {
     let code = "function sum(a: number,b: number): number { if(a>0 && b>0){ return a+b; } return 0; }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for simple TS good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for simple TS good code"
+    );
 }
 
 #[test]
@@ -247,7 +321,10 @@ fn ts_async_try_finally_await_good_code() {
 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for async try/finally with await");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for async try/finally with await"
+    );
 }
 
 #[test]
@@ -255,8 +332,12 @@ fn ts_class_method_too_many_parameters() {
     let code = r#"class X { m(a:number,b:number,c:number,d:number,e:number,f:number){ return a+b; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
-        "expected TooManyParameters for TS class method with 6 params");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
+        "expected TooManyParameters for TS class method with 6 params"
+    );
 }
 
 #[test]
@@ -272,7 +353,10 @@ fn ts_switch_fallthrough_good_code() {
 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for fallthrough switch TS");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for fallthrough switch TS"
+    );
 }
 
 #[test]
@@ -280,8 +364,12 @@ fn ts_unreachable_in_try_block_bad_code() {
     let code = r#"function f(){ try { return 1; const y = 2; } catch(e){ return 0; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in TS for code after return inside try block");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in TS for code after return inside try block"
+    );
 }
 
 #[test]
@@ -289,7 +377,10 @@ fn csharp_good_code_has_no_issues() {
     let code = r#"class X { int Sum(int a, int b){ if(a>0 && b>0){ return a+b; } return 0; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::CSharp).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for simple C# good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for simple C# good code"
+    );
 }
 
 #[test]
@@ -297,8 +388,12 @@ fn csharp_unreachable_in_try_block_bad_code() {
     let code = r#"class X { int F(){ try { return 1; var y = 2; } catch(System.Exception) { return 0; } } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::CSharp).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in C# for code after return inside try block");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in C# for code after return inside try block"
+    );
 }
 
 #[test]
@@ -307,7 +402,10 @@ fn go_good_code_has_no_issues() {
 func sum(a int, b int) int { if a>0 && b>0 { return a+b } ; return 0 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Go).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for simple Go good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for simple Go good code"
+    );
 }
 
 #[test]
@@ -316,8 +414,12 @@ fn go_too_many_parameters() {
 func f(a int, b int, c int, d int, e int, f int) int { return 1 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Go).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
-        "expected TooManyParameters in Go (6 > 5)");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::TooManyParameters)),
+        "expected TooManyParameters in Go (6 > 5)"
+    );
 }
 
 #[test]
@@ -325,8 +427,12 @@ fn ts_deep_nesting() {
     let code = "function f(){ if(1){ if(1){ if(1){ if(1){ if(1){ return 1; }}}}} }";
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)),
-        "expected DeepNesting in TS");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::DeepNesting)),
+        "expected DeepNesting in TS"
+    );
 }
 
 #[test]
@@ -334,8 +440,12 @@ fn csharp_deep_nesting() {
     let code = r#"class X { int f(){ if(true){ if(true){ if(true){ if(true){ if(true){ return 1; }}}}} return 0; } }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::CSharp).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)),
-        "expected DeepNesting in C#");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::DeepNesting)),
+        "expected DeepNesting in C#"
+    );
 }
 
 #[test]
@@ -344,6 +454,10 @@ fn go_deep_nesting() {
 func f() int { if true { if true { if true { if true { if true { return 1 }}}}} ; return 0 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Go).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)),
-        "expected DeepNesting in Go");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::DeepNesting)),
+        "expected DeepNesting in Go"
+    );
 }

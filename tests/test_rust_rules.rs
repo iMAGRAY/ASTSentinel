@@ -1,10 +1,13 @@
-use rust_validation_hooks::analysis::ast::quality_scorer::{AstQualityScorer, IssueCategory};
 use rust_validation_hooks::analysis::ast::languages::SupportedLanguage;
+use rust_validation_hooks::analysis::ast::quality_scorer::{AstQualityScorer, IssueCategory};
 
 fn analyze(src: &str) -> Vec<(IssueCategory, String)> {
     let scorer = AstQualityScorer::new();
     let q = scorer.analyze(src, SupportedLanguage::Rust).expect("analyze");
-    q.concrete_issues.into_iter().map(|i| (i.category, i.message)).collect()
+    q.concrete_issues
+        .into_iter()
+        .map(|i| (i.category, i.message))
+        .collect()
 }
 
 // unreachable after return — covered by existing engine; focus here on loop-specific cases
@@ -19,8 +22,16 @@ fn f() {
 "#;
     let issues = analyze(src);
     let mut found = 0;
-    for (c, _) in &issues { if matches!(c, IssueCategory::UnreachableCode) { found += 1; } }
-    assert!(found >= 2, "expected at least two unreachable issues, got {:?}", issues);
+    for (c, _) in &issues {
+        if matches!(c, IssueCategory::UnreachableCode) {
+            found += 1;
+        }
+    }
+    assert!(
+        found >= 2,
+        "expected at least two unreachable issues, got {:?}",
+        issues
+    );
 }
 
 #[test]
@@ -41,5 +52,7 @@ fn f(mut n: i32) {
 }
 "#;
     let issues = analyze(src);
-    assert!(issues.iter().any(|(c, _)| matches!(c, IssueCategory::DeepNesting)));
+    assert!(issues
+        .iter()
+        .any(|(c, _)| matches!(c, IssueCategory::DeepNesting)));
 }

@@ -48,11 +48,7 @@ impl DuplicateDetector {
         Ok(())
     }
 
-    fn scan_recursive(
-        &mut self,
-        dir: &Path,
-        depth: usize,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    fn scan_recursive(&mut self, dir: &Path, depth: usize) -> Result<(), Box<dyn std::error::Error>> {
         if depth > 10 {
             return Ok(());
         } // Prevent infinite recursion
@@ -96,11 +92,7 @@ impl DuplicateDetector {
 
                             // Better error handling for modified time
                             let modified = metadata.modified().unwrap_or_else(|e| {
-                                eprintln!(
-                                    "Warning: Failed to get modified time for {}: {}",
-                                    path.display(),
-                                    e
-                                );
+                                tracing::warn!(path=%path.display(), error=%e, "Failed to get modified time");
                                 std::time::UNIX_EPOCH
                             });
 
@@ -112,7 +104,7 @@ impl DuplicateDetector {
                                 modified,
                             });
                         } else {
-                            eprintln!("Warning: Failed to read file content: {}", path.display());
+                            tracing::warn!(path=%path.display(), "Failed to read file content");
                         }
                     }
                 }
@@ -173,8 +165,7 @@ impl DuplicateDetector {
         for (pattern, files) in name_groups {
             if files.len() > 1 {
                 // Check if they're actually different versions
-                let unique_hashes: std::collections::HashSet<_> =
-                    files.iter().map(|f| &f.hash).collect();
+                let unique_hashes: std::collections::HashSet<_> = files.iter().map(|f| &f.hash).collect();
 
                 if unique_hashes.len() > 1 {
                     let conflict_type = Self::detect_conflict_type(&files);
@@ -259,9 +250,10 @@ impl DuplicateDetector {
             .collect();
 
         // Check for backup patterns
-        if names.iter().any(|n| {
-            n.contains(".bak") || n.contains(".old") || n.contains("backup") || n.ends_with('~')
-        }) {
+        if names
+            .iter()
+            .any(|n| n.contains(".bak") || n.contains(".old") || n.contains("backup") || n.ends_with('~'))
+        {
             return ConflictType::BackupFile;
         }
 
@@ -274,9 +266,10 @@ impl DuplicateDetector {
         }
 
         // Check for version patterns
-        if names.iter().any(|n| {
-            n.contains("_v") || n.contains("_new") || n.contains("_old") || n.contains("copy")
-        }) {
+        if names
+            .iter()
+            .any(|n| n.contains("_v") || n.contains("_new") || n.contains("_old") || n.contains("copy"))
+        {
             return ConflictType::VersionConflict;
         }
 
@@ -303,8 +296,7 @@ impl DuplicateDetector {
         let mut report = String::from("\n🔴 **КРИТИЧНО: Обнаружены дубликаты/конфликты файлов**\n");
 
         // Summary per conflict type
-        let mut counts: std::collections::HashMap<ConflictType, usize> =
-            std::collections::HashMap::new();
+        let mut counts: std::collections::HashMap<ConflictType, usize> = std::collections::HashMap::new();
         for g in groups {
             *counts.entry(g.conflict_type.clone()).or_insert(0) += 1;
         }
@@ -324,13 +316,24 @@ impl DuplicateDetector {
         report.push('\n');
         // Grand totals
         let total_groups = groups.len();
-        let mut total_files = 0usize; let mut total_bytes: u64 = 0;
-        for g in groups { total_files += g.files.len(); total_bytes += g.files.iter().map(|f| f.size).sum::<u64>(); }
+        let mut total_files = 0usize;
+        let mut total_bytes: u64 = 0;
+        for g in groups {
+            total_files += g.files.len();
+            total_bytes += g.files.iter().map(|f| f.size).sum::<u64>();
+        }
         let kb = (total_bytes as f64 / 1024.0).round() as u64;
-        report.push_str(&format!("Итого: групп {} , файлов {} (~{} KB)\n", total_groups, total_files, kb));
+        report.push_str(&format!(
+            "Итого: групп {} , файлов {} (~{} KB)\n",
+            total_groups, total_files, kb
+        ));
 
         // Optional per-directory summary (top-K)
-        let top_dirs: usize = std::env::var("DUP_REPORT_TOP_DIRS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(0, 20);
+        let top_dirs: usize = std::env::var("DUP_REPORT_TOP_DIRS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(3)
+            .clamp(0, 20);
         if top_dirs > 0 {
             use std::collections::HashMap as Map;
             let mut dir_counts: Map<String, usize> = Map::new();
@@ -342,9 +345,14 @@ impl DuplicateDetector {
                 }
             }
             let mut dir_list: Vec<(String, usize)> = dir_counts.into_iter().collect();
-            dir_list.sort_by(|a,b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            dir_list.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
             let mut parts = Vec::new();
-            for (i,(d,c)) in dir_list.into_iter().enumerate() { if i>=top_dirs { break; } parts.push(format!("{}: {}", d, c)); }
+            for (i, (d, c)) in dir_list.into_iter().enumerate() {
+                if i >= top_dirs {
+                    break;
+                }
+                parts.push(format!("{}: {}", d, c));
+            }
             if !parts.is_empty() {
                 report.push_str("Топ директорий: ");
                 report.push_str(&parts.join(", "));
@@ -371,11 +379,7 @@ impl DuplicateDetector {
 
             // Sort files by size (largest first) and modification time
             let mut sorted_files = group.files.clone();
-            sorted_files.sort_by(|a, b| {
-                b.size
-                    .cmp(&a.size)
-                    .then_with(|| b.modified.cmp(&a.modified))
-            });
+            sorted_files.sort_by(|a, b| b.size.cmp(&a.size).then_with(|| b.modified.cmp(&a.modified)));
 
             if sorted_files.len() > max_files {
                 sorted_files.truncate(max_files);
@@ -388,7 +392,9 @@ impl DuplicateDetector {
                     let cwd_s = cwd.display().to_string();
                     if path_str.starts_with(&cwd_s) {
                         let mut rel = path_str[cwd_s.len()..].to_string();
-                        if rel.starts_with('/') || rel.starts_with('\\') { let _ = rel.remove(0); }
+                        if rel.starts_with('/') || rel.starts_with('\\') {
+                            let _ = rel.remove(0);
+                        }
                         rel
                     } else {
                         path_str.clone()
@@ -415,10 +421,7 @@ impl DuplicateDetector {
             }
 
             if hidden_files > 0 {
-                report.push_str(&format!(
-                    "  ... и ещё {} файлов скрыто по лимиту\n",
-                    hidden_files
-                ));
+                report.push_str(&format!("  ... и ещё {} файлов скрыто по лимиту\n", hidden_files));
             }
 
             // Add recommendation
@@ -434,10 +437,7 @@ impl DuplicateDetector {
         }
 
         if hidden_groups > 0 {
-            report.push_str(&format!(
-                "\n... и ещё {} групп скрыто по лимиту\n",
-                hidden_groups
-            ));
+            report.push_str(&format!("\n... и ещё {} групп скрыто по лимиту\n", hidden_groups));
         }
 
         report

@@ -191,9 +191,7 @@ impl ProjectCache {
                 }
                 _ => {
                     // For Tree-sitter supported languages, use structural analysis
-                    if let Ok(metrics) =
-                        MultiLanguageAnalyzer::analyze_with_tree_sitter(&content, language)
-                    {
+                    if let Ok(metrics) = MultiLanguageAnalyzer::analyze_with_tree_sitter(&content, language) {
                         let structure_signature = format!(
                             "{}:{}:{}:{}:{}",
                             metrics.function_count,
@@ -568,10 +566,7 @@ pub fn compress_structure(
             .code_by_language
             .iter()
             .map(|(lang, stats)| {
-                let short = lang_abbrev
-                    .get(lang.as_str())
-                    .copied()
-                    .unwrap_or(lang.as_str());
+                let short = lang_abbrev.get(lang.as_str()).copied().unwrap_or(lang.as_str());
                 format!(
                     "{}:{}/{}/{:.1}/{:.1}",
                     short,
@@ -612,7 +607,8 @@ pub fn compress_structure(
         .iter()
         .map(|(path, score)| (path.clone(), *score))
         .collect();
-    important.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+    // Use total_cmp to avoid panics on NaN and ensure a total ordering
+    important.sort_by(|a, b| b.1.total_cmp(&a.1));
 
     let important_files: Vec<String> = important
         .iter()
@@ -637,10 +633,7 @@ pub fn compress_structure(
 }
 
 /// Build incremental update from cache
-pub fn build_incremental_update(
-    cache: &ProjectCache,
-    changed_files: Vec<PathBuf>,
-) -> Result<String> {
+pub fn build_incremental_update(cache: &ProjectCache, changed_files: Vec<PathBuf>) -> Result<String> {
     let mut updates = Vec::new();
 
     for file_path in changed_files {

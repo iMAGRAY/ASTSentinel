@@ -15,8 +15,8 @@ impl JsonFormatter {
     /// Pretty-print JSON with proper indentation and sorting
     fn format_json_content(&self, content: &str) -> Result<String> {
         // First, try to parse as a generic JSON value
-        let parsed: serde_json::Value = serde_json::from_str(content)
-            .map_err(|e| anyhow::anyhow!("Invalid JSON syntax: {}", e))?;
+        let parsed: serde_json::Value =
+            serde_json::from_str(content).map_err(|e| anyhow::anyhow!("Invalid JSON syntax: {}", e))?;
 
         // Sort object keys for consistent formatting
         let sorted_json = Self::sort_json_keys(&parsed);

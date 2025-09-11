@@ -9,4 +9,3 @@ fn unit_timings_summary_produces_output() {
     assert!(s.contains("=== TIMINGS (ms) ==="));
     assert!(s.contains("score/python"));
 }
-

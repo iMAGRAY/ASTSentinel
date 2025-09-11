@@ -1,7 +1,7 @@
+use crate::analysis::ast::languages::{LanguageCache, SupportedLanguage};
 use anyhow::Result;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
-use crate::analysis::ast::languages::{LanguageCache, SupportedLanguage};
 
 #[derive(Copy, Clone)]
 pub struct KindIds {
@@ -93,7 +93,10 @@ pub struct KindIds {
 impl KindIds {
     pub fn for_language(lang: SupportedLanguage) -> Result<Self> {
         match lang {
-            SupportedLanguage::Rust | SupportedLanguage::Json | SupportedLanguage::Yaml | SupportedLanguage::Toml => {
+            SupportedLanguage::Rust
+            | SupportedLanguage::Json
+            | SupportedLanguage::Yaml
+            | SupportedLanguage::Toml => {
                 anyhow::bail!("No kind ids for non tree-sitter languages")
             }
             _ => {}
@@ -217,4 +220,3 @@ lazy_static! {
 pub fn get_for_language(lang: SupportedLanguage) -> Option<KindIds> {
     KIND_IDS.get(&lang).copied()
 }
-

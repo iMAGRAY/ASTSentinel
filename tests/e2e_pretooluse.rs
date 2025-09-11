@@ -66,9 +66,16 @@ fn e2e_pretooluse_ast_only_deny_write_hardcoded_creds() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let decision = v["hookSpecificOutput"]["permissionDecision"].as_str().unwrap();
     assert_eq!(decision, "deny");
-    let reason = v["hookSpecificOutput"]["permissionDecisionReason"].as_str().unwrap();
+    let reason = v["hookSpecificOutput"]["permissionDecisionReason"]
+        .as_str()
+        .unwrap();
     let low = reason.to_lowercase();
-    assert!(low.contains("hardcoded") || low.contains("секрет") || low.contains("credential") || low.contains("sec001"));
+    assert!(
+        low.contains("hardcoded")
+            || low.contains("секрет")
+            || low.contains("credential")
+            || low.contains("sec001")
+    );
 }
 
 #[test]
@@ -92,8 +99,14 @@ fn e2e_pretooluse_ast_only_deny_ts_hardcoded_creds() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -122,8 +135,14 @@ fn e2e_pretooluse_ast_only_deny_js_sql_literal() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -158,8 +177,14 @@ fn e2e_pretooluse_ast_only_multiedit_sql_injection_denied() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -187,8 +212,14 @@ fn e2e_pretooluse_ast_only_unknown_extension_allows() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -252,8 +283,14 @@ fn e2e_pretooluse_windows_allow_writefile_backslash() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -283,8 +320,14 @@ fn e2e_pretooluse_windows_allow_append_backslash() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -318,8 +361,14 @@ fn e2e_pretooluse_windows_deny_sql_injection_backslash_path() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

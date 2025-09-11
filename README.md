@@ -22,6 +22,19 @@
 
 Проект ориентирован на стабильные, воспроизводимые выводы, строгие лимиты производительности и отличную разработческую ergonomics (документация, тесты, релизы).
 
+## Политика без паник в продакшене
+
+- В прод‑пути запрещены `unwrap()/expect()/panic!/todo!/unimplemented!/dbg!` и это закреплено линтами (`clippy -D warnings` в CI и crate attributes в коде).
+- Ошибки поднимаются наверх как типизированные (`AstError`, `FormattingError`) или `anyhow::Error` с контекстом; в бинарах логируются структурно.
+- На случай непредвиденного `panic!` установлены `panic`‑hooks: запись в stderr через tracing; stdout остаётся чистым для JSON‑контракта хуков.
+
+## Логирование
+
+- По умолчанию — структурный текст в stderr (stdout для JSON/текста хуков).
+- Уровень задаётся `RUST_LOG=info|debug`.
+- JSON‑логи для CI/прома: `LOG_JSON=1` или `HOOK_LOG_JSON=1`.
+- Дополнительные отладочные ветки активируются `DEBUG_HOOKS=true` и пишут на `debug`‑уровень.
+
 <p>
   <img src="assets/workflow.svg" alt="AST Sentinel — Workflow" width="100%"/>
 </p>
@@ -145,6 +158,16 @@ cargo test --all --release
 cargo test e2e_posttooluse -- --nocapture
 cargo test unit_duplicate_detector -- --nocapture
 ```
+
+## CI / Качество / Покрытие
+
+- Форматирование: `rustfmt --check`.
+- Линты: `clippy -D warnings` (запрещают unwrap/expect/panic/todo/unimplemented/dbg в прод‑пути).
+- Сборка: `cargo build --release`.
+- Тесты: Ubuntu — полный прогон; Windows — smoke (ключевые быстрые тесты).
+- Аудит: `cargo-audit` еженедельно и вручную.
+- Перф‑гейт: бенчмарки/скрипты под `.github/workflows/perf-gate.yml`.
+- Покрытие: tarpaulin (LCOV как артефакт) + локальный SVG‑бейдж в `assets/badges/coverage.svg`.
 
 ## Руководства
 

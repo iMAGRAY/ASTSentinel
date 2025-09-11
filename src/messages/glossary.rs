@@ -9,7 +9,9 @@ pub fn tip_for_category(cat: &IssueCategory) -> &'static str {
         IssueCategory::CommandInjection => "Avoid shell concatenation; prefer exec APIs with arg arrays.",
         IssueCategory::PathTraversal => "Join + normalize paths; validate against allowed roots.",
         IssueCategory::UnhandledError => "Handle Result/Exception; replace unwrap/panic with proper errors.",
-        IssueCategory::UnreachableCode => "Remove code after early-returns/raise/break; simplify control flow.",
+        IssueCategory::UnreachableCode => {
+            "Remove code after early-returns/raise/break; simplify control flow."
+        }
         IssueCategory::TooManyParameters => "Reduce params (>5); group into struct/object to simplify calls.",
         IssueCategory::DeepNesting => "Flatten nesting (>4): early return/guard clauses + extract helpers.",
         IssueCategory::HighComplexity => "Split large functions; extract pure helpers; simplify branches.",
@@ -32,11 +34,19 @@ pub fn build_quick_tips(score: &QualityScore, max_tips: usize, max_line_chars: u
         let tip = tip_for_category(&i.category);
         if seen.insert(tip) {
             let clipped = if tip.chars().count() > max_line_chars {
-                let mut s = tip.chars().take(max_line_chars.saturating_sub(1)).collect::<String>();
-                s.push('…'); s
-            } else { tip.to_string() };
+                let mut s = tip
+                    .chars()
+                    .take(max_line_chars.saturating_sub(1))
+                    .collect::<String>();
+                s.push('…');
+                s
+            } else {
+                tip.to_string()
+            };
             out.push(clipped);
-            if out.len() >= max_tips { break; }
+            if out.len() >= max_tips {
+                break;
+            }
         }
     }
     out

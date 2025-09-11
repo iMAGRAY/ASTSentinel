@@ -22,10 +22,7 @@ fn benchmark_truncate_for_display(c: &mut Criterion) {
             "utf8_emoji",
             "Hello 👋 World 🌍 Test 🚀 Code 💻 Review 📝 Done ✅",
         ),
-        (
-            "utf8_mixed",
-            "Test тест 测试 テスト اختبار δοκιμή тест испытание",
-        ),
+        ("utf8_mixed", "Test тест 测试 テスト اختبار δοκιμή тест испытание"),
     ];
 
     for (name, input) in test_strings {

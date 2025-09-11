@@ -44,9 +44,15 @@ tokio = { version = "1.0", features = ["full"] }
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn userpromptsubmit");
+        .spawn()
+        .expect("spawn userpromptsubmit");
 
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let txt = String::from_utf8_lossy(&out.stdout);
@@ -54,4 +60,3 @@ tokio = { version = "1.0", features = ["full"] }
     // We expect total 6 (1+1 npm + 2 pip + 2 cargo)
     assert!(txt.contains("Dependencies: total 6"), "Output: {}", txt);
 }
-

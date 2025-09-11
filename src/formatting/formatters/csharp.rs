@@ -261,7 +261,8 @@ public void AddUser(User user){if(user!=null)_users.Add(user);}
 }
 public class User{public string Name{get;set;}public int Age{get;set;}public bool IsActive{get;set;}}
 }
-"#.trim();
+"#
+            .trim();
 
             let result = formatter.format_code(complex_code);
 
@@ -269,9 +270,7 @@ public class User{public string Name{get;set;}public int Age{get;set;}public boo
                 Ok(format_result) => {
                     if format_result.changed {
                         // Check that formatting improved the code structure
-                        assert!(format_result
-                            .formatted
-                            .contains("public interface IUserService"));
+                        assert!(format_result.formatted.contains("public interface IUserService"));
                         assert!(format_result.formatted.contains("public class UserService"));
                         assert!(format_result.formatted.contains("public class User"));
                     }

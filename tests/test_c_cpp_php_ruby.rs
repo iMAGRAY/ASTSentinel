@@ -1,15 +1,19 @@
 #![cfg(feature = "ast_fastpath")] // These assertions rely on fastpath single-pass engine parity
-// NOTE: Multi-pass legacy path does not guarantee identical rule coverage for these languages.
-use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
+                                  // NOTE: Multi-pass legacy path does not guarantee identical rule coverage for these languages.
 use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
+use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
 
 #[test]
 fn c_unreachable_after_return() {
     let code = r#"int f(){ return 0; int x = 1; }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::C).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in C after return");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in C after return"
+    );
 }
 
 #[test]
@@ -17,8 +21,12 @@ fn cpp_unreachable_after_return() {
     let code = r#"int f(){ return 0; auto x = 1; }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Cpp).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in C++ after return");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in C++ after return"
+    );
 }
 
 #[test]
@@ -33,7 +41,10 @@ fn cpp_switch_good_code_has_no_issues() {
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Cpp).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for simple C++ switch good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for simple C++ switch good code"
+    );
 }
 
 #[test]
@@ -51,7 +62,10 @@ int f(int x){
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Cpp).unwrap();
-    assert!(res.concrete_issues.is_empty(), "expected no issues for C++ try/catch good code");
+    assert!(
+        res.concrete_issues.is_empty(),
+        "expected no issues for C++ try/catch good code"
+    );
 }
 
 #[test]
@@ -65,10 +79,19 @@ function foo(){
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Php).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in PHP after return");
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HardcodedCredentials) && matches!(i.severity, IssueSeverity::Critical)),
-        "expected Critical HardcodedCredentials in PHP");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in PHP after return"
+    );
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::HardcodedCredentials)
+                && matches!(i.severity, IssueSeverity::Critical)),
+        "expected Critical HardcodedCredentials in PHP"
+    );
 }
 
 #[test]
@@ -80,6 +103,10 @@ end
 "#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::Ruby).unwrap();
-    assert!(res.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
-        "expected UnreachableCode in Ruby after return");
+    assert!(
+        res.concrete_issues
+            .iter()
+            .any(|i| matches!(i.category, IssueCategory::UnreachableCode)),
+        "expected UnreachableCode in Ruby after return"
+    );
 }

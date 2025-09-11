@@ -282,11 +282,7 @@ fn test_parallel_metrics_calculation() {
     // Create test files
     for i in 0..10 {
         let file_path = temp_dir.path().join(format!("test{}.rs", i));
-        fs::write(
-            &file_path,
-            format!("fn test{}() {{ println!(\"test\"); }}", i),
-        )
-        .unwrap();
+        fs::write(&file_path, format!("fn test{}() {{ println!(\"test\"); }}", i)).unwrap();
     }
 
     // Create test structure
@@ -394,9 +390,7 @@ fn test_compressed_structure_format() {
     );
     assert!(
         compressed.important_files.contains(&"main.rs".to_string())
-            || compressed
-                .important_files
-                .contains(&"src/main.rs".to_string())
+            || compressed.important_files.contains(&"src/main.rs".to_string())
     );
     assert!(compressed.token_estimate > 0);
 }

@@ -30,14 +30,23 @@ fn e2e_posttooluse_entity_snippets_python() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .spawn().expect("spawn posttooluse");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn posttooluse");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
     assert!(ctx.contains("=== CHANGE CONTEXT ==="));
     // Ожидаем, что ровно один сниппет и он помечает изменённую строку '>'
-    assert!(ctx.lines().filter(|l| l.starts_with("- [")).count() >= 1, "expected at least one snippet header");
+    assert!(
+        ctx.lines().filter(|l| l.starts_with("- [")).count() >= 1,
+        "expected at least one snippet header"
+    );
     assert!(ctx.contains("\n>"), "expected a marked line with '>'");
 }

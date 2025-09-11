@@ -43,9 +43,7 @@ fn e2e_posttooluse_ast_only_mode() {
 
     {
         let stdin = child.stdin.as_mut().expect("stdin");
-        stdin
-            .write_all(input_str.as_bytes())
-            .expect("write stdin");
+        stdin.write_all(input_str.as_bytes()).expect("write stdin");
     }
 
     let output = child.wait_with_output().expect("wait output");
@@ -54,7 +52,9 @@ fn e2e_posttooluse_ast_only_mode() {
         let stderr_str = String::from_utf8_lossy(&output.stderr);
         panic!(
             "posttooluse exited with error: status={:?}\nSTDOUT:\n{}\nSTDERR:\n{}",
-            output.status.code(), stdout_str, stderr_str
+            output.status.code(),
+            stdout_str,
+            stderr_str
         );
     }
 
@@ -128,7 +128,10 @@ fn e2e_posttooluse_dry_run_edit_with_prompt_and_diff() {
     }
 
     let output = child.wait_with_output().expect("wait output");
-    assert!(output.status.success(), "posttooluse exited with error in dry run");
+    assert!(
+        output.status.success(),
+        "posttooluse exited with error in dry run"
+    );
 
     // additionalContext should include AST insights
     let stdout_str = String::from_utf8(output.stdout).expect("utf8 stdout");
@@ -148,8 +151,14 @@ fn e2e_posttooluse_dry_run_edit_with_prompt_and_diff() {
     // Prompt was written to post-context.txt due to DEBUG_HOOKS
     let prompt_path = dir.join("post-context.txt");
     let prompt_text = std::fs::read_to_string(&prompt_path).expect("read prompt");
-    assert!(prompt_text.contains("PROJECT_STRUCTURE:"), "project context in prompt");
-    assert!(prompt_text.contains("CODE CHANGES (diff format):"), "diff context in prompt");
+    assert!(
+        prompt_text.contains("PROJECT_STRUCTURE:"),
+        "project context in prompt"
+    );
+    assert!(
+        prompt_text.contains("CODE CHANGES (diff format):"),
+        "diff context in prompt"
+    );
 }
 
 #[test]
@@ -183,8 +192,14 @@ fn e2e_posttooluse_dry_run_multiedit_prompt_diff() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().expect("wait");
     assert!(out.status.success());
     // Prompt should contain MultiEdit summary
@@ -226,8 +241,14 @@ fn e2e_posttooluse_windows_transcript_backslash_path() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().expect("wait");
     assert!(out.status.success());
 }
@@ -252,8 +273,14 @@ fn e2e_posttooluse_write_aliases() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -288,8 +315,14 @@ fn e2e_posttooluse_append_alias() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -333,10 +366,19 @@ fn e2e_posttooluse_windows_writefile_backslash_path() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
-    assert!(out.status.success(), "posttooluse should succeed with backslash path");
+    assert!(
+        out.status.success(),
+        "posttooluse should succeed with backslash path"
+    );
 }
 
 #[cfg(windows)]
@@ -360,8 +402,14 @@ fn e2e_posttooluse_windows_append_backslash_path() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
 }
@@ -382,7 +430,11 @@ fn e2e_posttooluse_dry_run_with_transcript_and_limit() {
     std::fs::write(&file_path, &code).unwrap();
     // Transcript JSONL
     let transcript = dir.join("transcript.jsonl");
-    std::fs::write(&transcript, "{\"role\":\"user\",\"content\":\"Do it\"}\n{\"role\":\"assistant\",\"content\":\"Ok\"}\n").unwrap();
+    std::fs::write(
+        &transcript,
+        "{\"role\":\"user\",\"content\":\"Do it\"}\n{\"role\":\"assistant\",\"content\":\"Ok\"}\n",
+    )
+    .unwrap();
     let hook_input = serde_json::json!({
         "tool_name": "Write",
         "tool_input": {"file_path": file_path.to_string_lossy(), "content": code},
@@ -399,8 +451,14 @@ fn e2e_posttooluse_dry_run_with_transcript_and_limit() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().expect("wait");
     assert!(out.status.success());
     // Verify inclusion of transcript in prompt
@@ -425,7 +483,10 @@ fn e2e_posttooluse_dry_run_additional_context_limit_enforced() {
     let file_path = dir.join("big.ts");
     let long_line = "x".repeat(500);
     let mut code = String::new();
-    for _ in 0..200 { code.push_str(&long_line); code.push('\n'); }
+    for _ in 0..200 {
+        code.push_str(&long_line);
+        code.push('\n');
+    }
     std::fs::write(&file_path, &code).unwrap();
     let hook_input = serde_json::json!({
         "tool_name": "Write",
@@ -441,13 +502,22 @@ fn e2e_posttooluse_dry_run_additional_context_limit_enforced() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx.len() <= 10100, "context must be limited by ADDITIONAL_CONTEXT_LIMIT_CHARS lower bound");
+    assert!(
+        ctx.len() <= 10100,
+        "context must be limited by ADDITIONAL_CONTEXT_LIMIT_CHARS lower bound"
+    );
 }
 
 #[test]
@@ -471,13 +541,22 @@ fn e2e_posttooluse_pass_through_non_code_file() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx.is_empty(), "non-code file must pass-through with empty context");
+    assert!(
+        ctx.is_empty(),
+        "non-code file must pass-through with empty context"
+    );
 }
 
 #[test]
@@ -501,8 +580,14 @@ fn e2e_posttooluse_path_validation_fallback_to_tool_input() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -543,8 +628,14 @@ fn e2e_posttooluse_dry_run_edit_diff_contains_markers() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let prompt = std::fs::read_to_string(dir.join("post-context.txt")).expect("read prompt");
@@ -569,7 +660,8 @@ fn e2e_posttooluse_ast_snippets_change_context() {
     // Create file and edited content already applied (post-tool behavior)
     let file_path = dir.join("snip.py");
     let before = "def do_auth(user, pwd):\n    print('start')\n    return None\n";
-    let after = "def do_auth(user, pwd):\n    password = 'supersecret'\n    print('changed')\n    return None\n"; // should trigger hardcoded creds near changed lines
+    let after =
+        "def do_auth(user, pwd):\n    password = 'supersecret'\n    print('changed')\n    return None\n"; // should trigger hardcoded creds near changed lines
     std::fs::write(&file_path, after).unwrap();
 
     // HookInput for Edit
@@ -592,16 +684,24 @@ fn e2e_posttooluse_ast_snippets_change_context() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
     // Must contain CHANGE CONTEXT and at least one snippet marker
     assert!(ctx.contains("=== CHANGE CONTEXT ==="));
-    assert!(ctx.contains("| ") || ctx.contains("> ") || ctx.contains("No localized snippets"),
-        "expected context lines with markers or fallback note");
+    assert!(
+        ctx.contains("| ") || ctx.contains("> ") || ctx.contains("No localized snippets"),
+        "expected context lines with markers or fallback note"
+    );
 }
 
 #[test]
@@ -613,7 +713,9 @@ fn e2e_posttooluse_ast_only_max_issues_cap() {
     // Produce multiple long-line issues (>120 chars)
     let long = "y".repeat(130);
     let mut code = String::new();
-    for _ in 0..20 { code.push_str(&format!("{}\n", long)); }
+    for _ in 0..20 {
+        code.push_str(&format!("{}\n", long));
+    }
     std::fs::write(&file_path, &code).unwrap();
     let hook_input = serde_json::json!({
         "tool_name": "Write",
@@ -629,8 +731,14 @@ fn e2e_posttooluse_ast_only_max_issues_cap() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -639,10 +747,7 @@ fn e2e_posttooluse_ast_only_max_issues_cap() {
     let ctx_str = ctx;
     let start = ctx_str.find("=== RISK REPORT ===").expect("risk report present");
     let tail = &ctx_str[start + "=== RISK REPORT ===".len()..];
-    let end = tail
-        .find("=== ")
-        .map(|i| &tail[..i])
-        .unwrap_or(tail);
+    let end = tail.find("=== ").map(|i| &tail[..i]).unwrap_or(tail);
     let issue_lines = end.lines().filter(|l| l.trim_start().starts_with("- [")).count();
     assert_eq!(issue_lines, 10, "should be capped to 10 issues (min clamp)");
     assert!(end.contains("truncated: showing 10 of 20"));
@@ -662,7 +767,10 @@ fn e2e_posttooluse_dry_run_project_ast_skip_large() {
     let big_path = dir.join("big.py");
     let chunk = "a".repeat(1024);
     let mut f = std::fs::File::create(&big_path).unwrap();
-    for _ in 0..600 { use std::io::Write; f.write_all(chunk.as_bytes()).unwrap(); }
+    for _ in 0..600 {
+        use std::io::Write;
+        f.write_all(chunk.as_bytes()).unwrap();
+    }
     // A normal code file to trigger hook
     let code_path = dir.join("ok.py");
     std::fs::write(&code_path, "print('ok')\n").unwrap();
@@ -681,13 +789,22 @@ fn e2e_posttooluse_dry_run_project_ast_skip_large() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let prompt = std::fs::read_to_string(dir.join("post-context.txt")).expect("read prompt");
     assert!(prompt.contains("PROJECT-WIDE AST ANALYSIS"));
-    assert!(prompt.contains("Skipped (too large): 1"), "should report 1 large file skipped");
+    assert!(
+        prompt.contains("Skipped (too large): 1"),
+        "should report 1 large file skipped"
+    );
 }
 
 #[test]
@@ -709,8 +826,14 @@ fn e2e_posttooluse_pass_through_non_modifying_tool() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -738,8 +861,14 @@ fn e2e_posttooluse_ast_only_percent_encoded_path_fallback() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -778,8 +907,14 @@ fn e2e_posttooluse_pass_through_json_toml() {
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
-            .spawn().expect("spawn");
-        child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+            .spawn()
+            .expect("spawn");
+        child
+            .stdin
+            .as_mut()
+            .unwrap()
+            .write_all(hook_input.to_string().as_bytes())
+            .unwrap();
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success());
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -809,8 +944,14 @@ fn e2e_posttooluse_ast_only_windows_backslashes_path_fallback() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();

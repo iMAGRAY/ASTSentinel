@@ -7,8 +7,6 @@ pub mod project;
 pub mod timings;
 
 // Re-export commonly used types
-pub use dependencies::{analyze_project_dependencies, ProjectDependencies, DependencyInfo, PackageManager};
+pub use dependencies::{analyze_project_dependencies, DependencyInfo, PackageManager, ProjectDependencies};
 pub use metrics::ComplexityMetrics;
-pub use project::{
-    format_project_structure_for_ai, scan_project_structure, ProjectStructure, ScanConfig,
-};
+pub use project::{format_project_structure_for_ai, scan_project_structure, ProjectStructure, ScanConfig};

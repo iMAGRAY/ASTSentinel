@@ -54,10 +54,7 @@ impl Default for ScanConfig {
 }
 
 /// Scan project directory and build structure representation
-pub fn scan_project_structure(
-    root_path: &str,
-    config: Option<ScanConfig>,
-) -> Result<ProjectStructure> {
+pub fn scan_project_structure(root_path: &str, config: Option<ScanConfig>) -> Result<ProjectStructure> {
     let config = config.unwrap_or_default();
     let root = Path::new(root_path);
 
@@ -169,8 +166,7 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
         .par_iter()
         .map(|file| {
             let importance = calculate_file_importance(file);
-            let is_test =
-                file.relative_path.contains("test") || file.relative_path.contains("spec");
+            let is_test = file.relative_path.contains("test") || file.relative_path.contains("spec");
             let is_doc = file.file_type == "md" || file.file_type == "rst";
 
             let mut complexity_metrics = None;
@@ -312,13 +308,11 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
 
             // Enhanced complexity estimate using AST metrics if available
             let comment_ratio = stats.lines_of_comments as f32 / (stats.lines_of_code as f32 + 1.0);
-            let base_estimate =
-                (stats.lines_of_code as f32 / 100.0) * (1.0 - comment_ratio.min(0.3));
+            let base_estimate = (stats.lines_of_code as f32 / 100.0) * (1.0 - comment_ratio.min(0.3));
 
             // Incorporate cyclomatic complexity if available
             if stats.average_cyclomatic > 0.0 {
-                stats.complexity_estimate =
-                    (base_estimate * 0.3) + (stats.average_cyclomatic / 10.0 * 0.7);
+                stats.complexity_estimate = (base_estimate * 0.3) + (stats.average_cyclomatic / 10.0 * 0.7);
             } else {
                 stats.complexity_estimate = base_estimate;
             }
@@ -539,7 +533,7 @@ fn load_ignore_patterns(root: &Path) -> Result<HashSet<String>> {
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Could not read .gitignore: {e}");
+                tracing::warn!(error=%e, "Could not read .gitignore");
             }
         }
     }
@@ -571,16 +565,12 @@ fn should_ignore(path: &Path, root: &Path, patterns: &HashSet<String>) -> bool {
             }
         } else if pattern.contains('*') {
             // Glob pattern (simple implementation)
-            if matches_glob_pattern(&file_name, pattern) || matches_glob_pattern(&path_str, pattern)
-            {
+            if matches_glob_pattern(&file_name, pattern) || matches_glob_pattern(&path_str, pattern) {
                 return true;
             }
         } else {
             // Exact match
-            if path_str == *pattern
-                || file_name == *pattern
-                || path_str.ends_with(&format!("/{}", pattern))
-            {
+            if path_str == *pattern || file_name == *pattern || path_str.ends_with(&format!("/{}", pattern)) {
                 return true;
             }
         }
@@ -649,7 +639,7 @@ fn scan_directory_recursive(
     let entries = match fs::read_dir(current_path) {
         Ok(entries) => entries,
         Err(e) => {
-            eprintln!("Warning: Could not read directory {current_path:?}: {e}");
+            tracing::warn!(path=?current_path, error=%e, "Could not read directory");
             return Ok(());
         }
     };
@@ -658,7 +648,7 @@ fn scan_directory_recursive(
         let entry = match entry {
             Ok(entry) => entry,
             Err(e) => {
-                eprintln!("Warning: Could not read directory entry: {e}");
+                tracing::warn!(error=%e, "Could not read directory entry");
                 continue;
             }
         };
@@ -809,7 +799,6 @@ fn is_code_file_extension(extension: &str) -> bool {
         // Web technologies
         "js" | "jsx" | "ts" | "tsx" | "vue" | "svelte" |
         "html" | "htm" | "css" | "scss" | "sass" | "less" |
-        
         // Programming languages
         "py" | "pyx" | "pyw" |
         "rs" |
@@ -819,15 +808,12 @@ fn is_code_file_extension(extension: &str) -> bool {
         "php" | "rb" | "go" | "swift" | "dart" |
         "pl" | "pm" | "r" | "julia" | "lua" |
         "clj" | "cljs" | "hs" | "elm" | "ml" |
-        
         // Shell and scripting
         "sh" | "bash" | "zsh" | "fish" | "ps1" | "psm1" | "cmd" | "bat" |
-        
         // Configuration and data
         "json" | "yaml" | "yml" | "xml" | "ini" | "conf" | "toml" |
         "dockerfile" | "makefile" | "cmake" |
         "sql" | "graphql" | "proto" |
-        
         // Documentation
         "md" | "rst" | "tex" | "adoc"
     )
@@ -836,8 +822,7 @@ fn is_code_file_extension(extension: &str) -> bool {
 /// Build machine-readable tree structure with clear hierarchy
 fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
     let mut output = String::new();
-    let mut file_tree: std::collections::BTreeMap<String, Vec<String>> =
-        std::collections::BTreeMap::new();
+    let mut file_tree: std::collections::BTreeMap<String, Vec<String>> = std::collections::BTreeMap::new();
 
     // Group files by directory
     for file in &structure.files {
@@ -899,8 +884,7 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
                 if children.is_empty() {
                     format!("{}[]", name)
                 } else {
-                    let children_str: Vec<String> =
-                        children.iter().map(format_node).collect();
+                    let children_str: Vec<String> = children.iter().map(format_node).collect();
                     format!("{}[{}]", name, children_str.join(","))
                 }
             }
@@ -1082,9 +1066,8 @@ pub fn format_project_structure_for_ai_with_metrics(
         ));
 
         // Add top important files
-    let mut important_files: Vec<_> =
-        metrics.file_importance_scores.iter().collect();
-        important_files.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
+        let mut important_files: Vec<_> = metrics.file_importance_scores.iter().collect();
+        important_files.sort_by(|a, b| b.1.total_cmp(a.1));
 
         if !important_files.is_empty() {
             output.push_str("KEY_FILES:");
@@ -1116,8 +1099,7 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
     // Use compression if output would be too large
     let compress = max_chars > 0 && max_chars < 2000;
 
-    let _formatted =
-        format_project_structure_for_ai_with_metrics(structure, metrics.as_ref(), compress);
+    let _formatted = format_project_structure_for_ai_with_metrics(structure, metrics.as_ref(), compress);
 
     // Original compact format continues below for backwards compatibility
     let mut output = String::new();
@@ -1185,21 +1167,17 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
         for &pattern in &key_files {
             if filename.ends_with(pattern) || filename == pattern {
                 // Just the filename if it's in root, otherwise minimal path
-                let display_name =
-                    if file.relative_path.contains('/') || file.relative_path.contains('\\') {
-                        // Include parent directory for context
-                        let parts: Vec<&str> = file
-                            .relative_path
-                            .split(&['/', '\\'][..])
-                            .collect();
-                        if parts.len() >= 2 {
-                            format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
-                        } else {
-                            file.relative_path.clone()
-                        }
+                let display_name = if file.relative_path.contains('/') || file.relative_path.contains('\\') {
+                    // Include parent directory for context
+                    let parts: Vec<&str> = file.relative_path.split(&['/', '\\'][..]).collect();
+                    if parts.len() >= 2 {
+                        format!("{}/{}", parts[parts.len() - 2], parts[parts.len() - 1])
                     } else {
                         file.relative_path.clone()
-                    };
+                    }
+                } else {
+                    file.relative_path.clone()
+                };
                 found_keys.push(display_name);
                 break;
             }
@@ -1229,16 +1207,7 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
     } else {
         // For large projects, sample important directories
         let mut sample_files = Vec::new();
-        let important_dirs = [
-            "src",
-            "lib",
-            "app",
-            "components",
-            "pages",
-            "api",
-            "core",
-            "utils",
-        ];
+        let important_dirs = ["src", "lib", "app", "components", "pages", "api", "core", "utils"];
 
         for dir in important_dirs {
             for file in &structure.files {

@@ -46,8 +46,7 @@ mod tests {
         let old_string = "console.log(\"Hello\");";
         let new_string = "console.log(\"Hello, World!\");";
 
-        let result =
-            format_edit_full_context("test.js", Some(file_content), old_string, new_string);
+        let result = format_edit_full_context("test.js", Some(file_content), old_string, new_string);
 
         assert!(result.contains("=== Full file with Edit changes: test.js ==="));
         assert!(result.contains("function hello()"));
@@ -61,8 +60,7 @@ mod tests {
         let old_string = "nonexistent";
         let new_string = "replacement";
 
-        let result =
-            format_edit_full_context("test.js", Some(file_content), old_string, new_string);
+        let result = format_edit_full_context("test.js", Some(file_content), old_string, new_string);
 
         assert!(result.contains("Edit target not found"));
         assert!(result.contains("function test()"));
@@ -74,8 +72,7 @@ mod tests {
         let large_content: String = "x".repeat(150_000);
         let small_content = "small";
 
-        let result =
-            format_full_file_with_changes("large.js", Some(&large_content), Some(small_content));
+        let result = format_full_file_with_changes("large.js", Some(&large_content), Some(small_content));
 
         // Should contain truncation warning
         assert!(result.contains("File truncated for display"));

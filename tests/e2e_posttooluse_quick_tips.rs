@@ -23,8 +23,14 @@ fn e2e_posttooluse_quick_tips_present() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -32,7 +38,8 @@ fn e2e_posttooluse_quick_tips_present() {
     assert!(ctx.contains("=== QUICK TIPS ==="));
     // ensure lines are short
     for line in ctx.lines() {
-        if line.starts_with("- ") { assert!(line.chars().count() <= 150, "tip too long: {}", line); }
+        if line.starts_with("- ") {
+            assert!(line.chars().count() <= 150, "tip too long: {}", line);
+        }
     }
 }
-

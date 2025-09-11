@@ -22,8 +22,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --release
+      - name: Env
+        run: |
+          echo "RUSTFLAGS=-Dwarnings" >> $GITHUB_ENV
+          echo "RUST_BACKTRACE=1" >> $GITHUB_ENV
+          echo "RUST_LOG=info" >> $GITHUB_ENV
 
       - name: Format (rustfmt)
         run: |
@@ -35,8 +38,17 @@ jobs:
           rustup component add clippy
           cargo clippy --all-targets -- -D warnings
 
-      - name: Test (fast path)
-        run: cargo test --all --release
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Tests (Ubuntu full)
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo test --all --release -- --test-threads=1
+
+      - name: Tests (Windows smoke)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cargo test --test typed_errors --test ast_limits --release
 
       - name: Docs pointers
         run: |

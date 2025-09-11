@@ -20,11 +20,16 @@ fn e2e_userpromptsubmit_produces_project_context() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let txt = String::from_utf8_lossy(&out.stdout);
     assert!(txt.contains("# COMPREHENSIVE PROJECT CONTEXT") || txt.contains("# PROJECT ANALYSIS"));
 }
-

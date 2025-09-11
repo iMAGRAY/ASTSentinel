@@ -1,3 +1,4 @@
+pub mod error;
 /// Multi-language code formatting system
 ///
 /// This module provides unified code formatting capabilities for all supported languages
@@ -5,6 +6,7 @@
 pub mod formatters;
 
 use crate::analysis::ast::SupportedLanguage;
+use crate::formatting::error::FormattingError;
 use anyhow::Result;
 use std::path::Path;
 
@@ -82,12 +84,8 @@ impl FormatterFactory {
         match language {
             SupportedLanguage::Rust => Ok(Box::new(formatters::rust::RustFormatter::new())),
             SupportedLanguage::Python => Ok(Box::new(formatters::python::PythonFormatter::new())),
-            SupportedLanguage::JavaScript => {
-                Ok(Box::new(formatters::javascript::JavaScriptFormatter::new()))
-            }
-            SupportedLanguage::TypeScript => {
-                Ok(Box::new(formatters::typescript::TypeScriptFormatter::new()))
-            }
+            SupportedLanguage::JavaScript => Ok(Box::new(formatters::javascript::JavaScriptFormatter::new())),
+            SupportedLanguage::TypeScript => Ok(Box::new(formatters::typescript::TypeScriptFormatter::new())),
             SupportedLanguage::Java => Ok(Box::new(formatters::java::JavaFormatter::new())),
             SupportedLanguage::CSharp => Ok(Box::new(formatters::csharp::CSharpFormatter::new())),
             SupportedLanguage::Go => Ok(Box::new(formatters::go::GoFormatter::new())),
@@ -96,15 +94,9 @@ impl FormatterFactory {
             SupportedLanguage::Php => Ok(Box::new(formatters::php::PhpFormatter::new())),
             SupportedLanguage::Ruby => Ok(Box::new(formatters::ruby::RubyFormatter::new())),
             // New languages - return error as formatters are not implemented yet
-            SupportedLanguage::Zig => Err(anyhow::anyhow!(
-                "Zig formatter not implemented yet. Please use external zig fmt tool."
-            )),
-            SupportedLanguage::V => Err(anyhow::anyhow!(
-                "V formatter not implemented yet. Please use external v fmt tool."
-            )),
-            SupportedLanguage::Gleam => Err(anyhow::anyhow!(
-                "Gleam formatter not implemented yet. Please use external gleam format tool."
-            )),
+            SupportedLanguage::Zig => Err(FormattingError::NotImplemented("Zig formatter").into()),
+            SupportedLanguage::V => Err(FormattingError::NotImplemented("V formatter").into()),
+            SupportedLanguage::Gleam => Err(FormattingError::NotImplemented("Gleam formatter").into()),
             // Config languages - use built-in formatters
             SupportedLanguage::Json => Ok(Box::new(formatters::json::JsonFormatter::new())),
             SupportedLanguage::Yaml => Ok(Box::new(formatters::yaml::YamlFormatter::new())),
@@ -194,14 +186,14 @@ impl FormattingService {
         let extension = file_path
             .extension()
             .and_then(|ext| ext.to_str())
-            .ok_or_else(|| anyhow::anyhow!("Could not determine file extension"))?;
+            .ok_or_else(|| FormattingError::UnsupportedExtension("<none>".to_string()))?;
 
         let language = SupportedLanguage::from_extension(extension)
-            .ok_or_else(|| anyhow::anyhow!("Unsupported file extension: {}", extension))?;
+            .ok_or_else(|| FormattingError::UnsupportedExtension(extension.to_string()))?;
 
         match self.formatters.get(&language) {
             Some(formatter) => formatter.format_file(file_path),
-            None => anyhow::bail!("No formatter available for language: {}", language),
+            None => Err(FormattingError::FormatterUnavailable(language.to_string()).into()),
         }
     }
 
@@ -248,7 +240,29 @@ impl FormattingService {
             }
 
             // Atomic rename to target file
-            fs::rename(&temp_path, file_path)?;
+            match fs::rename(&temp_path, file_path) {
+                Ok(_) => {}
+                Err(e) => {
+                    #[cfg(windows)]
+                    {
+                        use std::io::ErrorKind;
+                        // On Windows, rename fails if destination exists. Best-effort fallback:
+                        // remove destination and rename (not strictly atomic but safer than partial writes).
+                        if matches!(e.kind(), ErrorKind::AlreadyExists | ErrorKind::PermissionDenied) {
+                            if file_path.exists() {
+                                let _ = fs::remove_file(file_path);
+                            }
+                            fs::rename(&temp_path, file_path)?;
+                        } else {
+                            return Err(e.into());
+                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        return Err(e.into());
+                    }
+                }
+            }
             Ok(())
         })();
 
@@ -287,7 +301,19 @@ impl FormattingService {
 
 impl Default for FormattingService {
     fn default() -> Self {
-        Self::new().expect("Failed to create formatting service")
+        // Do not panic in default construction: fall back to an empty registry
+        // if formatter initialization fails (e.g., missing external tools).
+        // Callers that need a fully initialized service should use `new()` and
+        // handle the Result explicitly.
+        match Self::new() {
+            Ok(svc) => svc,
+            Err(e) => {
+                tracing::warn!(error=%e, "FormattingService::new() failed; using empty registry");
+                Self {
+                    formatters: std::collections::HashMap::new(),
+                }
+            }
+        }
     }
 }
 
@@ -327,11 +353,7 @@ mod tests {
             SupportedLanguage::TypeScript,
         ] {
             let result = FormatterFactory::create_formatter(language);
-            assert!(
-                result.is_ok(),
-                "Failed to create formatter for {:?}",
-                language
-            );
+            assert!(result.is_ok(), "Failed to create formatter for {:?}", language);
         }
     }
 
@@ -417,8 +439,7 @@ mod tests {
         let formatted = "formatted code".to_string();
         let messages = vec!["Warning: formatter not available".to_string()];
 
-        let result =
-            FormatResult::new(original.clone(), formatted.clone()).with_messages(messages.clone());
+        let result = FormatResult::new(original.clone(), formatted.clone()).with_messages(messages.clone());
 
         assert!(result.changed);
         assert_eq!(result.messages, messages);

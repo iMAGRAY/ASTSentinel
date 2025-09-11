@@ -138,10 +138,7 @@ impl PythonFormatter {
     fn format_with_stdin(&self, code: &str, original_error: anyhow::Error) -> Result<FormatResult> {
         let stdin_args = vec!["-".to_string()]; // Read from stdin
 
-        match self
-            .executor
-            .execute_formatter("black", &stdin_args, Some(code))
-        {
+        match self.executor.execute_formatter("black", &stdin_args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)
@@ -149,9 +146,7 @@ impl PythonFormatter {
             Err(_) => {
                 // Both methods failed, return original code with error message
                 let mut result = FormatResult::unchanged(code.to_string());
-                result
-                    .messages
-                    .push(format!("black failed: {}", original_error));
+                result.messages.push(format!("black failed: {}", original_error));
                 Ok(result)
             }
         }
@@ -387,10 +382,7 @@ class DataProcessor:
                         // Check that long lines are wrapped properly
                         let lines: Vec<&str> = format_result.formatted.lines().collect();
                         // Should have multiple lines after formatting
-                        assert!(
-                            lines.len() > 1,
-                            "Long line should be wrapped into multiple lines"
-                        );
+                        assert!(lines.len() > 1, "Long line should be wrapped into multiple lines");
                     }
                 }
                 Err(e) => {

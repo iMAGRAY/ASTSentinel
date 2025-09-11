@@ -1,3 +1,15 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::dbg_macro
+    )
+)]
+#![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::io::{self, Read};
 use std::path::Path;
@@ -13,6 +25,11 @@ use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Defensive: log any unexpected panic as a structured error
+    rust_validation_hooks::telemetry::init();
+    std::panic::set_hook(Box::new(|info| {
+        tracing::error!(panic=%info, "panic in userpromptsubmit");
+    }));
     // Read hook input from stdin
     let mut buffer = String::new();
     io::stdin()
@@ -67,8 +84,8 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
     let working_dir = hook_input.cwd.as_deref().unwrap_or(".");
 
     // 1) Project scan + metrics
-    let (structure, metrics, _inc) = scan_project_with_cache(working_dir, None, None)
-        .context("scan_project_with_cache")?;
+    let (structure, metrics, _inc) =
+        scan_project_with_cache(working_dir, None, None).context("scan_project_with_cache")?;
 
     // Top languages by file_count
     let mut langs: Vec<(String, u32)> = metrics
@@ -85,7 +102,9 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
         .join(", ");
 
     // 2) Dependencies (summary only)
-    let deps = analyze_project_dependencies(Path::new(working_dir)).await.unwrap_or_default();
+    let deps = analyze_project_dependencies(Path::new(working_dir))
+        .await
+        .unwrap_or_default();
 
     // 3) Risk/Health snapshot across project files
     let rh = compute_risk_health_snapshot(working_dir).await;
@@ -152,11 +171,13 @@ struct RiskHealth {
 }
 
 async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
-    use rust_validation_hooks::analysis::ast::quality_scorer::{IssueSeverity};
+    use rust_validation_hooks::analysis::ast::quality_scorer::IssueSeverity;
     use std::collections::HashMap;
 
     let mut total = 0usize;
-    let mut crit = 0usize; let mut maj = 0usize; let mut min = 0usize;
+    let mut crit = 0usize;
+    let mut maj = 0usize;
+    let mut min = 0usize;
     let mut by_cat: HashMap<String, usize> = HashMap::new();
 
     if let Ok(entries) = std::fs::read_dir(working_dir) {
@@ -167,15 +188,17 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
                     if let Some(lang) = SupportedLanguage::from_extension(ext) {
                         if let Ok(content) = std::fs::read_to_string(&path) {
                             // Skip huge files to keep latency low
-                            if content.len() > 500_000 { continue; }
+                            if content.len() > 500_000 {
+                                continue;
+                            }
                             let scorer = AstQualityScorer::new();
                             if let Ok(q) = scorer.analyze(&content, lang) {
                                 total += q.concrete_issues.len();
                                 for i in q.concrete_issues {
                                     match i.severity {
-                                        IssueSeverity::Critical => crit+=1,
-                                        IssueSeverity::Major => maj+=1,
-                                        IssueSeverity::Minor => min+=1,
+                                        IssueSeverity::Critical => crit += 1,
+                                        IssueSeverity::Major => maj += 1,
+                                        IssueSeverity::Minor => min += 1,
                                     }
                                     *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
                                 }
@@ -188,19 +211,23 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
                 if let Ok(files) = std::fs::read_dir(&path) {
                     for f in files.flatten() {
                         let fp = f.path();
-                        if !fp.is_file() { continue; }
+                        if !fp.is_file() {
+                            continue;
+                        }
                         if let Some(ext) = fp.extension().and_then(|e| e.to_str()) {
                             if let Some(lang) = SupportedLanguage::from_extension(ext) {
                                 if let Ok(content) = std::fs::read_to_string(&fp) {
-                                    if content.len() > 300_000 { continue; }
+                                    if content.len() > 300_000 {
+                                        continue;
+                                    }
                                     let scorer = AstQualityScorer::new();
                                     if let Ok(q) = scorer.analyze(&content, lang) {
                                         total += q.concrete_issues.len();
                                         for i in q.concrete_issues {
                                             match i.severity {
-                                                IssueSeverity::Critical => crit+=1,
-                                                IssueSeverity::Major => maj+=1,
-                                                IssueSeverity::Minor => min+=1,
+                                                IssueSeverity::Critical => crit += 1,
+                                                IssueSeverity::Major => maj += 1,
+                                                IssueSeverity::Minor => min += 1,
                                             }
                                             *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
                                         }
@@ -214,11 +241,25 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
         }
     }
 
-    if total == 0 { return Some(RiskHealth { total, critical: 0, major: 0, minor: 0, top_categories: Vec::new() }); }
+    if total == 0 {
+        return Some(RiskHealth {
+            total,
+            critical: 0,
+            major: 0,
+            minor: 0,
+            top_categories: Vec::new(),
+        });
+    }
     let mut cats: Vec<(String, usize)> = by_cat.into_iter().collect();
-    cats.sort_by(|a,b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    cats.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     cats.truncate(5);
-    Some(RiskHealth { total, critical: crit, major: maj, minor: min, top_categories: cats })
+    Some(RiskHealth {
+        total,
+        critical: crit,
+        major: maj,
+        minor: min,
+        top_categories: cats,
+    })
 }
 
 // Removed unused project-wide AST analysis helpers

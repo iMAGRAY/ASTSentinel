@@ -150,18 +150,9 @@ impl YamlFormatter {
                 r"!!python/",
                 "Potentially dangerous Python object deserialization",
             ),
-            (
-                r"!!java/",
-                "Potentially dangerous Java object deserialization",
-            ),
-            (
-                r"&\w+",
-                "YAML anchors detected - verify they're used safely",
-            ),
-            (
-                r"\*\w+",
-                "YAML aliases detected - verify they're used safely",
-            ),
+            (r"!!java/", "Potentially dangerous Java object deserialization"),
+            (r"&\w+", "YAML anchors detected - verify they're used safely"),
+            (r"\*\w+", "YAML aliases detected - verify they're used safely"),
         ];
 
         for (pattern, warning) in dangerous_patterns {

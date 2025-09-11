@@ -1,3 +1,15 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::dbg_macro
+    )
+)]
+#![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::io::{self};
 
@@ -13,14 +25,12 @@ use rust_validation_hooks::analysis::project::{
 use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
 use std::path::PathBuf;
 // Use diff formatter for better AI context - unified diff for clear change visibility
-use rust_validation_hooks::validation::diff_formatter::{
-    format_code_diff, format_multi_edit_full_context,
-};
+use rust_validation_hooks::validation::diff_formatter::{format_code_diff, format_multi_edit_full_context};
 // Use AST-based quality scorer for deterministic code analysis
+use rust_validation_hooks::analysis::ast::languages::LanguageCache;
 use rust_validation_hooks::analysis::ast::{
     AstQualityScorer, IssueSeverity, QualityScore, SupportedLanguage,
 };
-use rust_validation_hooks::analysis::ast::languages::LanguageCache;
 // Use duplicate detector for finding conflicting files
 use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
 // Use code formatting service for automatic code formatting
@@ -40,14 +50,7 @@ fn normalize_tool_name(name: &str) -> (ToolKind, bool /* is_append */) {
     let is_append = n.contains("append");
     if matches!(
         n.as_str(),
-        "write"
-            | "writefile"
-            | "createfile"
-            | "create"
-            | "savefile"
-            | "save"
-            | "appendtofile"
-            | "append"
+        "write" | "writefile" | "createfile" | "create" | "savefile" | "save" | "appendtofile" | "append"
     ) {
         return (ToolKind::Write, is_append);
     }
@@ -72,30 +75,67 @@ fn normalize_tool_name(name: &str) -> (ToolKind, bool /* is_append */) {
 fn build_risk_report(score: &QualityScore) -> String {
     use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueSeverity};
     // Deterministic order base
-    let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+    let sev_key = |s: IssueSeverity| match s {
+        IssueSeverity::Critical => 0,
+        IssueSeverity::Major => 1,
+        IssueSeverity::Minor => 2,
+    };
 
     // Read caps
-    let global_cap: usize = std::env::var("AST_MAX_ISSUES").ok().and_then(|v| v.parse().ok()).unwrap_or(100).clamp(10, 500);
-    let cap_major: usize = std::env::var("AST_MAX_MAJOR").ok().and_then(|v| v.parse().ok()).unwrap_or(global_cap).clamp(5, 500);
-    let cap_minor: usize = std::env::var("AST_MAX_MINOR").ok().and_then(|v| v.parse().ok()).unwrap_or(global_cap).clamp(5, 500);
+    let global_cap: usize = std::env::var("AST_MAX_ISSUES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100)
+        .clamp(10, 500);
+    let cap_major: usize = std::env::var("AST_MAX_MAJOR")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(global_cap)
+        .clamp(5, 500);
+    let cap_minor: usize = std::env::var("AST_MAX_MINOR")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(global_cap)
+        .clamp(5, 500);
 
     // Group by severity
-    let mut crit: Vec<_> = score.concrete_issues.iter().filter(|i| matches!(i.severity, IssueSeverity::Critical)).cloned().collect();
-    let mut major: Vec<_> = score.concrete_issues.iter().filter(|i| matches!(i.severity, IssueSeverity::Major)).cloned().collect();
-    let mut minor: Vec<_> = score.concrete_issues.iter().filter(|i| matches!(i.severity, IssueSeverity::Minor)).cloned().collect();
+    let mut crit: Vec<_> = score
+        .concrete_issues
+        .iter()
+        .filter(|i| matches!(i.severity, IssueSeverity::Critical))
+        .cloned()
+        .collect();
+    let mut major: Vec<_> = score
+        .concrete_issues
+        .iter()
+        .filter(|i| matches!(i.severity, IssueSeverity::Major))
+        .cloned()
+        .collect();
+    let mut minor: Vec<_> = score
+        .concrete_issues
+        .iter()
+        .filter(|i| matches!(i.severity, IssueSeverity::Minor))
+        .cloned()
+        .collect();
 
     // Sort deterministically inside groups
-    let cmp = |a: &ConcreteIssue, b: &ConcreteIssue| sev_key(a.severity)
-        .cmp(&sev_key(b.severity))
-        .then_with(|| a.line.cmp(&b.line))
-        .then_with(|| a.rule_id.cmp(&b.rule_id));
+    let cmp = |a: &ConcreteIssue, b: &ConcreteIssue| {
+        sev_key(a.severity)
+            .cmp(&sev_key(b.severity))
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.rule_id.cmp(&b.rule_id))
+    };
     crit.sort_by(cmp);
     major.sort_by(cmp);
     minor.sort_by(cmp);
 
     // Apply per-severity caps (Critical = all)
-    if major.len() > cap_major { major.truncate(cap_major); }
-    if minor.len() > cap_minor { minor.truncate(cap_minor); }
+    if major.len() > cap_major {
+        major.truncate(cap_major);
+    }
+    if minor.len() > cap_minor {
+        minor.truncate(cap_minor);
+    }
 
     // Combine and globally cap for determinism + compactness
     let total_all = score.concrete_issues.len();
@@ -104,27 +144,59 @@ fn build_risk_report(score: &QualityScore) -> String {
     combined.extend(major);
     combined.extend(minor);
     combined.sort_by(cmp);
-    if combined.len() > global_cap { combined.truncate(global_cap); }
+    if combined.len() > global_cap {
+        combined.truncate(global_cap);
+    }
 
     // Build output
     let mut s = String::new();
     s.push_str("=== RISK REPORT ===\n");
-    if combined.is_empty() { s.push_str("No issues detected.\n"); return s; }
-    for i in &combined { s.push_str(&format!("- [{:?}] Line {}: {} [{}]\n", i.severity, i.line, i.message, i.rule_id)); }
-    if total_all > combined.len() { s.push_str(&format!("… truncated: showing {} of {} issues\n", combined.len(), total_all)); }
+    if combined.is_empty() {
+        s.push_str("No issues detected.\n");
+        return s;
+    }
+    for i in &combined {
+        s.push_str(&format!(
+            "- [{:?}] Line {}: {} [{}]\n",
+            i.severity, i.line, i.message, i.rule_id
+        ));
+    }
+    if total_all > combined.len() {
+        s.push_str(&format!(
+            "… truncated: showing {} of {} issues\n",
+            combined.len(),
+            total_all
+        ));
+    }
     s
 }
 
 fn build_quick_tips_section(score: &QualityScore) -> String {
     let enabled = std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true);
-    if !enabled { return String::new(); }
-    let max_tips = std::env::var("QUICK_TIPS_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(6).clamp(1, 20);
-    let max_line = std::env::var("QUICK_TIPS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(120).clamp(60, 180);
+    if !enabled {
+        return String::new();
+    }
+    let max_tips = std::env::var("QUICK_TIPS_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6)
+        .clamp(1, 20);
+    let max_line = std::env::var("QUICK_TIPS_MAX_CHARS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(120)
+        .clamp(60, 180);
     let tips = build_quick_tips(score, max_tips, max_line);
-    if tips.is_empty() { return String::new(); }
+    if tips.is_empty() {
+        return String::new();
+    }
     let mut s = String::new();
     s.push_str("=== QUICK TIPS ===\n");
-    for t in tips { s.push_str("- "); s.push_str(&t); s.push('\n'); }
+    for t in tips {
+        s.push_str("- ");
+        s.push_str(&t);
+        s.push('\n');
+    }
     s
 }
 
@@ -142,9 +214,13 @@ fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> Q
                 saw_digit = true;
                 num = num.saturating_mul(10).saturating_add((ch as u8 - b'0') as usize);
                 end_idx = pos + ch.len_utf8();
-            } else { break; }
+            } else {
+                break;
+            }
         }
-        if !saw_digit { continue; }
+        if !saw_digit {
+            continue;
+        }
         // After number, find sign
         let rest = &t[end_idx..];
         // Normalize spaces
@@ -153,10 +229,16 @@ fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> Q
             // Mark changed line with context window
             let start = num.saturating_sub(ctx);
             let end = num.saturating_add(ctx);
-            for ln in start..=end { if ln > 0 { changed.insert(ln); } }
+            for ln in start..=end {
+                if ln > 0 {
+                    changed.insert(ln);
+                }
+            }
         }
     }
-    if changed.is_empty() { return score.clone(); }
+    if changed.is_empty() {
+        return score.clone();
+    }
     let mut filtered = score.clone();
     filtered.concrete_issues = score
         .concrete_issues
@@ -169,19 +251,25 @@ fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> Q
 
 fn build_code_health(score: &QualityScore) -> String {
     use crate::analysis::ast::quality_scorer::IssueCategory;
-    let mut params = 0; let mut nesting = 0; let mut complexity = 0; let mut long_method = 0;
+    let mut params = 0;
+    let mut nesting = 0;
+    let mut complexity = 0;
+    let mut long_method = 0;
     for i in &score.concrete_issues {
         match i.category {
-            IssueCategory::TooManyParameters => params+=1,
-            IssueCategory::DeepNesting => nesting+=1,
-            IssueCategory::HighComplexity => complexity+=1,
-            IssueCategory::LongMethod => long_method+=1,
-            _=>{}
+            IssueCategory::TooManyParameters => params += 1,
+            IssueCategory::DeepNesting => nesting += 1,
+            IssueCategory::HighComplexity => complexity += 1,
+            IssueCategory::LongMethod => long_method += 1,
+            _ => {}
         }
     }
-    let mut s=String::new();
+    let mut s = String::new();
     s.push_str("=== CODE HEALTH ===\n");
-    s.push_str(&format!("Too many params: {}\nDeep nesting: {}\nHigh complexity: {}\nLong methods: {}\n", params,nesting,complexity,long_method));
+    s.push_str(&format!(
+        "Too many params: {}\nDeep nesting: {}\nHigh complexity: {}\nLong methods: {}\n",
+        params, nesting, complexity, long_method
+    ));
     s
 }
 
@@ -199,14 +287,22 @@ fn extract_changed_lines(diff_text: &str, ctx: usize) -> std::collections::HashS
                 saw_digit = true;
                 num = num.saturating_mul(10).saturating_add((ch as u8 - b'0') as usize);
                 end_idx = pos + ch.len_utf8();
-            } else { break; }
+            } else {
+                break;
+            }
         }
-        if !saw_digit { continue; }
+        if !saw_digit {
+            continue;
+        }
         let rest_trim = t[end_idx..].trim_start();
         if rest_trim.starts_with('+') {
             let start = num.saturating_sub(ctx);
             let end = num.saturating_add(ctx);
-            for ln in start..=end { if ln > 0 { changed.insert(ln); } }
+            for ln in start..=end {
+                if ln > 0 {
+                    changed.insert(ln);
+                }
+            }
         }
     }
     changed
@@ -229,30 +325,52 @@ fn build_change_context_snippets(
     }
 
     let mut issues = score.concrete_issues.clone();
-    let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
-    issues.sort_by(|a: &ConcreteIssue, b: &ConcreteIssue| sev_key(a.severity)
-        .cmp(&sev_key(b.severity))
-        .then_with(|| a.line.cmp(&b.line))
-        .then_with(|| a.rule_id.cmp(&b.rule_id)));
+    let sev_key = |s: IssueSeverity| match s {
+        IssueSeverity::Critical => 0,
+        IssueSeverity::Major => 1,
+        IssueSeverity::Minor => 2,
+    };
+    issues.sort_by(|a: &ConcreteIssue, b: &ConcreteIssue| {
+        sev_key(a.severity)
+            .cmp(&sev_key(b.severity))
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.rule_id.cmp(&b.rule_id))
+    });
 
     let lines: Vec<&str> = content.lines().collect();
     let mut out = String::new();
     out.push_str("=== CHANGE CONTEXT ===\n");
     let mut used = 0usize;
     for i in issues {
-        if used >= max_snippets { break; }
+        if used >= max_snippets {
+            break;
+        }
         let ln = i.line;
-        if !changed.contains(&ln) { continue; }
+        if !changed.contains(&ln) {
+            continue;
+        }
         let start = ln.saturating_sub(ctx_lines).max(1) - 1;
         let end = (ln + ctx_lines).min(lines.len());
         // Header for this issue
-        let header = format!("- [{:?}] Line {}: {} [{}]\n", i.severity, i.line, i.message, i.rule_id);
-        if out.len() + header.len() > max_chars { break; }
+        let header = format!(
+            "- [{:?}] Line {}: {} [{}]\n",
+            i.severity, i.line, i.message, i.rule_id
+        );
+        if out.len() + header.len() > max_chars {
+            break;
+        }
         out.push_str(&header);
         for idx in start..end {
             let mark = if idx + 1 == ln { '>' } else { ' ' };
-            let row = format!("{} {:4} | {}\n", mark, idx + 1, lines.get(idx).copied().unwrap_or(""));
-            if out.len() + row.len() > max_chars { return out; }
+            let row = format!(
+                "{} {:4} | {}\n",
+                mark,
+                idx + 1,
+                lines.get(idx).copied().unwrap_or("")
+            );
+            if out.len() + row.len() > max_chars {
+                return out;
+            }
             out.push_str(&row);
         }
         used += 1;
@@ -264,7 +382,9 @@ fn compute_line_offsets(s: &str) -> Vec<usize> {
     let mut offs = Vec::with_capacity(256);
     offs.push(0);
     for (i, b) in s.as_bytes().iter().enumerate() {
-        if *b == b'\n' { offs.push(i + 1); }
+        if *b == b'\n' {
+            offs.push(i + 1);
+        }
     }
     offs
 }
@@ -279,30 +399,53 @@ fn build_entity_context_snippets(
     max_chars: usize,
 ) -> String {
     use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueSeverity};
-    if score.concrete_issues.is_empty() { return String::new(); }
-    let lang_supported = matches!(language, SupportedLanguage::Python | SupportedLanguage::JavaScript | SupportedLanguage::TypeScript);
-    if !lang_supported { return String::new(); }
+    if score.concrete_issues.is_empty() {
+        return String::new();
+    }
+    let lang_supported = matches!(
+        language,
+        SupportedLanguage::Python | SupportedLanguage::JavaScript | SupportedLanguage::TypeScript
+    );
+    if !lang_supported {
+        return String::new();
+    }
 
-    let mut parser = match LanguageCache::create_parser_with_language(language) { Ok(p) => p, Err(_) => return String::new(), };
-    let tree = match parser.parse(content, None) { Some(t) => t, None => return String::new(), };
+    let mut parser = match LanguageCache::create_parser_with_language(language) {
+        Ok(p) => p,
+        Err(_) => return String::new(),
+    };
+    let tree = match parser.parse(content, None) {
+        Some(t) => t,
+        None => return String::new(),
+    };
     let root = tree.root_node();
     let lines: Vec<&str> = content.lines().collect();
     let line_offs = compute_line_offsets(content);
 
-    let sev_key = |s: IssueSeverity| match s { IssueSeverity::Critical => 0, IssueSeverity::Major => 1, IssueSeverity::Minor => 2 };
+    let sev_key = |s: IssueSeverity| match s {
+        IssueSeverity::Critical => 0,
+        IssueSeverity::Major => 1,
+        IssueSeverity::Minor => 2,
+    };
     let mut issues = score.concrete_issues.clone();
-    issues.sort_by(|a: &ConcreteIssue, b: &ConcreteIssue| sev_key(a.severity)
-        .cmp(&sev_key(b.severity))
-        .then_with(|| a.line.cmp(&b.line))
-        .then_with(|| a.rule_id.cmp(&b.rule_id)));
+    issues.sort_by(|a: &ConcreteIssue, b: &ConcreteIssue| {
+        sev_key(a.severity)
+            .cmp(&sev_key(b.severity))
+            .then_with(|| a.line.cmp(&b.line))
+            .then_with(|| a.rule_id.cmp(&b.rule_id))
+    });
 
     let mut out = String::new();
     out.push_str("=== CHANGE CONTEXT ===\n");
     let mut used = 0usize;
     for i in issues {
-        if used >= max_snippets { break; }
+        if used >= max_snippets {
+            break;
+        }
         let ln = i.line;
-        if !changed.is_empty() && !changed.contains(&ln) { continue; }
+        if !changed.is_empty() && !changed.contains(&ln) {
+            continue;
+        }
         let idx = ln.saturating_sub(1);
         let off = *line_offs.get(idx).unwrap_or(&0);
         let node = root.named_descendant_for_byte_range(off, off).unwrap_or(root);
@@ -318,54 +461,103 @@ fn build_entity_context_snippets(
                         || k == "arrow_function"
                         || k == "method_definition"
                         || k == "class_declaration"
-                    { true } else if k == "pair" || k == "property_assignment" {
+                    {
+                        true
+                    } else if k == "pair" || k == "property_assignment" {
                         // Object literal shorthand or function-valued property
                         let mut has_params_or_func = false;
                         for i in 0..cur.child_count() {
                             if let Some(ch) = cur.child(i) {
                                 let ck = ch.kind();
-                                if ck == "formal_parameters" || ck == "function" || ck == "function_expression" || ck == "arrow_function" {
-                                    has_params_or_func = true; break;
+                                if ck == "formal_parameters"
+                                    || ck == "function"
+                                    || ck == "function_expression"
+                                    || ck == "arrow_function"
+                                {
+                                    has_params_or_func = true;
+                                    break;
                                 }
                             }
                         }
                         has_params_or_func
-                    } else { false }
+                    } else {
+                        false
+                    }
                 }
                 _ => false,
             };
-            if is_entity { found = Some(cur); break; }
-            if let Some(p) = cur.parent() { cur = p; } else { break; }
+            if is_entity {
+                found = Some(cur);
+                break;
+            }
+            if let Some(p) = cur.parent() {
+                cur = p;
+            } else {
+                break;
+            }
         }
         let (start_row, end_row, entity_name, entity_kind) = if let Some(ent) = found {
-            let sr = ent.start_position().row + 1; let er = ent.end_position().row + 1;
+            let sr = ent.start_position().row + 1;
+            let er = ent.end_position().row + 1;
             let mut name = String::new();
             if matches!(language, SupportedLanguage::Python) {
                 let mut c = ent.walk();
                 if c.goto_first_child() {
                     loop {
                         let n = c.node();
-                        if n.kind() == "identifier" { if let Ok(txt) = n.utf8_text(content.as_bytes()) { name = txt.to_string(); break; } }
-                        if !c.goto_next_sibling() { break; }
+                        if n.kind() == "identifier" {
+                            if let Ok(txt) = n.utf8_text(content.as_bytes()) {
+                                name = txt.to_string();
+                                break;
+                            }
+                        }
+                        if !c.goto_next_sibling() {
+                            break;
+                        }
                     }
                 }
             }
             (sr, er, name, ent.kind().to_string())
-        } else { (ln, ln, String::new(), String::from("context")) };
-        let start = start_row.saturating_sub(1).max(ln.saturating_sub(ctx_lines * 2).saturating_sub(1));
+        } else {
+            (ln, ln, String::new(), String::from("context"))
+        };
+        let start = start_row
+            .saturating_sub(1)
+            .max(ln.saturating_sub(ctx_lines * 2).saturating_sub(1));
         let end = end_row.min(ln + ctx_lines * 2);
-        let header = if entity_name.is_empty() { format!("- [{:?}] Line {} in {}: {} [{}]\n", i.severity, i.line, entity_kind, i.message, i.rule_id) } else { format!("- [{:?}] Line {} in {} {}: {} [{}]\n", i.severity, i.line, entity_kind, entity_name, i.message, i.rule_id) };
-        if out.len() + header.len() > max_chars { break; }
+        let header = if entity_name.is_empty() {
+            format!(
+                "- [{:?}] Line {} in {}: {} [{}]\n",
+                i.severity, i.line, entity_kind, i.message, i.rule_id
+            )
+        } else {
+            format!(
+                "- [{:?}] Line {} in {} {}: {} [{}]\n",
+                i.severity, i.line, entity_kind, entity_name, i.message, i.rule_id
+            )
+        };
+        if out.len() + header.len() > max_chars {
+            break;
+        }
         out.push_str(&header);
         for idx in start..end {
             let mark = if idx + 1 == ln { '>' } else { ' ' };
-            let row = format!("{} {:4} | {}\n", mark, idx + 1, lines.get(idx).copied().unwrap_or(""));
-            if out.len() + row.len() > max_chars { return out; }
+            let row = format!(
+                "{} {:4} | {}\n",
+                mark,
+                idx + 1,
+                lines.get(idx).copied().unwrap_or("")
+            );
+            if out.len() + row.len() > max_chars {
+                return out;
+            }
             out.push_str(&row);
         }
         used += 1;
     }
-    if used == 0 { out.push_str("No localized snippets available.\n"); }
+    if used == 0 {
+        out.push_str("No localized snippets available.\n");
+    }
     out
 }
 
@@ -377,14 +569,26 @@ struct FuncSignature {
     end_byte: usize,
 }
 
-fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::collections::HashMap<String, FuncSignature> {
+fn extract_signatures_ast(
+    language: SupportedLanguage,
+    content: &str,
+) -> std::collections::HashMap<String, FuncSignature> {
     use std::collections::HashMap;
     let mut res: HashMap<String, FuncSignature> = HashMap::new();
-    if !matches!(language, SupportedLanguage::Python | SupportedLanguage::JavaScript | SupportedLanguage::TypeScript) {
+    if !matches!(
+        language,
+        SupportedLanguage::Python | SupportedLanguage::JavaScript | SupportedLanguage::TypeScript
+    ) {
         return res;
     }
-    let mut parser = match LanguageCache::create_parser_with_language(language) { Ok(p) => p, Err(_) => return res };
-    let tree = match parser.parse(content, None) { Some(t) => t, None => return res };
+    let mut parser = match LanguageCache::create_parser_with_language(language) {
+        Ok(p) => p,
+        Err(_) => return res,
+    };
+    let tree = match parser.parse(content, None) {
+        Some(t) => t,
+        None => return res,
+    };
     let root = tree.root_node();
     let bytes = content.as_bytes();
 
@@ -394,11 +598,15 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
         let mut st = vec![node];
         while let Some(n) = st.pop() {
             if n.kind() == "identifier" {
-                if let Ok(t) = n.utf8_text(bytes) { out.push(t.to_string()); }
+                if let Ok(t) = n.utf8_text(bytes) {
+                    out.push(t.to_string());
+                }
             }
-    for i in 0..n.child_count() {
-        if let Some(ch) = n.child(i) { st.push(ch); }
-    }
+            for i in 0..n.child_count() {
+                if let Some(ch) = n.child(i) {
+                    st.push(ch);
+                }
+            }
         }
         let mut seen = std::collections::HashSet::new();
         out.into_iter().filter(|s| seen.insert(s.clone())).collect()
@@ -434,18 +642,26 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
             }
             // Default value in parameters: only care about the left-hand binding
             if k == "assignment_pattern" {
-                if let Some(lhs) = n.child(0) { st.push(lhs); }
+                if let Some(lhs) = n.child(0) {
+                    st.push(lhs);
+                }
                 continue;
             }
             // Binding identifiers to collect
             if k == "binding_identifier" || k == "shorthand_property_identifier" || k == "identifier" {
                 if let Ok(t) = n.utf8_text(bytes) {
                     // Ignore special TS 'this' parameter (used only for typing)
-                    if t != "this" { out.push(t.to_string()); }
+                    if t != "this" {
+                        out.push(t.to_string());
+                    }
                 }
                 continue;
             }
-            for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
+            for i in 0..n.child_count() {
+                if let Some(ch) = n.child(i) {
+                    st.push(ch);
+                }
+            }
         }
         // Deduplicate but preserve first-seen order
         let mut seen = std::collections::HashSet::new();
@@ -458,7 +674,7 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
             // full usually like: [expr]
             let trimmed = full.trim();
             if trimmed.starts_with('[') && trimmed.ends_with(']') {
-                let inner = &trimmed[1..trimmed.len()-1].trim();
+                let inner = &trimmed[1..trimmed.len() - 1].trim();
                 // If inner looks reasonably short, surface it; else fallback
                 if inner.len() <= 40 && !inner.is_empty() && !inner.contains('\n') {
                     // Strip simple quotes/backticks around literals
@@ -481,7 +697,10 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
             for i in 0..node.child_count() {
                 if let Some(ch) = node.child(i) {
                     let ck = ch.kind();
-                    if ck == "property_identifier" || ck == "identifier" || ck == "private_property_identifier" {
+                    if ck == "property_identifier"
+                        || ck == "identifier"
+                        || ck == "private_property_identifier"
+                    {
                         return ch.utf8_text(bytes).ok().map(|s| s.to_string());
                     }
                 }
@@ -494,7 +713,12 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                     let ck = ch.kind();
                     if ck == "string" || ck == "number" || ck == "identifier" || ck == "member_expression" {
                         let text = ch.utf8_text(bytes).unwrap_or("");
-                        if !text.is_empty() { return Some(format!("[computed: {}]", text.trim_matches('"').trim_matches('\'').trim_matches('`'))); }
+                        if !text.is_empty() {
+                            return Some(format!(
+                                "[computed: {}]",
+                                text.trim_matches('"').trim_matches('\'').trim_matches('`')
+                            ));
+                        }
                     }
                 }
             }
@@ -505,7 +729,11 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
 
     let mut st = vec![root];
     while let Some(n) = st.pop() {
-        for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
+        for i in 0..n.child_count() {
+            if let Some(ch) = n.child(i) {
+                st.push(ch);
+            }
+        }
         let k = n.kind();
         match language {
             SupportedLanguage::Python => {
@@ -515,177 +743,406 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                     for i in 0..n.child_count() {
                         if let Some(ch) = n.child(i) {
                             if name.is_empty() && ch.kind() == "identifier" {
-                                if let Ok(t) = ch.utf8_text(bytes) { name = t.to_string(); }
+                                if let Ok(t) = ch.utf8_text(bytes) {
+                                    name = t.to_string();
+                                }
                             }
-                            if ch.kind() == "parameters" { params_node = Some(ch); }
+                            if ch.kind() == "parameters" {
+                                params_node = Some(ch);
+                            }
                         }
                     }
                     let params = params_node.map(collect_params_py).unwrap_or_default();
-                    if !name.is_empty() { res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
+                    if !name.is_empty() {
+                        res.insert(
+                            name.clone(),
+                            FuncSignature {
+                                params,
+                                start_byte: n.start_byte(),
+                                end_byte: n.end_byte(),
+                            },
+                        );
+                    }
                 }
             }
             SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
                 if k == "function_declaration" {
                     let mut name = String::new();
                     let mut params_node = None;
-                    for i in 0..n.child_count(){
-                        if let Some(ch) = n.child(i){
-                            if name.is_empty() && (ch.kind()=="identifier"||ch.kind()=="binding_identifier"){
-                                if let Ok(t)=ch.utf8_text(bytes){ name=t.to_string(); }
+                    for i in 0..n.child_count() {
+                        if let Some(ch) = n.child(i) {
+                            if name.is_empty()
+                                && (ch.kind() == "identifier" || ch.kind() == "binding_identifier")
+                            {
+                                if let Ok(t) = ch.utf8_text(bytes) {
+                                    name = t.to_string();
+                                }
                             }
-                            if ch.kind()=="formal_parameters"{ params_node=Some(ch); }
+                            if ch.kind() == "formal_parameters" {
+                                params_node = Some(ch);
+                            }
                         }
                     }
-                    let params=params_node.map(collect_params_js_ts).unwrap_or_default();
-                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
+                    let params = params_node.map(collect_params_js_ts).unwrap_or_default();
+                    if !name.is_empty() {
+                        res.insert(
+                            name.clone(),
+                            FuncSignature {
+                                params,
+                                start_byte: n.start_byte(),
+                                end_byte: n.end_byte(),
+                            },
+                        );
+                    }
                 } else if k == "method_definition" {
-                    let mut name=String::new(); let mut params_node=None;
-                    for i in 0..n.child_count(){
-                        if let Some(ch)=n.child(i){
+                    let mut name = String::new();
+                    let mut params_node = None;
+                    for i in 0..n.child_count() {
+                        if let Some(ch) = n.child(i) {
                             let ck = ch.kind();
                             // Accessor keywords get/set are allowed but not used further here
-                            if ck=="computed_property_name" && name.is_empty() { name = render_computed_name(bytes, ch); }
-                            if name.is_empty() && (ck=="property_identifier"||ck=="identifier"||ck=="private_property_identifier"){ if let Ok(t)=ch.utf8_text(bytes){ name=t.to_string(); } }
-                            if ck=="formal_parameters"{ params_node=Some(ch); }
+                            if ck == "computed_property_name" && name.is_empty() {
+                                name = render_computed_name(bytes, ch);
+                            }
+                            if name.is_empty()
+                                && (ck == "property_identifier"
+                                    || ck == "identifier"
+                                    || ck == "private_property_identifier")
+                            {
+                                if let Ok(t) = ch.utf8_text(bytes) {
+                                    name = t.to_string();
+                                }
+                            }
+                            if ck == "formal_parameters" {
+                                params_node = Some(ch);
+                            }
                         }
                     }
-                    let params=params_node.map(collect_params_js_ts).unwrap_or_default();
-                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
+                    let params = params_node.map(collect_params_js_ts).unwrap_or_default();
+                    if !name.is_empty() {
+                        res.insert(
+                            name.clone(),
+                            FuncSignature {
+                                params,
+                                start_byte: n.start_byte(),
+                                end_byte: n.end_byte(),
+                            },
+                        );
+                    }
                 } else if k == "arrow_function" || k == "function_expression" {
-                    let mut cur=n; let mut name=String::new();
+                    let mut cur = n;
+                    let mut name = String::new();
                     for _ in 0..6 {
-                        if let Some(p)=cur.parent(){
-                            let pk=p.kind();
-                            if pk=="variable_declarator" {
-                                if let Some(lhs)=p.child(0){
-                                    if lhs.kind()=="identifier"||lhs.kind()=="binding_identifier"{
-                                        if let Ok(t)=lhs.utf8_text(bytes){name=t.to_string();}
+                        if let Some(p) = cur.parent() {
+                            let pk = p.kind();
+                            if pk == "variable_declarator" {
+                                if let Some(lhs) = p.child(0) {
+                                    if lhs.kind() == "identifier" || lhs.kind() == "binding_identifier" {
+                                        if let Ok(t) = lhs.utf8_text(bytes) {
+                                            name = t.to_string();
+                                        }
                                     }
                                 }
-                            } else if pk=="assignment_expression" {
-                                if let Some(lhs)=p.child(0){
+                            } else if pk == "assignment_expression" {
+                                if let Some(lhs) = p.child(0) {
                                     let lk = lhs.kind();
-                                    if lk=="identifier"||lk=="binding_identifier"||lk=="property_identifier"{
-                                        if let Ok(t)=lhs.utf8_text(bytes){ name=t.to_string(); }
-                                    } else if lk=="member_expression" || lk=="subscript_expression" {
-                                        if let Some(pname) = extract_member_property_name(bytes, lhs) { name = pname; }
+                                    if lk == "identifier"
+                                        || lk == "binding_identifier"
+                                        || lk == "property_identifier"
+                                    {
+                                        if let Ok(t) = lhs.utf8_text(bytes) {
+                                            name = t.to_string();
+                                        }
+                                    } else if lk == "member_expression" || lk == "subscript_expression" {
+                                        if let Some(pname) = extract_member_property_name(bytes, lhs) {
+                                            name = pname;
+                                        }
                                     }
                                 }
                             }
-                            cur=p;
-                        } else { break; }
-                        if !name.is_empty() { break; }
+                            cur = p;
+                        } else {
+                            break;
+                        }
+                        if !name.is_empty() {
+                            break;
+                        }
                     }
-                    let mut params_node=None; for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } }
-                    let mut params=params_node.map(collect_params_js_ts).unwrap_or_default();
+                    let mut params_node = None;
+                    for i in 0..n.child_count() {
+                        if let Some(ch) = n.child(i) {
+                            if ch.kind() == "formal_parameters" {
+                                params_node = Some(ch);
+                                break;
+                            }
+                        }
+                    }
+                    let mut params = params_node.map(collect_params_js_ts).unwrap_or_default();
                     // Fallback: single identifier parameter for concise arrow functions (x => ...)
                     if params.is_empty() {
-                        for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ let ck=ch.kind(); if ck=="identifier"||ck=="binding_identifier"{ if let Ok(t)=ch.utf8_text(bytes){ params.push(t.to_string()); } } } }
+                        for i in 0..n.child_count() {
+                            if let Some(ch) = n.child(i) {
+                                let ck = ch.kind();
+                                if ck == "identifier" || ck == "binding_identifier" {
+                                    if let Ok(t) = ch.utf8_text(bytes) {
+                                        params.push(t.to_string());
+                                    }
+                                }
+                            }
+                        }
                     }
-                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
+                    if !name.is_empty() {
+                        res.insert(
+                            name.clone(),
+                            FuncSignature {
+                                params,
+                                start_byte: n.start_byte(),
+                                end_byte: n.end_byte(),
+                            },
+                        );
+                    }
                 } else if k == "pair" || k == "property_assignment" {
                     // Object literal method/property with function value: { foo(){} } or { foo: function(){} } or { foo: ()=>{} }
                     if let Some(key) = n.child(0) {
                         let key_k = key.kind();
-                        if key_k=="property_identifier" || key_k=="identifier" || key_k=="private_property_identifier" || key_k=="computed_property_name" {
-                            let kname = if key_k=="computed_property_name" { render_computed_name(bytes, key) } else { key.utf8_text(bytes).unwrap_or("").to_string() };
+                        if key_k == "property_identifier"
+                            || key_k == "identifier"
+                            || key_k == "private_property_identifier"
+                            || key_k == "computed_property_name"
+                        {
+                            let kname = if key_k == "computed_property_name" {
+                                render_computed_name(bytes, key)
+                            } else {
+                                key.utf8_text(bytes).unwrap_or("").to_string()
+                            };
                             if !kname.is_empty() {
                                 // Value likely at child(1) or later
-                                let mut params_node=None; let mut func_like: Option<tree_sitter::Node> = None;
+                                let mut params_node = None;
+                                let mut func_like: Option<tree_sitter::Node> = None;
                                 // First, direct function value
-                                for i in 1..n.child_count(){ if let Some(ch)=n.child(i){ let ck=ch.kind(); if ck=="function"||ck=="function_expression"||ck=="arrow_function"{ func_like=Some(ch); break; } } }
+                                for i in 1..n.child_count() {
+                                    if let Some(ch) = n.child(i) {
+                                        let ck = ch.kind();
+                                        if ck == "function"
+                                            || ck == "function_expression"
+                                            || ck == "arrow_function"
+                                        {
+                                            func_like = Some(ch);
+                                            break;
+                                        }
+                                    }
+                                }
                                 // Shorthand object method: look for a descendant 'formal_parameters'
                                 if func_like.is_none() {
-                                    let mut t = Vec::new(); for i in 1..n.child_count(){ if let Some(ch)=n.child(i){ t.push(ch); } }
+                                    let mut t = Vec::new();
+                                    for i in 1..n.child_count() {
+                                        if let Some(ch) = n.child(i) {
+                                            t.push(ch);
+                                        }
+                                    }
                                     while let Some(m) = t.pop() {
-                                        if m.kind()=="formal_parameters" { params_node=Some(m); break; }
-                                        for i in 0..m.child_count(){ if let Some(ch)=m.child(i){ t.push(ch); } }
+                                        if m.kind() == "formal_parameters" {
+                                            params_node = Some(m);
+                                            break;
+                                        }
+                                        for i in 0..m.child_count() {
+                                            if let Some(ch) = m.child(i) {
+                                                t.push(ch);
+                                            }
+                                        }
                                     }
                                 }
                                 if params_node.is_none() {
-                                    if let Some(func) = func_like { for i in 0..func.child_count(){ if let Some(ch)=func.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } } }
+                                    if let Some(func) = func_like {
+                                        for i in 0..func.child_count() {
+                                            if let Some(ch) = func.child(i) {
+                                                if ch.kind() == "formal_parameters" {
+                                                    params_node = Some(ch);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                                 if let Some(pn) = params_node {
-                                    let params=collect_params_js_ts(pn);
-                                    res.insert(kname.to_string(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() });
+                                    let params = collect_params_js_ts(pn);
+                                    res.insert(
+                                        kname.to_string(),
+                                        FuncSignature {
+                                            params,
+                                            start_byte: n.start_byte(),
+                                            end_byte: n.end_byte(),
+                                        },
+                                    );
                                 }
                             }
                         }
                     }
-                } else if k == "field_definition" || k == "public_field_definition" || k == "private_field_definition" {
+                } else if k == "field_definition"
+                    || k == "public_field_definition"
+                    || k == "private_field_definition"
+                {
                     // Class fields with function values: foo = () => {} or foo = function() {}
                     let mut name = String::new();
                     let mut value_func: Option<tree_sitter::Node> = None;
                     for i in 0..n.child_count() {
                         if let Some(ch) = n.child(i) {
                             let ck = ch.kind();
-                            if name.is_empty() && (ck=="property_identifier" || ck=="identifier" || ck=="private_property_identifier" || ck=="computed_property_name") {
-                                name = if ck=="computed_property_name" { render_computed_name(bytes, ch) } else { ch.utf8_text(bytes).unwrap_or("").to_string() };
+                            if name.is_empty()
+                                && (ck == "property_identifier"
+                                    || ck == "identifier"
+                                    || ck == "private_property_identifier"
+                                    || ck == "computed_property_name")
+                            {
+                                name = if ck == "computed_property_name" {
+                                    render_computed_name(bytes, ch)
+                                } else {
+                                    ch.utf8_text(bytes).unwrap_or("").to_string()
+                                };
                             }
-                            if ck=="arrow_function" || ck=="function" || ck=="function_expression" { value_func = Some(ch); }
+                            if ck == "arrow_function" || ck == "function" || ck == "function_expression" {
+                                value_func = Some(ch);
+                            }
                         }
                     }
                     if let (false, Some(func)) = (name.is_empty(), value_func) {
-                        let mut params_node=None; for i in 0..func.child_count(){ if let Some(ch)=func.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } }
-                        let params=params_node.map(collect_params_js_ts).unwrap_or_default();
-                        res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() });
+                        let mut params_node = None;
+                        for i in 0..func.child_count() {
+                            if let Some(ch) = func.child(i) {
+                                if ch.kind() == "formal_parameters" {
+                                    params_node = Some(ch);
+                                    break;
+                                }
+                            }
+                        }
+                        let params = params_node.map(collect_params_js_ts).unwrap_or_default();
+                        res.insert(
+                            name.clone(),
+                            FuncSignature {
+                                params,
+                                start_byte: n.start_byte(),
+                                end_byte: n.end_byte(),
+                            },
+                        );
                     }
                 }
             }
-            _=>{}
+            _ => {}
         }
     }
     res
 }
 
-fn ascend_to_function_node(language: SupportedLanguage, mut node: tree_sitter::Node) -> Option<tree_sitter::Node> {
+fn ascend_to_function_node(
+    language: SupportedLanguage,
+    mut node: tree_sitter::Node,
+) -> Option<tree_sitter::Node> {
     for _ in 0..50 {
         let k = node.kind();
         let is_func = match language {
             SupportedLanguage::Python => k == "function_definition" || k == "async_function_definition",
-            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "function_declaration" || k == "function_expression" || k == "arrow_function" || k == "method_definition",
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                k == "function_declaration"
+                    || k == "function_expression"
+                    || k == "arrow_function"
+                    || k == "method_definition"
+            }
             _ => false,
         };
-        if is_func { return Some(node); }
-        if let Some(p) = node.parent() { node = p; } else { break; }
+        if is_func {
+            return Some(node);
+        }
+        if let Some(p) = node.parent() {
+            node = p;
+        } else {
+            break;
+        }
     }
     None
 }
 
-fn is_param_used_in_function(language: SupportedLanguage, content: &str, start_byte: usize, end_byte: usize, param: &str) -> bool {
-    let mut parser = match LanguageCache::create_parser_with_language(language) { Ok(p) => p, Err(_) => return false };
-    let tree = match parser.parse(content, None) { Some(t) => t, None => return false };
+fn is_param_used_in_function(
+    language: SupportedLanguage,
+    content: &str,
+    start_byte: usize,
+    end_byte: usize,
+    param: &str,
+) -> bool {
+    let mut parser = match LanguageCache::create_parser_with_language(language) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let tree = match parser.parse(content, None) {
+        Some(t) => t,
+        None => return false,
+    };
     let root = tree.root_node();
-    let at = root.named_descendant_for_byte_range(start_byte, start_byte).unwrap_or(root);
-    let func = if let Some(f) = ascend_to_function_node(language, at) { f } else { return false };
+    let at = root
+        .named_descendant_for_byte_range(start_byte, start_byte)
+        .unwrap_or(root);
+    let func = if let Some(f) = ascend_to_function_node(language, at) {
+        f
+    } else {
+        return false;
+    };
     let bytes = content.as_bytes();
     let mut params_range: Option<(usize, usize)> = None;
     for i in 0..func.child_count() {
         if let Some(ch) = func.child(i) {
             let k = ch.kind();
-            let is_params = match language { SupportedLanguage::Python => k == "parameters", SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "formal_parameters", _ => false };
-            if is_params { params_range = Some((ch.start_byte(), ch.end_byte())); break; }
+            let is_params = match language {
+                SupportedLanguage::Python => k == "parameters",
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "formal_parameters",
+                _ => false,
+            };
+            if is_params {
+                params_range = Some((ch.start_byte(), ch.end_byte()));
+                break;
+            }
         }
     }
     let mut stack = vec![func];
     while let Some(n) = stack.pop() {
-        if n.start_byte() < start_byte || n.end_byte() > end_byte { continue; }
-        if let Some((ps, pe)) = params_range { if n.start_byte() >= ps && n.end_byte() <= pe { continue; } }
+        if n.start_byte() < start_byte || n.end_byte() > end_byte {
+            continue;
+        }
+        if let Some((ps, pe)) = params_range {
+            if n.start_byte() >= ps && n.end_byte() <= pe {
+                continue;
+            }
+        }
         let k = n.kind();
         let is_id = match language {
             SupportedLanguage::Python => k == "identifier",
-            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => k == "identifier" || k == "shorthand_property_identifier" || k == "binding_identifier",
+            SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
+                k == "identifier" || k == "shorthand_property_identifier" || k == "binding_identifier"
+            }
             _ => false,
         };
-        if is_id { if let Ok(t) = n.utf8_text(bytes) { if t == param { return true; } } }
-        for i in 0..n.child_count() { if let Some(ch) = n.child(i) { stack.push(ch); } }
+        if is_id {
+            if let Ok(t) = n.utf8_text(bytes) {
+                if t == param {
+                    return true;
+                }
+            }
+        }
+        for i in 0..n.child_count() {
+            if let Some(ch) = n.child(i) {
+                stack.push(ch);
+            }
+        }
     }
     false
 }
 
 async fn build_change_summary(hook_input: &HookInput, display_path: &str) -> String {
     match generate_diff_context(hook_input, display_path).await {
-        Ok(diff) => { let mut s=String::new(); s.push_str("=== CHANGE SUMMARY ===\n"); s.push_str(&diff); s },
+        Ok(diff) => {
+            let mut s = String::new();
+            s.push_str("=== CHANGE SUMMARY ===\n");
+            s.push_str(&diff);
+            s
+        }
         Err(_) => String::new(),
     }
 }
@@ -693,7 +1150,10 @@ async fn build_change_summary(hook_input: &HookInput, display_path: &str) -> Str
 // =============================
 // API Contract checking (simple heuristics)
 // =============================
-fn extract_functions_signatures(language: SupportedLanguage, code: &str) -> std::collections::HashMap<String, Vec<String>> {
+fn extract_functions_signatures(
+    language: SupportedLanguage,
+    code: &str,
+) -> std::collections::HashMap<String, Vec<String>> {
     use regex::Regex;
     let mut map = std::collections::HashMap::new();
     match language {
@@ -708,13 +1168,22 @@ fn extract_functions_signatures(language: SupportedLanguage, code: &str) -> std:
                         .map(|p| p.trim())
                         .filter(|p| !p.is_empty())
                         .map(|p| {
-                            let base = p.split(':').next().unwrap_or("").split('=').next().unwrap_or("").trim();
+                            let base = p
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .split('=')
+                                .next()
+                                .unwrap_or("")
+                                .trim();
                             let base = base.trim_start_matches('*'); // *args/**kwargs normalization
                             base.to_string()
                         })
-                        .filter(|p| !matches!(p.as_str(), "self"|"cls"|"args"|"kwargs"))
+                        .filter(|p| !matches!(p.as_str(), "self" | "cls" | "args" | "kwargs"))
                         .collect::<Vec<_>>();
-                    if !name.is_empty() { map.insert(name, list); }
+                    if !name.is_empty() {
+                        map.insert(name, list);
+                    }
                 }
             }
         }
@@ -728,9 +1197,18 @@ fn extract_functions_signatures(language: SupportedLanguage, code: &str) -> std:
                         .split(',')
                         .map(|p| p.trim())
                         .filter(|p| !p.is_empty())
-                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                        .map(|p| {
+                            p.trim_start_matches("...")
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .trim_end_matches('?')
+                                .to_string()
+                        })
                         .collect::<Vec<_>>();
-                    if !name.is_empty() { map.insert(name, list); }
+                    if !name.is_empty() {
+                        map.insert(name, list);
+                    }
                 }
             }
             // Class methods: name(param){ ... }
@@ -743,9 +1221,18 @@ fn extract_functions_signatures(language: SupportedLanguage, code: &str) -> std:
                         .split(',')
                         .map(|p| p.trim())
                         .filter(|p| !p.is_empty())
-                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                        .map(|p| {
+                            p.trim_start_matches("...")
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .trim_end_matches('?')
+                                .to_string()
+                        })
                         .collect::<Vec<_>>();
-                    if !name.is_empty() { map.entry(name).or_insert(list.clone()); }
+                    if !name.is_empty() {
+                        map.entry(name).or_insert(list.clone());
+                    }
                 }
             }
         }
@@ -755,42 +1242,90 @@ fn extract_functions_signatures(language: SupportedLanguage, code: &str) -> std:
 }
 
 fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput, content: &str) -> String {
-    if std::env::var("API_CONTRACT").map(|v| v == "0").unwrap_or(false) { return String::new(); }
+    if std::env::var("API_CONTRACT").map(|v| v == "0").unwrap_or(false) {
+        return String::new();
+    }
 
     let mut before_code = String::new();
     let mut after_code = String::new();
 
     match normalize_tool_name(&hook_input.tool_name).0 {
         ToolKind::Edit => {
-            if let Some(s) = hook_input.tool_input.get("old_string").and_then(|v| v.as_str()) { before_code = s.to_string(); }
-            if let Some(s) = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()) { after_code = s.to_string(); }
+            if let Some(s) = hook_input.tool_input.get("old_string").and_then(|v| v.as_str()) {
+                before_code = s.to_string();
+            }
+            if let Some(s) = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()) {
+                after_code = s.to_string();
+            }
         }
         ToolKind::MultiEdit => {
             if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
                 for e in edits.iter().take(1000) {
-                    if let Some(s) = e.get("old_string").and_then(|v| v.as_str()) { before_code.push_str(s); before_code.push('\n'); }
-                    if let Some(s) = e.get("new_string").and_then(|v| v.as_str()) { after_code.push_str(s); after_code.push('\n'); }
+                    if let Some(s) = e.get("old_string").and_then(|v| v.as_str()) {
+                        before_code.push_str(s);
+                        before_code.push('\n');
+                    }
+                    if let Some(s) = e.get("new_string").and_then(|v| v.as_str()) {
+                        after_code.push_str(s);
+                        after_code.push('\n');
+                    }
                 }
             }
         }
         _ => { /* Write/Other: no before */ }
     }
 
-    if before_code.is_empty() && after_code.is_empty() { return String::new(); }
+    if before_code.is_empty() && after_code.is_empty() {
+        return String::new();
+    }
 
     // Prefer AST-based signatures; fallback to regex
     let mut before_ast = extract_signatures_ast(language, &before_code);
-    let mut after_ast = extract_signatures_ast(language, if after_code.is_empty() { content } else { &after_code });
+    let mut after_ast = extract_signatures_ast(
+        language,
+        if after_code.is_empty() {
+            content
+        } else {
+            &after_code
+        },
+    );
     if before_ast.is_empty() && !before_code.is_empty() {
         let b = extract_functions_signatures(language, &before_code);
-        for (k, v) in b { before_ast.insert(k.clone(), FuncSignature { params: v, start_byte: 0, end_byte: content.len() }); }
+        for (k, v) in b {
+            before_ast.insert(
+                k.clone(),
+                FuncSignature {
+                    params: v,
+                    start_byte: 0,
+                    end_byte: content.len(),
+                },
+            );
+        }
     }
     if after_ast.is_empty() {
-        let a = extract_functions_signatures(language, if after_code.is_empty() { content } else { &after_code });
-        for (k, v) in a { after_ast.insert(k.clone(), FuncSignature { params: v, start_byte: 0, end_byte: content.len() }); }
+        let a = extract_functions_signatures(
+            language,
+            if after_code.is_empty() {
+                content
+            } else {
+                &after_code
+            },
+        );
+        for (k, v) in a {
+            after_ast.insert(
+                k.clone(),
+                FuncSignature {
+                    params: v,
+                    start_byte: 0,
+                    end_byte: content.len(),
+                },
+            );
+        }
     }
 
-    if before_ast.is_empty() && after_ast.is_empty() { return String::new(); }
+    if before_ast.is_empty() && after_ast.is_empty() {
+        return String::new();
+    }
 
     let mut s = String::new();
     s.push_str("=== API CONTRACT ===\n");
@@ -799,18 +1334,33 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
     for (name, bsig) in before_ast.iter() {
         if let Some(asig) = after_ast.get(name) {
             if asig.params.len() < bsig.params.len() {
-                s.push_str(&format!("- Function `{}`: parameter count reduced ({} -> {})\n", name, bsig.params.len(), asig.params.len()));
+                s.push_str(&format!(
+                    "- Function `{}`: parameter count reduced ({} -> {})\n",
+                    name,
+                    bsig.params.len(),
+                    asig.params.len()
+                ));
             } else {
                 for bp in &bsig.params {
                     // Skip Python boilerplate params
-                    if matches!(language, SupportedLanguage::Python) && (bp == "self" || bp == "cls" || bp == "args" || bp == "kwargs") { continue; }
+                    if matches!(language, SupportedLanguage::Python)
+                        && (bp == "self" || bp == "cls" || bp == "args" || bp == "kwargs")
+                    {
+                        continue;
+                    }
                     if !bp.is_empty() && !asig.params.iter().any(|x| x == bp) {
-                        s.push_str(&format!("- Function `{}`: parameter `{}` removed or renamed\n", name, bp));
+                        s.push_str(&format!(
+                            "- Function `{}`: parameter `{}` removed or renamed\n",
+                            name, bp
+                        ));
                     }
                 }
             }
         } else {
-            s.push_str(&format!("- Function `{}`: removed from module (possible breaking change)\n", name));
+            s.push_str(&format!(
+                "- Function `{}`: removed from module (possible breaking change)\n",
+                name
+            ));
         }
     }
 
@@ -818,61 +1368,172 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
     use regex::Regex;
     let word = |p: &str| Regex::new(&format!(r"(?m)\b{}\b", regex::escape(p))).ok();
     let is_simple_ident = |v: &str| -> bool {
-        if v.is_empty() { return false; }
-        let first = v.chars().next().unwrap();
-        if !(first.is_ascii_alphabetic() || first == '_' || first == '$') { return false; }
-        v.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+        if v.is_empty() {
+            return false;
+        }
+        let mut chars = v.chars();
+        match chars.next() {
+            Some(first) if first.is_ascii_alphabetic() || first == '_' || first == '$' => {
+                chars.all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '$')
+            }
+            _ => false,
+        }
     };
     for (name, asig) in after_ast.iter() {
         for p in &asig.params {
-            if p.is_empty() { continue; }
+            if p.is_empty() {
+                continue;
+            }
             // Ignore typical receiver params in Python
-            if matches!(language, SupportedLanguage::Python) && (p == "self" || p == "cls") { continue; }
+            if matches!(language, SupportedLanguage::Python) && (p == "self" || p == "cls") {
+                continue;
+            }
             // Only check simple identifiers for JS/TS; complex patterns are skipped to avoid false positives
-            if matches!(language, SupportedLanguage::JavaScript | SupportedLanguage::TypeScript) && !is_simple_ident(p) { continue; }
+            if matches!(
+                language,
+                SupportedLanguage::JavaScript | SupportedLanguage::TypeScript
+            ) && !is_simple_ident(p)
+            {
+                continue;
+            }
             let used = if asig.end_byte > asig.start_byte && asig.end_byte <= content.len() {
                 is_param_used_in_function(language, content, asig.start_byte, asig.end_byte, p)
-            } else { false };
+            } else {
+                false
+            };
             if !used {
-                let hay = if asig.end_byte > asig.start_byte && asig.end_byte <= content.len() { &content[asig.start_byte..asig.end_byte] } else { content };
+                let hay = if asig.end_byte > asig.start_byte && asig.end_byte <= content.len() {
+                    &content[asig.start_byte..asig.end_byte]
+                } else {
+                    content
+                };
                 let used_re = word(p).map(|re| re.is_match(hay)).unwrap_or(false);
-                if !used_re { s.push_str(&format!("- Function `{}`: parameter `{}` appears unused\n", name, p)); }
+                if !used_re {
+                    s.push_str(&format!(
+                        "- Function `{}`: parameter `{}` appears unused\n",
+                        name, p
+                    ));
+                }
             }
         }
     }
 
-    if s.trim_end() == "=== API CONTRACT ===" { String::new() } else { s }
+    if s.trim_end() == "=== API CONTRACT ===" {
+        String::new()
+    } else {
+        s
+    }
 }
 
 fn build_next_steps(score: &QualityScore) -> String {
     use crate::analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
-    let mut s=String::new(); s.push_str("=== NEXT STEPS ===\n");
-    let has_crit = score.concrete_issues.iter().any(|i| matches!(i.severity, IssueSeverity::Critical));
-    if has_crit { s.push_str("- Fix security-critical issues first (creds/SQL/path/command).\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HardcodedCredentials)) {
+    let mut s = String::new();
+    s.push_str("=== NEXT STEPS ===\n");
+    let has_crit = score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.severity, IssueSeverity::Critical));
+    if has_crit {
+        s.push_str("- Fix security-critical issues first (creds/SQL/path/command).\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::HardcodedCredentials))
+    {
         s.push_str("- Move secrets to env/secret manager; avoid hardcoding credentials.\n");
     }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::SqlInjection)) {
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::SqlInjection))
+    {
         s.push_str("- Use parameterized queries; avoid concatenating SQL with inputs.\n");
     }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::CommandInjection)) {
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::CommandInjection))
+    {
         s.push_str("- Avoid shell concatenation; use exec APIs with args arrays and validation.\n");
     }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::PathTraversal)) {
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::PathTraversal))
+    {
         s.push_str("- Normalize and validate paths; restrict to allowed roots.\n");
     }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::TooManyParameters)) { s.push_str("- Reduce function parameters (>5). Consider grouping.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::DeepNesting)) { s.push_str("- Flatten deep nesting (>4). Extract helpers/early returns.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::HighComplexity)) { s.push_str("- Reduce cyclomatic complexity. Split large functions.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::LongLine)) { s.push_str("- Wrap lines >120 chars; split expressions/format strings; adjust formatter width if needed.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnreachableCode)) { s.push_str("- Remove dead/unreachable code after return/raise/break; keep control flow linear.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnusedImports)) { s.push_str("- Remove unused imports to reduce noise and speed up builds.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::UnusedVariables)) { s.push_str("- Remove or underscore unused variables to clarify intent.\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::NamingConvention)) { s.push_str("- Align names with project conventions (snake_case for Python, camelCase for JS/TS).\n"); }
-    if score.concrete_issues.iter().any(|i| matches!(i.category, IssueCategory::MissingDocumentation)) { s.push_str("- Add short docstrings/comments for public APIs (what, params, returns).\n"); }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::TooManyParameters))
+    {
+        s.push_str("- Reduce function parameters (>5). Consider grouping.\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::DeepNesting))
+    {
+        s.push_str("- Flatten deep nesting (>4). Extract helpers/early returns.\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::HighComplexity))
+    {
+        s.push_str("- Reduce cyclomatic complexity. Split large functions.\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::LongLine))
+    {
+        s.push_str(
+            "- Wrap lines >120 chars; split expressions/format strings; adjust formatter width if needed.\n",
+        );
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::UnreachableCode))
+    {
+        s.push_str("- Remove dead/unreachable code after return/raise/break; keep control flow linear.\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::UnusedImports))
+    {
+        s.push_str("- Remove unused imports to reduce noise and speed up builds.\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::UnusedVariables))
+    {
+        s.push_str("- Remove or underscore unused variables to clarify intent.\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::NamingConvention))
+    {
+        s.push_str("- Align names with project conventions (snake_case for Python, camelCase for JS/TS).\n");
+    }
+    if score
+        .concrete_issues
+        .iter()
+        .any(|i| matches!(i.category, IssueCategory::MissingDocumentation))
+    {
+        s.push_str("- Add short docstrings/comments for public APIs (what, params, returns).\n");
+    }
     // Always recommend tests for changed areas
     s.push_str("- Add/Update unit tests covering changed functions and edge cases.\n");
-    if s.trim_end() == "=== NEXT STEPS ===" { s.push_str("- Looks good. Proceed with implementation and tests.\n"); }
+    if s.trim_end() == "=== NEXT STEPS ===" {
+        s.push_str("- Looks good. Proceed with implementation and tests.\n");
+    }
     s
 }
 // Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
@@ -901,8 +1562,7 @@ fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> 
 
         // Directory name match (ends with /)
         if let Some(dir_pattern) = pattern.strip_suffix('/') {
-            if path.is_dir()
-                && (file_name == dir_pattern || path_str.contains(&format!("/{}/", dir_pattern)))
+            if path.is_dir() && (file_name == dir_pattern || path_str.contains(&format!("/{}/", dir_pattern)))
             {
                 return true;
             }
@@ -950,8 +1610,7 @@ fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
             }
         }
         Err(e) => {
-            // Log error for debugging but don't expose details
-            eprintln!("Warning: Cannot validate prompts path: {}", e);
+            tracing::warn!(error=%e, "Cannot validate prompts path");
             None
         }
     }
@@ -963,8 +1622,7 @@ fn get_prompts_dir() -> PathBuf {
     let exe_path = match std::env::current_exe() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Error: Cannot determine executable path: {}", e);
-            eprintln!("Falling back to current directory + prompts");
+            tracing::error!(error=%e, "Cannot determine executable path; falling back to ./prompts");
             return PathBuf::from("prompts");
         }
     };
@@ -972,8 +1630,7 @@ fn get_prompts_dir() -> PathBuf {
     let parent = match exe_path.parent() {
         Some(parent) => parent,
         None => {
-            eprintln!("Error: Cannot get parent directory of executable");
-            eprintln!("Falling back to current directory + prompts");
+            tracing::error!("Cannot get parent directory of executable; falling back to ./prompts");
             return PathBuf::from("prompts");
         }
     };
@@ -982,12 +1639,12 @@ fn get_prompts_dir() -> PathBuf {
     let prompts_path = parent.join("prompts");
 
     if let Some(validated) = validate_prompts_path(&prompts_path) {
-        eprintln!("PostTool using prompts directory: {:?}", validated);
+        tracing::info!(dir=?validated, "Using prompts directory");
         return validated;
     }
 
     // Final fallback
-    eprintln!("Warning: prompts directory not found next to executable, using current directory");
+    tracing::warn!("Prompts directory not found next to executable; using current directory");
     PathBuf::from("prompts")
 }
 
@@ -998,22 +1655,19 @@ async fn load_prompt_file(filename: &str) -> Result<String> {
     let prompt_path = get_prompts_dir().join(filename);
 
     // Add 5 second timeout for file reads
-    timeout(
-        Duration::from_secs(5),
-        tokio::fs::read_to_string(prompt_path),
-    )
-    .await
-    .context("Timeout reading prompt file")?
-    .or_else(|e| {
-        // In DRY_RUN mode, tolerate missing prompts and continue with empty content
-        if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
-            eprintln!("Warning: {} — continuing with empty prompt due to DRY_RUN", e);
-            Ok(String::new())
-        } else {
-            Err(e)
-        }
-    })
-    .with_context(|| format!("Failed to load prompt file: {}", filename))
+    timeout(Duration::from_secs(5), tokio::fs::read_to_string(prompt_path))
+        .await
+        .context("Timeout reading prompt file")?
+        .or_else(|e| {
+            // In DRY_RUN mode, tolerate missing prompts and continue with empty content
+            if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
+                tracing::warn!(error=%e, "Continuing with empty prompt due to DRY_RUN");
+                Ok(String::new())
+            } else {
+                Err(e)
+            }
+        })
+        .with_context(|| format!("Failed to load prompt file: {}", filename))
 }
 
 // Constants for formatting instructions
@@ -1030,7 +1684,7 @@ const FINAL_INSTRUCTION_PREFIX: &str =
 
 // Removed legacy wrapper `format_analysis_prompt` (use `format_analysis_prompt_with_ast` directly)
 
-    // Tests live in the larger tests module further below
+// Tests live in the larger tests module further below
 
 /// Format the analysis prompt with instructions, project context, conversation, and AST analysis
 async fn format_analysis_prompt_with_ast(
@@ -1199,9 +1853,7 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
 
     // Do not pre-reject ".."/"~"/"$" substrings blindly — rely on canonicalization and scope checks below.
     // Special-case only unsafe home-expansion prefix on non-Windows.
-    if !cfg!(windows)
-        && (path.starts_with("~/") || path.starts_with("~\\"))
-    {
+    if !cfg!(windows) && (path.starts_with("~/") || path.starts_with("~\\")) {
         anyhow::bail!("Invalid file path: leading ~ home shortcut not allowed");
     }
 
@@ -1210,13 +1862,11 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
     // If path exists, validate it's within allowed directories
     if path_obj.exists() {
         // Get current working directory as the base allowed directory
-        let cwd = std::env::current_dir()
-            .map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
+        let cwd =
+            std::env::current_dir().map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
 
         // Canonicalize both cwd and the target path to resolve symlinks, relative parts and Windows UNC/\\?\ prefixes
-        let cwd_canon = cwd
-            .canonicalize()
-            .unwrap_or(cwd.clone());
+        let cwd_canon = cwd.canonicalize().unwrap_or(cwd.clone());
 
         // Canonicalize to resolve symlinks and relative paths
         let canonical = path_obj
@@ -1245,7 +1895,7 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
     let validated_path = match validate_file_path(path) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Warning: Failed to validate file path '{}': {}", path, e);
+            tracing::warn!(path=%path, error=%e, "Failed to validate file path");
             return Ok(None);
         }
     };
@@ -1296,19 +1946,11 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
             Ok(None)
         }
         Ok(Err(e)) => {
-            eprintln!(
-                "Warning: Failed to read file '{}': {}",
-                validated_path.display(),
-                e
-            );
+            tracing::warn!(path=%validated_path.display(), error=%e, "Failed to read file");
             Ok(None)
         }
         Err(_) => {
-            eprintln!(
-                "Warning: Timeout reading file '{}' after {} seconds",
-                validated_path.display(),
-                timeout_secs
-            );
+            tracing::warn!(path=%validated_path.display(), timeout=%timeout_secs, "Timeout reading file");
             Ok(None)
         }
     }
@@ -1465,8 +2107,9 @@ fn validate_transcript_path(path: &str) -> Result<()> {
         "~",  // home directory expansion
         "$",  // variable expansion
         "./", ".\\", // current directory traversal
-        "../", "..\\", // parent directory traversal
-        // UNC handled below conditionally by OS
+        "../",
+        "..\\", // parent directory traversal
+                // UNC handled below conditionally by OS
     ];
 
     for pattern in TRAVERSAL_PATTERNS {
@@ -1595,11 +2238,7 @@ fn get_allowed_transcript_directories() -> Result<Vec<PathBuf>> {
 }
 
 /// Read and format transcript for AI context (without tool content)
-async fn read_transcript_summary(
-    path: &str,
-    max_messages: usize,
-    max_chars: usize,
-) -> Result<String> {
+async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usize) -> Result<String> {
     // Security check with improved validation
     validate_transcript_path(path)?;
 
@@ -1609,9 +2248,7 @@ async fn read_transcript_summary(
     // For large files, we'll read only the last portion
     const MAX_READ_BYTES: u64 = 1024 * 1024; // 1MB should be enough for recent messages
 
-    let file = File::open(path)
-        .await
-        .context("Failed to open transcript file")?;
+    let file = File::open(path).await.context("Failed to open transcript file")?;
     let metadata = file.metadata().await?;
     let file_size = metadata.len();
 
@@ -1668,9 +2305,7 @@ async fn read_transcript_summary(
 
             // Handle different message formats
             if let Some(role) = msg.get("role").and_then(|v| v.as_str()) {
-                let content = if let Some(content_arr) =
-                    msg.get("content").and_then(|v| v.as_array())
-                {
+                let content = if let Some(content_arr) = msg.get("content").and_then(|v| v.as_array()) {
                     // Handle content array (assistant messages)
                     let mut text_parts = Vec::new();
 
@@ -1680,11 +2315,8 @@ async fn read_transcript_summary(
                         } else if let Some(tool_name) = c.get("name").and_then(|v| v.as_str()) {
                             // Get tool name and file if available
                             if let Some(input) = c.get("input") {
-                                if let Some(file_path) =
-                                    input.get("file_path").and_then(|v| v.as_str())
-                                {
-                                    text_parts
-                                        .push(format!("{} tool file: {}", tool_name, file_path));
+                                if let Some(file_path) = input.get("file_path").and_then(|v| v.as_str()) {
+                                    text_parts.push(format!("{} tool file: {}", tool_name, file_path));
                                 } else {
                                     text_parts.push(format!("{} tool", tool_name));
                                 }
@@ -1697,12 +2329,12 @@ async fn read_transcript_summary(
                     } else {
                         None
                     }
-                    } else {
-                        // Handle simple string content (user messages)
-                        msg.get("content")
-                            .and_then(|v| v.as_str())
-                            .map(|text| text.to_string())
-                    };
+                } else {
+                    // Handle simple string content (user messages)
+                    msg.get("content")
+                        .and_then(|v| v.as_str())
+                        .map(|text| text.to_string())
+                };
 
                 if let Some(content) = content {
                     // Format message
@@ -1765,7 +2397,7 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
     let language = match SupportedLanguage::from_extension(extension) {
         Some(lang) => lang,
         None => {
-            eprintln!("AST Analysis: Unsupported file type: {}", extension);
+            tracing::warn!(%extension, "AST analysis: unsupported file type");
             return None;
         }
     };
@@ -1783,7 +2415,9 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
         let scorer = AstQualityScorer::new();
         let t0 = std::time::Instant::now();
         let res = scorer.analyze(&code, language);
-        if res.is_ok() { crate::analysis::timings::record(&format!("score/{}", language), t0.elapsed().as_millis()); }
+        if res.is_ok() {
+            crate::analysis::timings::record(&format!("score/{}", language), t0.elapsed().as_millis());
+        }
         res
     });
 
@@ -1791,19 +2425,16 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
         Ok(join_res) => match join_res {
             Ok(Ok(score)) => Some(score),
             Ok(Err(e)) => {
-                eprintln!("AST Analysis Error: {}", e);
+                tracing::warn!(error=%e, "AST analysis error");
                 None
             }
             Err(join_err) => {
-                eprintln!("AST Analysis Join Error: {}", join_err);
+                tracing::warn!(error=%join_err, "AST analysis join error");
                 None
             }
         },
         Err(_) => {
-            eprintln!(
-                "AST Analysis timeout: exceeded {}s for {}",
-                timeout_secs, file_path
-            );
+            tracing::warn!(timeout=%timeout_secs, file=%file_path, "AST analysis timeout");
             None
         }
     }
@@ -1872,10 +2503,7 @@ fn format_ast_results(score: &QualityScore) -> String {
 
     // Grouped printing preserving sorted order
     let mut print_group = |title: &str, sev: IssueSeverity| {
-        let group: Vec<_> = issues
-            .iter()
-            .filter(|i| i.severity == sev)
-            .collect();
+        let group: Vec<_> = issues.iter().filter(|i| i.severity == sev).collect();
         if !group.is_empty() {
             result.push_str(title);
             result.push('\n');
@@ -1895,7 +2523,8 @@ fn format_ast_results(score: &QualityScore) -> String {
     if total > issues.len() {
         result.push_str(&format!(
             "\n… truncated: showing {} of {} issues (AST_MAX_ISSUES).\n",
-            issues.len(), total
+            issues.len(),
+            total
         ));
     }
 
@@ -1953,11 +2582,7 @@ async fn perform_project_ast_analysis(working_dir: &str) -> String {
             .await
             {
                 if std::env::var("DEBUG_HOOKS").is_ok() {
-                    eprintln!(
-                        "DEBUG: Failed to analyze path {}: {}",
-                        entry.path().display(),
-                        e
-                    );
+                    tracing::debug!(path=%entry.path().display(), error=%e, "Failed to analyze path");
                 }
             }
         }
@@ -2026,7 +2651,11 @@ async fn perform_project_ast_analysis(working_dir: &str) -> String {
         let mean: f64 = v.iter().copied().map(|x| x as f64).sum::<f64>() / v.len() as f64;
         analysis.push_str(&format!(
             "\nTimings (per-file AST analysis): p50={}ms, p95={}ms, p99={}ms, mean={:.1}ms, n={}\n",
-            p50, p95, p99, mean, v.len()
+            p50,
+            p95,
+            p99,
+            mean,
+            v.len()
         ));
     }
 
@@ -2052,11 +2681,7 @@ async fn analyze_directory_recursive(
     const MAX_DEPTH: usize = 10;
     if depth >= MAX_DEPTH {
         if std::env::var("DEBUG_HOOKS").is_ok() {
-            eprintln!(
-                "DEBUG: Max depth {} reached at path: {}",
-                MAX_DEPTH,
-                path.display()
-            );
+            tracing::debug!(max_depth=MAX_DEPTH, path=%path.display(), "Max depth reached");
         }
         return Ok(());
     }
@@ -2099,11 +2724,7 @@ async fn analyze_directory_recursive(
                     if content.len() > 500_000 {
                         *skipped_large_files += 1;
                         if std::env::var("DEBUG_HOOKS").is_ok() {
-                            eprintln!(
-                                "Skipped large file ({}B): {}",
-                                content.len(),
-                                path.display()
-                            );
+                            tracing::debug!(bytes=%content.len(), path=%path.display(), "Skipped large file");
                         }
                         return Ok(());
                     }
@@ -2161,22 +2782,16 @@ async fn analyze_directory_recursive(
                     } else if let Ok(Err(join_err)) = analysis {
                         *skipped_error_files += 1;
                         if std::env::var("DEBUG_HOOKS").is_ok() {
-                            eprintln!("AST analysis join error for {}: {}", path.display(), join_err);
+                            tracing::debug!(path=%path.display(), error=%join_err, "AST analysis join error");
                         }
-                    } else if analysis.is_err()
-                        && std::env::var("DEBUG_HOOKS").is_ok()
-                    {
-                        eprintln!(
-                            "AST analysis timeout ({}s) for {}",
-                            timeout_secs,
-                            path.display()
-                        );
+                    } else if analysis.is_err() && std::env::var("DEBUG_HOOKS").is_ok() {
+                        tracing::debug!(timeout=%timeout_secs, path=%path.display(), "AST analysis timeout");
                     }
                 }
                 Err(e) => {
                     *skipped_error_files += 1;
                     if std::env::var("DEBUG_HOOKS").is_ok() {
-                        eprintln!("Error reading file {}: {}", path.display(), e);
+                        tracing::debug!(path=%path.display(), error=%e, "Error reading file");
                     }
                 }
             }
@@ -2223,6 +2838,13 @@ async fn analyze_directory_recursive(
 /// Main function for the PostToolUse hook
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Defensive: log any unexpected panic as a structured error
+    std::panic::set_hook(Box::new(|info| {
+        rust_validation_hooks::telemetry::init();
+        tracing::error!(panic=%info, "panic in posttooluse");
+    }));
+    // Initialize structured logging (stderr). Safe to call multiple times.
+    rust_validation_hooks::telemetry::init();
     // Limit stdin input size to prevent DoS attacks
     const MAX_INPUT_SIZE: usize = 10 * 1024 * 1024; // 10MB limit
 
@@ -2240,30 +2862,23 @@ async fn main() -> Result<()> {
 
     // Check if we hit the size limit
     if buffer.len() >= MAX_INPUT_SIZE {
-        anyhow::bail!(
-            "Input exceeds maximum size of {}MB",
-            MAX_INPUT_SIZE / 1024 / 1024
-        );
+        anyhow::bail!("Input exceeds maximum size of {}MB", MAX_INPUT_SIZE / 1024 / 1024);
     }
 
     // Parse the input
-    let hook_input: HookInput =
-        serde_json::from_str(&buffer).context("Failed to parse input JSON")?;
+    let hook_input: HookInput = serde_json::from_str(&buffer).context("Failed to parse input JSON")?;
 
     // DEBUG: Write the exact hook input to a file for inspection
     if let Ok(mut debug_file) = tokio::fs::File::create("hook-input-debug.json").await {
         use tokio::io::AsyncWriteExt;
         if let Err(e) = debug_file.write_all(buffer.as_bytes()).await {
-            eprintln!("DEBUG: Failed to write hook input: {}", e);
+            tracing::debug!(error=%e, "Failed to write hook input");
         }
-        eprintln!("DEBUG: Full hook input written to hook-input-debug.json");
+        tracing::debug!("Full hook input written to hook-input-debug.json");
     }
 
     // Only analyze Write, Edit, and MultiEdit operations
-    if !matches!(
-        hook_input.tool_name.as_str(),
-        "Write" | "Edit" | "MultiEdit"
-    ) {
+    if !matches!(hook_input.tool_name.as_str(), "Write" | "Edit" | "MultiEdit") {
         // Pass through - not a code modification
         let output = PostToolUseOutput {
             hook_specific_output: PostToolUseHookOutput {
@@ -2312,17 +2927,13 @@ async fn main() -> Result<()> {
     let content = match read_file_content_safe(file_path).await? {
         Some(file_content) => {
             if std::env::var("DEBUG_HOOKS").is_ok() {
-                eprintln!(
-                    "DEBUG: Read {} bytes from file: {}",
-                    file_content.len(),
-                    file_path
-                );
+                tracing::debug!(bytes=%file_content.len(), file=%file_path, "Read file");
             }
             file_content
         }
         None => {
             if std::env::var("DEBUG_HOOKS").is_ok() {
-                eprintln!("DEBUG: Could not read file content for: {}", file_path);
+                tracing::debug!(%file_path, "Could not read file content");
             }
             // Fallback to extracting partial content from tool_input if file read fails
             match normalize_tool_name(&hook_input.tool_name).0 {
@@ -2342,31 +2953,22 @@ async fn main() -> Result<()> {
                     // For MultiEdit, try to aggregate all new_strings for partial analysis
                     // This gives us at least some content to analyze, even if not the full file
                     // Note: We preserve order of edits and limit memory usage
-                    if let Some(edits) = hook_input
-                        .tool_input
-                        .get("edits")
-                        .and_then(|v| v.as_array())
-                    {
+                    if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
                         // Pre-calculate capacity to avoid multiple allocations
                         let estimated_capacity: usize = edits
                             .iter()
                             .filter_map(|edit| {
-                                edit.get("new_string")
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.len())
+                                edit.get("new_string").and_then(|v| v.as_str()).map(|s| s.len())
                             })
                             .sum::<usize>()
                             + (edits.len() * 2); // Add space for separators
 
-                        let mut aggregated =
-                            String::with_capacity(estimated_capacity.min(1024 * 1024)); // Cap at 1MB
+                        let mut aggregated = String::with_capacity(estimated_capacity.min(1024 * 1024)); // Cap at 1MB
                         let mut valid_edits = 0;
 
                         for edit in edits.iter().take(1000) {
                             // Limit to prevent DoS
-                            if let Some(new_string) =
-                                edit.get("new_string").and_then(|v| v.as_str())
-                            {
+                            if let Some(new_string) = edit.get("new_string").and_then(|v| v.as_str()) {
                                 if !new_string.is_empty() {
                                     if valid_edits > 0 {
                                         aggregated.push('\n');
@@ -2378,12 +2980,7 @@ async fn main() -> Result<()> {
                         }
 
                         if std::env::var("DEBUG_HOOKS").is_ok() {
-                            eprintln!(
-                                "DEBUG: MultiEdit fallback - aggregated {} bytes from {} valid edits (of {})",
-                                aggregated.len(),
-                                valid_edits,
-                                edits.len()
-                            );
+                            tracing::debug!(bytes=%aggregated.len(), valid_edits=%valid_edits, total_edits=%edits.len(), "MultiEdit fallback aggregation");
                         }
                         aggregated
                     } else {
@@ -2412,11 +3009,11 @@ async fn main() -> Result<()> {
 
     // Perform AST-based quality analysis for deterministic scoring
     if std::env::var("DEBUG_HOOKS").is_ok() {
-        eprintln!("DEBUG: Starting AST analysis for file: {}", file_path);
+        tracing::debug!(%file_path, "Starting AST analysis for file");
     }
     let ast_analysis = perform_ast_analysis(&content, file_path).await;
     if std::env::var("DEBUG_HOOKS").is_ok() {
-        eprintln!("DEBUG: AST analysis result: {:?}", ast_analysis.is_some());
+        tracing::debug!(has_result=%ast_analysis.is_some(), "AST analysis result");
     }
 
     // Perform code formatting after AST analysis and ACTUALLY APPLY IT TO THE FILE
@@ -2429,28 +3026,28 @@ async fn main() -> Result<()> {
                         Ok(format_result) => {
                             // Log success without exposing file contents
                             if format_result.changed {
-                                eprintln!("Code formatting applied successfully - file updated");
+                                tracing::info!("Code formatting applied successfully - file updated");
                             } else {
-                                eprintln!("No formatting changes needed");
+                                tracing::info!("No formatting changes needed");
                             }
                             Some(format_result)
                         }
                         Err(_) => {
                             // Don't expose formatting errors - they may contain sensitive paths/content
-                            eprintln!("Code formatting skipped due to formatter limitations");
+                            tracing::info!("Code formatting skipped due to formatter limitations");
                             None
                         }
                     }
                 }
                 Err(_) => {
-                    eprintln!("Formatting service initialization failed");
+                    tracing::warn!("Formatting service initialization failed");
                     None
                 }
             }
         }
         Err(_) => {
             // Path validation failed - skip formatting for security
-            eprintln!("Formatting skipped - invalid file path");
+            tracing::warn!("Formatting skipped - invalid file path");
             None
         }
     };
@@ -2458,50 +3055,128 @@ async fn main() -> Result<()> {
     // In offline/e2e tests we may want to skip network and prompt loading entirely
     if std::env::var("POSTTOOL_AST_ONLY").is_ok() {
         let mut final_response = String::new();
-        let display_path = hook_input.tool_input.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+        let display_path = hook_input
+            .tool_input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
         let change = build_change_summary(&hook_input, display_path).await;
-        if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
-        if let Some(note) = soft_budget_note(&content, display_path) { final_response.push_str(&note); final_response.push('\n'); }
+        if !change.is_empty() {
+            final_response.push_str(&change);
+            final_response.push('\n');
+        }
+        if let Some(note) = soft_budget_note(&content, display_path) {
+            final_response.push_str(&note);
+            final_response.push('\n');
+        }
         if let Some(ast_score) = &ast_analysis {
-            let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, display_path).await {
-                let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
-                let changed = extract_changed_lines(&diff, ctxn);
-                let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() { filter_issues_to_diff(ast_score, &diff, ctxn) } else { ast_score.clone() };
-                let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
-                let snips = if snips_enabled {
-                    let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
-                    let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
-                    let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
-                    let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
-                    if use_entity {
-                        let ent = build_entity_context_snippets(lang, &content, &filtered, &changed, ctxn, max_snips, max_chars);
-                        if !ent.is_empty() { ent } else { build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars) }
+            let (filtered, change_snippets) =
+                if let Ok(diff) = generate_diff_context(&hook_input, display_path).await {
+                    let ctxn = std::env::var("AST_DIFF_CONTEXT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(3);
+                    let changed = extract_changed_lines(&diff, ctxn);
+                    let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() {
+                        filter_issues_to_diff(ast_score, &diff, ctxn)
                     } else {
-                        build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars)
-                    }
-                } else { String::new() };
-                (filtered, snips)
-            } else { (ast_score.clone(), String::new()) };
-            final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
-            let tips = build_quick_tips_section(&filtered); if !tips.is_empty() { final_response.push_str(&tips); final_response.push('\n'); }
-            if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
-            final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
+                        ast_score.clone()
+                    };
+                    let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                    let snips = if snips_enabled {
+                        let max_snips = std::env::var("AST_MAX_SNIPPETS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(3)
+                            .clamp(1, 50);
+                        let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(1500)
+                            .clamp(200, 20_000);
+                        let lang =
+                            SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
+                                .unwrap_or(SupportedLanguage::Python);
+                        let use_entity = std::env::var("AST_ENTITY_SNIPPETS")
+                            .map(|v| v != "0")
+                            .unwrap_or(true);
+                        if use_entity {
+                            let ent = build_entity_context_snippets(
+                                lang, &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                            );
+                            if !ent.is_empty() {
+                                ent
+                            } else {
+                                build_change_context_snippets(
+                                    &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                                )
+                            }
+                        } else {
+                            build_change_context_snippets(
+                                &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                            )
+                        }
+                    } else {
+                        String::new()
+                    };
+                    (filtered, snips)
+                } else {
+                    (ast_score.clone(), String::new())
+                };
+            final_response.push_str(&build_risk_report(&filtered));
+            final_response.push('\n');
+            let tips = build_quick_tips_section(&filtered);
+            if !tips.is_empty() {
+                final_response.push_str(&tips);
+                final_response.push('\n');
+            }
+            if !change_snippets.is_empty() {
+                final_response.push_str(&change_snippets);
+                final_response.push('\n');
+            }
+            final_response.push_str(&build_code_health(&filtered));
+            final_response.push('\n');
             // API Contract (simple heuristics)
-            let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+            let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
+                .unwrap_or(SupportedLanguage::Python);
             let api = build_api_contract_report(lang, &hook_input, &content);
-            if !api.is_empty() { final_response.push_str(&api); final_response.push('\n'); }
-            final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
+            if !api.is_empty() {
+                final_response.push_str(&api);
+                final_response.push('\n');
+            }
+            final_response.push_str(&build_next_steps(&filtered));
+            final_response.push('\n');
         }
         if let Some(format_result) = &formatting_result {
-            if format_result.changed { final_response.push_str("[FORMAT] Auto-format applied.\n\n"); }
+            if format_result.changed {
+                final_response.push_str("[FORMAT] Auto-format applied.\n\n");
+            }
         }
         // Append timings if enabled
         if crate::analysis::timings::enabled() {
             let sum = crate::analysis::timings::summary();
-            if !sum.is_empty() { final_response.push_str(&sum); final_response.push('\n'); }
+            if !sum.is_empty() {
+                final_response.push_str(&sum);
+                final_response.push('\n');
+            }
         }
-        let output = PostToolUseOutput { hook_specific_output: PostToolUseHookOutput { hook_event_name: "PostToolUse".to_string(), additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) }, }, };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        let output = PostToolUseOutput {
+            hook_specific_output: PostToolUseHookOutput {
+                hook_event_name: "PostToolUse".to_string(),
+                additional_context: {
+                    let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(100_000)
+                        .clamp(10_000, 1_000_000);
+                    truncate_utf8_safe(&final_response, lim)
+                },
+            },
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
         return Ok(());
     }
 
@@ -2520,29 +3195,21 @@ async fn main() -> Result<()> {
             // NEVER compress - always pass full structure to AI validator
             // Compression was causing truncated structure in context
             let use_compression = false; // Changed: Always pass full structure
-            let mut formatted = format_project_structure_for_ai_with_metrics(
-                &structure,
-                Some(&metrics),
-                use_compression,
-            );
+            let mut formatted =
+                format_project_structure_for_ai_with_metrics(&structure, Some(&metrics), use_compression);
 
             // Add incremental update info if available
             if let Some(inc) = incremental {
                 formatted.push_str(&format!("\n{}", inc));
             }
 
-            // Log metrics to stderr for debugging
-            eprintln!(
-                "Project metrics: {} LOC, {} files, complexity: {:.1}",
-                metrics.total_lines_of_code,
-                structure.files.len(),
-                metrics.project_complexity_score
-            );
+            // Log metrics for debugging (stderr)
+            tracing::debug!(loc=%metrics.total_lines_of_code, files=%structure.files.len(), complexity=%metrics.project_complexity_score, "Project metrics");
 
             Some(formatted)
         }
         Err(e) => {
-            eprintln!("Failed to scan project structure: {}", e);
+            tracing::warn!(error=%e, "Failed to scan project structure");
             None
         }
     };
@@ -2554,37 +3221,30 @@ async fn main() -> Result<()> {
             Ok(_) => {
                 let duplicates = detector.find_duplicates();
                 if !duplicates.is_empty() {
-                    eprintln!("Found {} duplicate/conflict groups", duplicates.len());
+                    tracing::info!(groups=%duplicates.len(), "Found duplicate/conflict groups");
                     Some(detector.format_report(&duplicates))
                 } else {
                     None
                 }
             }
             Err(e) => {
-                eprintln!("Warning: Failed to scan for duplicates: {}", e);
+                tracing::warn!(error=%e, "Failed to scan for duplicates");
                 None
             }
         }
     };
 
     // Analyze project dependencies for AI context
-    let dependencies_context = match analyze_project_dependencies(std::path::Path::new(".")).await
-    {
+    let dependencies_context = match analyze_project_dependencies(std::path::Path::new(".")).await {
         Ok(deps) => {
-            eprintln!(
-                "Dependencies analysis: {} total dependencies",
-                deps.total_count
-            );
+            tracing::info!(total=%deps.total_count, "Dependencies analysis summary");
             if deps.outdated_count > 0 {
-                eprintln!(
-                    "Found {} potentially outdated dependencies",
-                    deps.outdated_count
-                );
+                tracing::info!(outdated=%deps.outdated_count, "Potentially outdated dependencies found");
             }
             Some(deps.format_for_ai())
         }
         Err(e) => {
-            eprintln!("Warning: Failed to analyze dependencies: {}", e);
+            tracing::warn!(error=%e, "Failed to analyze dependencies");
             None
         }
     };
@@ -2607,7 +3267,7 @@ async fn main() -> Result<()> {
         Ok(diff) => diff,
         Err(e) => {
             // Log error but continue with analysis without diff
-            eprintln!("Warning: Failed to generate diff context: {}", e);
+            tracing::warn!(error=%e, "Failed to generate diff context");
             String::new()
         }
     };
@@ -2617,21 +3277,21 @@ async fn main() -> Result<()> {
         match read_transcript_summary(transcript_path, 10, 2000).await {
             Ok(summary) => {
                 if std::env::var("DEBUG_HOOKS").is_ok() {
-                    eprintln!("DEBUG: Transcript summary read successfully:");
+                    tracing::debug!("Transcript summary read successfully");
                     // Safe UTF-8 truncation using standard library
                     let truncated: String = summary.chars().take(500).collect();
-                    eprintln!("DEBUG: First ~500 chars: {}", truncated);
+                    tracing::debug!(first500=%truncated, "Transcript summary first chars");
                 }
                 Some(summary)
             }
             Err(e) => {
-                eprintln!("Warning: Failed to read transcript: {}", e);
+                tracing::warn!(error=%e, "Failed to read transcript");
                 None
             }
         }
     } else {
         if std::env::var("DEBUG_HOOKS").is_ok() {
-            eprintln!("DEBUG: No transcript_path provided");
+            tracing::debug!("No transcript_path provided");
         }
         None
     };
@@ -2687,7 +3347,7 @@ async fn main() -> Result<()> {
             use tokio::io::AsyncWriteExt;
             let _ = debug_file.write_all(formatted_prompt.as_bytes()).await;
             let _ = debug_file.write_all(b"\n\n=== END OF PROMPT ===\n").await;
-            eprintln!("DEBUG: Full prompt written to post-context.txt");
+            tracing::debug!("Full prompt written to post-context.txt");
         }
     }
 
@@ -2696,45 +3356,98 @@ async fn main() -> Result<()> {
         let mut final_response = String::new();
         // Include change summary
         let change = build_change_summary(&hook_input, &display_path).await;
-        if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
+        if !change.is_empty() {
+            final_response.push_str(&change);
+            final_response.push('\n');
+        }
         // Uniformly include soft-budget note in DRY_RUN as well
-        if let Some(note) = soft_budget_note(&content, &display_path) { final_response.push_str(&note); final_response.push('\n'); }
+        if let Some(note) = soft_budget_note(&content, &display_path) {
+            final_response.push_str(&note);
+            final_response.push('\n');
+        }
         // Include AST structured sections
         if let Some(ast_score) = &ast_analysis {
-            let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {
-                let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
-                let changed = extract_changed_lines(&diff, ctxn);
-                let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() { filter_issues_to_diff(ast_score, &diff, ctxn) } else { ast_score.clone() };
-                let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
-                let snips = if snips_enabled {
-                    let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
-                    let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
-                    let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
-                    let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
-                    if use_entity {
-                        let ent = build_entity_context_snippets(lang, &content, &filtered, &changed, ctxn, max_snips, max_chars);
-                        if !ent.is_empty() { ent } else { build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars) }
+            let (filtered, change_snippets) =
+                if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {
+                    let ctxn = std::env::var("AST_DIFF_CONTEXT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(3);
+                    let changed = extract_changed_lines(&diff, ctxn);
+                    let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() {
+                        filter_issues_to_diff(ast_score, &diff, ctxn)
                     } else {
-                        build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars)
-                    }
-                } else { String::new() };
-                (filtered, snips)
-            } else { (ast_score.clone(), String::new()) };
-            final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
-            if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
-            final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
+                        ast_score.clone()
+                    };
+                    let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                    let snips = if snips_enabled {
+                        let max_snips = std::env::var("AST_MAX_SNIPPETS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(3)
+                            .clamp(1, 50);
+                        let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(1500)
+                            .clamp(200, 20_000);
+                        let lang =
+                            SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
+                                .unwrap_or(SupportedLanguage::Python);
+                        let use_entity = std::env::var("AST_ENTITY_SNIPPETS")
+                            .map(|v| v != "0")
+                            .unwrap_or(true);
+                        if use_entity {
+                            let ent = build_entity_context_snippets(
+                                lang, &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                            );
+                            if !ent.is_empty() {
+                                ent
+                            } else {
+                                build_change_context_snippets(
+                                    &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                                )
+                            }
+                        } else {
+                            build_change_context_snippets(
+                                &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                            )
+                        }
+                    } else {
+                        String::new()
+                    };
+                    (filtered, snips)
+                } else {
+                    (ast_score.clone(), String::new())
+                };
+            final_response.push_str(&build_risk_report(&filtered));
+            final_response.push('\n');
+            if !change_snippets.is_empty() {
+                final_response.push_str(&change_snippets);
+                final_response.push('\n');
+            }
+            final_response.push_str(&build_code_health(&filtered));
+            final_response.push('\n');
             // API Contract (simple heuristics)
-            let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+            let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
+                .unwrap_or(SupportedLanguage::Python);
             let api = build_api_contract_report(lang, &hook_input, &content);
-            if !api.is_empty() { final_response.push_str(&api); final_response.push('\n'); }
-            final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
+            if !api.is_empty() {
+                final_response.push_str(&api);
+                final_response.push('\n');
+            }
+            final_response.push_str(&build_next_steps(&filtered));
+            final_response.push('\n');
         }
         // Include formatting outcome
         if let Some(format_result) = &formatting_result {
-            if format_result.changed { final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\n\n"); }
-            else if !format_result.messages.is_empty() {
+            if format_result.changed {
+                final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\n\n");
+            } else if !format_result.messages.is_empty() {
                 final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
-                for message in &format_result.messages { final_response.push_str(&format!("{} ", message)); }
+                for message in &format_result.messages {
+                    final_response.push_str(&format!("{} ", message));
+                }
                 final_response.push_str("\n\n");
             }
         }
@@ -2742,7 +3455,14 @@ async fn main() -> Result<()> {
         let output = PostToolUseOutput {
             hook_specific_output: PostToolUseHookOutput {
                 hook_event_name: "PostToolUse".to_string(),
-                additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) },
+                additional_context: {
+                    let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(100_000)
+                        .clamp(10_000, 1_000_000);
+                    truncate_utf8_safe(&final_response, lim)
+                },
             },
         };
         println!(
@@ -2756,53 +3476,103 @@ async fn main() -> Result<()> {
     let client = UniversalAIClient::new(config.clone()).context("Failed to create AI client")?;
 
     // Analyze code using the configured provider - returns raw response
-    match client
-        .analyze_code_posttool(&content, &formatted_prompt)
-        .await
-    {
+    match client.analyze_code_posttool(&content, &formatted_prompt).await {
         Ok(ai_response) => {
             // Combine structured sections and AI response
             let mut final_response = String::new();
             // Change Summary
             let change = build_change_summary(&hook_input, &display_path).await;
-            if !change.is_empty() { final_response.push_str(&change); final_response.push('\n'); }
-            if let Some(note) = soft_budget_note(&content, &display_path) { final_response.push_str(&note); final_response.push('\n'); }
+            if !change.is_empty() {
+                final_response.push_str(&change);
+                final_response.push('\n');
+            }
+            if let Some(note) = soft_budget_note(&content, &display_path) {
+                final_response.push_str(&note);
+                final_response.push('\n');
+            }
             // Risk + Health + Change Context + API Contract + Next Steps
             if let Some(ast_score) = &ast_analysis {
-                let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(&hook_input, &display_path).await {
-                    let ctxn = std::env::var("AST_DIFF_CONTEXT").ok().and_then(|v| v.parse().ok()).unwrap_or(3);
+                let (filtered, change_snippets) = if let Ok(diff) =
+                    generate_diff_context(&hook_input, &display_path).await
+                {
+                    let ctxn = std::env::var("AST_DIFF_CONTEXT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(3);
                     let changed = extract_changed_lines(&diff, ctxn);
-                    let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() { filter_issues_to_diff(ast_score, &diff, ctxn) } else { ast_score.clone() };
+                    let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() {
+                        filter_issues_to_diff(ast_score, &diff, ctxn)
+                    } else {
+                        ast_score.clone()
+                    };
                     let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
                     let snips = if snips_enabled {
-                        let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
-                        let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
-                        let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
-                        let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                        let max_snips = std::env::var("AST_MAX_SNIPPETS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(3)
+                            .clamp(1, 50);
+                        let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(1500)
+                            .clamp(200, 20_000);
+                        let lang =
+                            SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
+                                .unwrap_or(SupportedLanguage::Python);
+                        let use_entity = std::env::var("AST_ENTITY_SNIPPETS")
+                            .map(|v| v != "0")
+                            .unwrap_or(true);
                         if use_entity {
-                            let ent = build_entity_context_snippets(lang, &content, &filtered, &changed, ctxn, max_snips, max_chars);
-                            if !ent.is_empty() { ent } else { build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars) }
+                            let ent = build_entity_context_snippets(
+                                lang, &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                            );
+                            if !ent.is_empty() {
+                                ent
+                            } else {
+                                build_change_context_snippets(
+                                    &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                                )
+                            }
                         } else {
-                            build_change_context_snippets(&content, &filtered, &changed, ctxn, max_snips, max_chars)
+                            build_change_context_snippets(
+                                &content, &filtered, &changed, ctxn, max_snips, max_chars,
+                            )
                         }
-                    } else { String::new() };
+                    } else {
+                        String::new()
+                    };
                     (filtered, snips)
-                } else { (ast_score.clone(), String::new()) };
-                final_response.push_str(&build_risk_report(&filtered)); final_response.push('\n');
-                let tips = build_quick_tips_section(&filtered); if !tips.is_empty() { final_response.push_str(&tips); final_response.push('\n'); }
-                if !change_snippets.is_empty() { final_response.push_str(&change_snippets); final_response.push('\n'); }
-                final_response.push_str(&build_code_health(&filtered)); final_response.push('\n');
-                let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or("")).unwrap_or(SupportedLanguage::Python);
+                } else {
+                    (ast_score.clone(), String::new())
+                };
+                final_response.push_str(&build_risk_report(&filtered));
+                final_response.push('\n');
+                let tips = build_quick_tips_section(&filtered);
+                if !tips.is_empty() {
+                    final_response.push_str(&tips);
+                    final_response.push('\n');
+                }
+                if !change_snippets.is_empty() {
+                    final_response.push_str(&change_snippets);
+                    final_response.push('\n');
+                }
+                final_response.push_str(&build_code_health(&filtered));
+                final_response.push('\n');
+                let lang = SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
+                    .unwrap_or(SupportedLanguage::Python);
                 let api = build_api_contract_report(lang, &hook_input, &content);
-                if !api.is_empty() { final_response.push_str(&api); final_response.push('\n'); }
-                final_response.push_str(&build_next_steps(&filtered)); final_response.push('\n');
+                if !api.is_empty() {
+                    final_response.push_str(&api);
+                    final_response.push('\n');
+                }
+                final_response.push_str(&build_next_steps(&filtered));
+                final_response.push('\n');
             }
             // Add formatting results if available
             if let Some(format_result) = &formatting_result {
                 if format_result.changed {
-                    final_response.push_str(
-                        "[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\n\n",
-                    );
+                    final_response.push_str("[АВТОФОРМАТИРОВАНИЕ ПРИМЕНЕНО]\n\n");
                 } else if !format_result.messages.is_empty() {
                     final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
                     for message in &format_result.messages {
@@ -2818,7 +3588,14 @@ async fn main() -> Result<()> {
             let output = PostToolUseOutput {
                 hook_specific_output: PostToolUseHookOutput {
                     hook_event_name: "PostToolUse".to_string(),
-                    additional_context: { let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000); truncate_utf8_safe(&final_response, lim) },
+                    additional_context: {
+                        let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(100_000)
+                            .clamp(10_000, 1_000_000);
+                        truncate_utf8_safe(&final_response, lim)
+                    },
                 },
             };
 
@@ -2829,7 +3606,7 @@ async fn main() -> Result<()> {
         }
         Err(e) => {
             // Log error but don't block the operation
-            eprintln!("PostToolUse analysis error: {}", e);
+            tracing::error!(error=%e, "PostToolUse analysis error");
 
             // Pass through with minimal feedback
             let output = PostToolUseOutput {
@@ -2862,11 +3639,7 @@ mod tests {
         let transcript_path = dir.path().join("transcript.jsonl");
 
         let mut file = fs::File::create(&transcript_path).unwrap();
-        writeln!(
-            file,
-            r#"{{"role":"user","content":"Help me write a function"}}"#
-        )
-        .unwrap();
+        writeln!(file, r#"{{"role":"user","content":"Help me write a function"}}"#).unwrap();
         writeln!(
             file,
             r#"{{"role":"assistant","content":"I'll help you write a function"}}"#
@@ -2991,10 +3764,7 @@ mod tests {
             summary.find("user: First message"),
             summary.find("user: Second message"),
         ) {
-            assert!(
-                first_pos < second_pos,
-                "Messages not in chronological order"
-            );
+            assert!(first_pos < second_pos, "Messages not in chronological order");
         } else {
             panic!("Expected messages not found in summary");
         }
@@ -3051,8 +3821,7 @@ mod tests {
             .unwrap();
 
         // Should only contain 5 messages even though char limit not reached
-        let message_count =
-            summary.matches("user:").count() + summary.matches("assistant:").count();
+        let message_count = summary.matches("user:").count() + summary.matches("assistant:").count();
         assert_eq!(message_count, 5);
     }
 
@@ -3191,11 +3960,17 @@ mod tests {
     fn has_marked_line_for(out: &str, target: usize) -> bool {
         for l in out.lines() {
             let lt = l.trim_start();
-            if !lt.starts_with('>') { continue; }
+            if !lt.starts_with('>') {
+                continue;
+            }
             if let Some(pipe_idx) = lt.find('|') {
                 let num_part = &lt[1..pipe_idx];
                 let num = num_part.trim();
-                if let Ok(n) = num.parse::<usize>() { if n == target { return true; } }
+                if let Ok(n) = num.parse::<usize>() {
+                    if n == target {
+                        return true;
+                    }
+                }
             }
         }
         false
@@ -3238,7 +4013,9 @@ def f2():\n  return 2\n\n\
 def f3():\n  return 3\n";
         let score = mk_quality_score(&[2, 5, 8]);
         let mut changed = std::collections::HashSet::new();
-        for &ln in &[2usize, 5, 8] { changed.insert(ln); }
+        for &ln in &[2usize, 5, 8] {
+            changed.insert(ln);
+        }
         let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 2, 10_000);
         let headers = out.lines().filter(|l| l.starts_with("- [")).count();
         assert_eq!(headers, 2);
@@ -3246,7 +4023,9 @@ def f3():\n  return 3\n";
 
     #[test]
     fn unit_next_steps_recommendations_cover_common_categories() {
-        use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueCategory, IssueSeverity, QualityScore};
+        use crate::analysis::ast::quality_scorer::{
+            ConcreteIssue, IssueCategory, IssueSeverity, QualityScore,
+        };
         let mut score = QualityScore {
             total_score: 900,
             functionality_score: 300,
@@ -3294,7 +4073,7 @@ def f3():\n  return 3\n";
         file.write_all(b"{\"role\":\"user\",\"content\":\"Unclosed string\n")
             .unwrap(); // Unclosed
         writeln!(file, r#"{{"role":"user","content":"Valid message 3"}}"#).unwrap();
-        writeln!(file, "").unwrap(); // Empty line
+        writeln!(file).unwrap(); // Empty line
         writeln!(file, "null").unwrap(); // Just null
         writeln!(file, r#"{{"role":"user"}}"#).unwrap(); // Missing content field
         writeln!(file, r#"{{"content":"Missing role"}}"#).unwrap(); // Missing role field
@@ -3321,31 +4100,15 @@ def f3():\n  return 3\n";
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Various UTF-8 edge cases
         writeln!(file, r#"{{"role":"user","content":"ASCII only message"}}"#).unwrap();
-        writeln!(
-            file,
-            r#"{{"role":"user","content":"Emoji 🎉🚀💻 message"}}"#
-        )
-        .unwrap();
-        writeln!(
-            file,
-            r#"{{"role":"user","content":"Cyrillic текст сообщение"}}"#
-        )
-        .unwrap();
-        writeln!(
-            file,
-            r#"{{"role":"user","content":"CJK 中文 日本語 한국어"}}"#
-        )
-        .unwrap();
+        writeln!(file, r#"{{"role":"user","content":"Emoji 🎉🚀💻 message"}}"#).unwrap();
+        writeln!(file, r#"{{"role":"user","content":"Cyrillic текст сообщение"}}"#).unwrap();
+        writeln!(file, r#"{{"role":"user","content":"CJK 中文 日本語 한국어"}}"#).unwrap();
         writeln!(
             file,
             "{{\"role\":\"user\",\"content\":\"Zero-width \u{200B}\u{200C}\u{200D} chars\"}}"
         )
         .unwrap();
-        writeln!(
-            file,
-            r#"{{"role":"user","content":"RTL text مرحبا עברית"}}"#
-        )
-        .unwrap();
+        writeln!(file, r#"{{"role":"user","content":"RTL text مرحبا עברית"}}"#).unwrap();
         writeln!(file, r#"{{"role":"user","content":"Combined 👨‍👩‍👧‍👦 emoji"}}"#).unwrap();
         drop(file);
 
@@ -3425,10 +4188,8 @@ def f3():\n  return 3\n";
 
         let mut file = fs::File::create(&transcript_path).unwrap();
         // Message with nested JSON in content - using write! to avoid formatting issues
-        file.write_all(
-            b"{\"role\":\"user\",\"content\":\"Here is JSON: {\\\"key\\\": \\\"value\\\"}\"}\n",
-        )
-        .unwrap();
+        file.write_all(b"{\"role\":\"user\",\"content\":\"Here is JSON: {\\\"key\\\": \\\"value\\\"}\"}\n")
+            .unwrap();
         // Message with escaped characters
         writeln!(
             file,
@@ -3436,11 +4197,7 @@ def f3():\n  return 3\n";
         )
         .unwrap();
         // Message with newlines
-        writeln!(
-            file,
-            r#"{{"role":"user","content":"Line 1\nLine 2\nLine 3"}}"#
-        )
-        .unwrap();
+        writeln!(file, r#"{{"role":"user","content":"Line 1\nLine 2\nLine 3"}}"#).unwrap();
         drop(file);
 
         let summary = read_transcript_summary(transcript_path.to_str().unwrap(), 20, 2000)

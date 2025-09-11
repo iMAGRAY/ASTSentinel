@@ -26,13 +26,22 @@ fn e2e_posttooluse_api_contract_in_ast_only() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
     assert!(ctx.contains("=== API CONTRACT ==="), "ctx: {}", ctx);
-    assert!(ctx.contains("parameter count reduced") || ctx.contains("parameter"), "ctx: {}", ctx);
+    assert!(
+        ctx.contains("parameter count reduced") || ctx.contains("parameter"),
+        "ctx: {}",
+        ctx
+    );
 }
-

@@ -1,3 +1,15 @@
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::todo,
+        clippy::unimplemented,
+        clippy::dbg_macro
+    )
+)]
+#![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{self, Read};
@@ -12,10 +24,10 @@ use rust_validation_hooks::*;
 use rust_validation_hooks::providers::ai::UniversalAIClient;
 // Test file validator removed - AI handles validation
 // Use diff formatter for better AI context
+use rust_validation_hooks::config;
 use rust_validation_hooks::validation::diff_formatter::{
     format_code_diff, format_edit_diff, format_multi_edit_diff,
 };
-use rust_validation_hooks::config;
 
 // =============================
 // Heuristics for anti-cheating
@@ -34,24 +46,41 @@ struct HeuristicAssessment {
 // ==============
 // API Contract heuristics (regex-based; Python/JS/TS)
 // ==============
-fn extract_signatures_regex(language: Option<SupportedLanguage>, code: &str) -> std::collections::HashMap<String, Vec<String>> {
+fn extract_signatures_regex(
+    language: Option<SupportedLanguage>,
+    code: &str,
+) -> std::collections::HashMap<String, Vec<String>> {
     use regex::Regex;
     let mut map = std::collections::HashMap::new();
-    let Some(lang) = language else { return map; };
+    let Some(lang) = language else {
+        return map;
+    };
     match lang {
         SupportedLanguage::Python => {
             if let Ok(re) = Regex::new(r"(?m)^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)") {
                 for cap in re.captures_iter(code) {
                     let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
                     let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-                    let list = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty())
+                    let list = params
+                        .split(',')
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
                         .map(|p| {
-                            let base = p.split(':').next().unwrap_or("").split('=').next().unwrap_or("").trim();
+                            let base = p
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .split('=')
+                                .next()
+                                .unwrap_or("")
+                                .trim();
                             base.trim_start_matches('*').to_string()
                         })
-                        .filter(|p| !matches!(p.as_str(), "self"|"cls"|"args"|"kwargs"))
+                        .filter(|p| !matches!(p.as_str(), "self" | "cls" | "args" | "kwargs"))
                         .collect::<Vec<_>>();
-                    if !name.is_empty() { map.insert(name, list); }
+                    if !name.is_empty() {
+                        map.insert(name, list);
+                    }
                 }
             }
         }
@@ -60,10 +89,22 @@ fn extract_signatures_regex(language: Option<SupportedLanguage>, code: &str) -> 
                 for cap in re_fn.captures_iter(code) {
                     let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
                     let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-                    let list = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty())
-                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                    let list = params
+                        .split(',')
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| {
+                            p.trim_start_matches("...")
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .trim_end_matches('?')
+                                .to_string()
+                        })
                         .collect::<Vec<_>>();
-                    if !name.is_empty() { map.insert(name, list); }
+                    if !name.is_empty() {
+                        map.insert(name, list);
+                    }
                 }
             }
             // Class methods: name(param){ ... }
@@ -71,10 +112,22 @@ fn extract_signatures_regex(language: Option<SupportedLanguage>, code: &str) -> 
                 for cap in re_m.captures_iter(code) {
                     let name = cap.get(1).map(|m| m.as_str()).unwrap_or("").to_string();
                     let params = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-                    let list = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty())
-                        .map(|p| p.trim_start_matches("...").split(':').next().unwrap_or("").trim_end_matches('?').to_string())
+                    let list = params
+                        .split(',')
+                        .map(|p| p.trim())
+                        .filter(|p| !p.is_empty())
+                        .map(|p| {
+                            p.trim_start_matches("...")
+                                .split(':')
+                                .next()
+                                .unwrap_or("")
+                                .trim_end_matches('?')
+                                .to_string()
+                        })
                         .collect::<Vec<_>>();
-                    if !name.is_empty() { map.entry(name).or_insert(list.clone()); }
+                    if !name.is_empty() {
+                        map.entry(name).or_insert(list.clone());
+                    }
                 }
             }
         }
@@ -83,19 +136,33 @@ fn extract_signatures_regex(language: Option<SupportedLanguage>, code: &str) -> 
     map
 }
 
-fn contract_weakening_reasons(language: Option<SupportedLanguage>, old_code: &str, new_code: &str) -> Vec<String> {
+fn contract_weakening_reasons(
+    language: Option<SupportedLanguage>,
+    old_code: &str,
+    new_code: &str,
+) -> Vec<String> {
     let before = extract_signatures_regex(language, old_code);
     let after = extract_signatures_regex(language, new_code);
-    if before.is_empty() && after.is_empty() { return vec![]; }
+    if before.is_empty() && after.is_empty() {
+        return vec![];
+    }
     let mut reasons = Vec::new();
     for (name, bparams) in before.iter() {
         if let Some(aparams) = after.get(name) {
             if aparams.len() < bparams.len() {
-                reasons.push(format!("Function `{}`: parameter count reduced ({} -> {})", name, bparams.len(), aparams.len()));
+                reasons.push(format!(
+                    "Function `{}`: parameter count reduced ({} -> {})",
+                    name,
+                    bparams.len(),
+                    aparams.len()
+                ));
             } else {
                 for bp in bparams {
                     if !bp.is_empty() && !aparams.iter().any(|x| x == bp) {
-                        reasons.push(format!("Function `{}`: parameter `{}` removed or renamed", name, bp));
+                        reasons.push(format!(
+                            "Function `{}`: parameter `{}` removed or renamed",
+                            name, bp
+                        ));
                     }
                 }
             }
@@ -107,7 +174,11 @@ fn contract_weakening_reasons(language: Option<SupportedLanguage>, old_code: &st
 }
 
 // Heuristic: find call sites that still pass removed parameters or exceed new arity
-fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: &str, new_code: &str) -> Vec<String> {
+fn find_contract_callsite_issues(
+    language: Option<SupportedLanguage>,
+    old_code: &str,
+    new_code: &str,
+) -> Vec<String> {
     use std::collections::HashMap;
     let lang = language;
     let before = extract_signatures_regex(lang, old_code);
@@ -116,23 +187,49 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
 
     // Helper: count top-level args and detect named args in a slice
     fn analyze_args_slice(slice: &str) -> (usize, Vec<String>) {
-        let mut depth = 0usize; let mut count = 0usize; let mut named = Vec::new();
+        let mut depth = 0usize;
+        let mut count = 0usize;
+        let mut named = Vec::new();
         let mut token = String::new();
-        let mut i = 0; let bytes = slice.as_bytes();
+        let mut i = 0;
+        let bytes = slice.as_bytes();
         while i < bytes.len() {
             let c = bytes[i] as char;
             match c {
-                '(' | '[' | '{' => { depth += 1; token.clear(); }
-                ')' | ']' | '}' => { depth = depth.saturating_sub(1); }
-                ',' => { if depth==0 { count += 1; token.clear(); } }
-                '=' => { if depth==0 { let name = token.trim(); if !name.is_empty() { named.push(name.to_string()); } } }
-                _ => { if depth==0 { token.push(c); } }
+                '(' | '[' | '{' => {
+                    depth += 1;
+                    token.clear();
+                }
+                ')' | ']' | '}' => {
+                    depth = depth.saturating_sub(1);
+                }
+                ',' => {
+                    if depth == 0 {
+                        count += 1;
+                        token.clear();
+                    }
+                }
+                '=' => {
+                    if depth == 0 {
+                        let name = token.trim();
+                        if !name.is_empty() {
+                            named.push(name.to_string());
+                        }
+                    }
+                }
+                _ => {
+                    if depth == 0 {
+                        token.push(c);
+                    }
+                }
             }
             i += 1;
         }
         // If non-empty args without trailing comma, increment count
         let trimmed = slice.trim();
-        if !trimmed.is_empty() { count = count.saturating_add(1); }
+        if !trimmed.is_empty() {
+            count = count.saturating_add(1);
+        }
         (count, named)
     }
 
@@ -141,21 +238,33 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
     let mut reduced_arity: HashMap<String, (usize, usize)> = HashMap::new();
     for (name, bparams) in before.iter() {
         if let Some(aparams) = after.get(name) {
-            if aparams.len() < bparams.len() { reduced_arity.insert(name.clone(), (bparams.len(), aparams.len())); }
+            if aparams.len() < bparams.len() {
+                reduced_arity.insert(name.clone(), (bparams.len(), aparams.len()));
+            }
             let mut removed = Vec::new();
             for bp in bparams {
                 // Python boilerplate ignore
-                if matches!(lang, Some(SupportedLanguage::Python)) && (bp == "self" || bp == "cls" || bp == "args" || bp == "kwargs") { continue; }
-                if !bp.is_empty() && !aparams.iter().any(|x| x == bp) { removed.push(bp.clone()); }
+                if matches!(lang, Some(SupportedLanguage::Python))
+                    && (bp == "self" || bp == "cls" || bp == "args" || bp == "kwargs")
+                {
+                    continue;
+                }
+                if !bp.is_empty() && !aparams.iter().any(|x| x == bp) {
+                    removed.push(bp.clone());
+                }
             }
-            if !removed.is_empty() { removed_params.insert(name.clone(), removed); }
+            if !removed.is_empty() {
+                removed_params.insert(name.clone(), removed);
+            }
         } else {
             // Function removed entirely — flag
             issues.push(format!("Function `{}` removed; consider migration plan", name));
         }
     }
 
-    if removed_params.is_empty() && reduced_arity.is_empty() { return issues; }
+    if removed_params.is_empty() && reduced_arity.is_empty() {
+        return issues;
+    }
 
     let code = new_code;
     // Scan for function calls by name (simple heuristic)
@@ -165,20 +274,30 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
         while let Some(idx) = code[pos..].find(fname) {
             let i = pos + idx;
             // ensure word boundary and next char is '('
-            if i>0 {
-                let prev = code.as_bytes()[i-1] as char;
-                if prev.is_ascii_alphanumeric() || prev == '_' { pos = i+fname.len(); continue; }
+            if i > 0 {
+                let prev = code.as_bytes()[i - 1] as char;
+                if prev.is_ascii_alphanumeric() || prev == '_' {
+                    pos = i + fname.len();
+                    continue;
+                }
             }
-            let after = i+fname.len();
+            let after = i + fname.len();
             let tail = &code[after..];
             let open = tail.find('(');
             if let Some(op) = open {
                 let j = after + op + 1; // position after '('
-                let mut depth = 1i32; let mut end = j;
+                let mut depth = 1i32;
+                let mut end = j;
                 while end < code.len() {
                     let ch = code.as_bytes()[end] as char;
-                    if ch == '(' { depth += 1; }
-                    else if ch == ')' { depth -= 1; if depth == 0 { break; } }
+                    if ch == '(' {
+                        depth += 1;
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
                     end += 1;
                 }
                 if depth == 0 && end <= code.len() {
@@ -197,18 +316,62 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
             pos = after;
         }
         if !seen_named.is_empty() {
-            issues.push(format!("Calls to `{}` still pass removed named params: {}", fname, seen_named.join(", ")));
+            issues.push(format!(
+                "Calls to `{}` still pass removed named params: {}",
+                fname,
+                seen_named.join(", ")
+            ));
         }
     }
 
     for (fname, (old_n, new_n)) in reduced_arity.iter() {
-        let mut pos = 0usize; let mut offending = 0usize;
+        let mut pos = 0usize;
+        let mut offending = 0usize;
         while let Some(idx) = code[pos..].find(fname) {
-            let i = pos + idx; if i>0 { let prev = code.as_bytes()[i-1] as char; if prev.is_ascii_alphanumeric() || prev == '_' { pos = i+fname.len(); continue; } }
-            let after = i+fname.len(); let tail = &code[after..]; if let Some(op)=tail.find('('){ let j=after+op+1; let mut depth=1i32; let mut end=j; while end<code.len(){ let ch=code.as_bytes()[end] as char; if ch=='(' {depth+=1;} else if ch==')'{depth-=1; if depth==0{break;}} end+=1;} if depth==0 { let args_slice=&code[j..end]; let (argc,_)=analyze_args_slice(args_slice); if argc> *new_n { offending+=1; } pos=end+1; continue; } }
+            let i = pos + idx;
+            if i > 0 {
+                let prev = code.as_bytes()[i - 1] as char;
+                if prev.is_ascii_alphanumeric() || prev == '_' {
+                    pos = i + fname.len();
+                    continue;
+                }
+            }
+            let after = i + fname.len();
+            let tail = &code[after..];
+            if let Some(op) = tail.find('(') {
+                let j = after + op + 1;
+                let mut depth = 1i32;
+                let mut end = j;
+                while end < code.len() {
+                    let ch = code.as_bytes()[end] as char;
+                    if ch == '(' {
+                        depth += 1;
+                    } else if ch == ')' {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    end += 1;
+                }
+                if depth == 0 {
+                    let args_slice = &code[j..end];
+                    let (argc, _) = analyze_args_slice(args_slice);
+                    if argc > *new_n {
+                        offending += 1;
+                    }
+                    pos = end + 1;
+                    continue;
+                }
+            }
             pos = after;
         }
-        if offending>0 { issues.push(format!("Calls to `{}` exceed new arity ({} -> {}): {} occurrences", fname, old_n, new_n, offending)); }
+        if offending > 0 {
+            issues.push(format!(
+                "Calls to `{}` exceed new arity ({} -> {}): {} occurrences",
+                fname, old_n, new_n, offending
+            ));
+        }
     }
 
     issues
@@ -218,8 +381,16 @@ fn extract_old_new_contents(hook_input: &HookInput) -> (String, Option<String>, 
     let file_path = extract_file_path(&hook_input.tool_input);
     match hook_input.tool_name.as_str() {
         "Edit" => {
-            let old = hook_input.tool_input.get("old_string").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let new = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let old = hook_input
+                .tool_input
+                .get("old_string")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            let new = hook_input
+                .tool_input
+                .get("new_string")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             (file_path, old, new)
         }
         "MultiEdit" => {
@@ -227,10 +398,20 @@ fn extract_old_new_contents(hook_input: &HookInput) -> (String, Option<String>, 
                 let mut old = String::new();
                 let mut new = String::new();
                 for e in edits.iter().take(1000) {
-                    if let Some(o) = e.get("old_string").and_then(|v| v.as_str()) { old.push_str(o); old.push('\n'); }
-                    if let Some(n) = e.get("new_string").and_then(|v| v.as_str()) { new.push_str(n); new.push('\n'); }
+                    if let Some(o) = e.get("old_string").and_then(|v| v.as_str()) {
+                        old.push_str(o);
+                        old.push('\n');
+                    }
+                    if let Some(n) = e.get("new_string").and_then(|v| v.as_str()) {
+                        new.push_str(n);
+                        new.push('\n');
+                    }
                 }
-                (file_path, if old.is_empty() { None } else { Some(old) }, if new.is_empty() { None } else { Some(new) })
+                (
+                    file_path,
+                    if old.is_empty() { None } else { Some(old) },
+                    if new.is_empty() { None } else { Some(new) },
+                )
             } else {
                 let old = std::fs::read_to_string(&file_path).ok();
                 (file_path, old, None)
@@ -238,7 +419,11 @@ fn extract_old_new_contents(hook_input: &HookInput) -> (String, Option<String>, 
         }
         "Write" => {
             let old = std::fs::read_to_string(&file_path).ok();
-            let new = hook_input.tool_input.get("content").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let new = hook_input
+                .tool_input
+                .get("content")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             (file_path, old, new)
         }
         _ => (file_path, None, None),
@@ -282,16 +467,24 @@ fn normalize_code_for_signal(code: &str) -> String {
     while i < b.len() {
         if i + 1 < b.len() && b[i] == b'/' && b[i + 1] == b'*' {
             i += 2;
-            while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') { i += 1; }
-            if i + 1 < b.len() { i += 2; }
+            while i + 1 < b.len() && !(b[i] == b'*' && b[i + 1] == b'/') {
+                i += 1;
+            }
+            if i + 1 < b.len() {
+                i += 2;
+            }
             continue;
         }
         if i + 1 < b.len() && b[i] == b'/' && b[i + 1] == b'/' {
-            while i < b.len() && b[i] != b'\n' { i += 1; }
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
             continue;
         }
         if b[i] == b'#' {
-            while i < b.len() && b[i] != b'\n' { i += 1; }
+            while i < b.len() && b[i] != b'\n' {
+                i += 1;
+            }
             continue;
         }
         s.push(b[i] as char);
@@ -302,14 +495,22 @@ fn normalize_code_for_signal(code: &str) -> String {
 
 fn detect_return_constant(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
-    let constants = ["true", "false", "null", "none", "0", "1"]; 
+    let constants = ["true", "false", "null", "none", "0", "1"];
     if low.contains("return") {
         for c in &constants {
-            if low.contains(&format!("return{}", c)) || low.contains(&format!("return({})", c)) { return true; }
+            if low.contains(&format!("return{}", c)) || low.contains(&format!("return({})", c)) {
+                return true;
+            }
         }
-        if low.contains("return\"") || low.contains("return'") { return true; }
+        if low.contains("return\"") || low.contains("return'") {
+            return true;
+        }
     }
-    if low.contains("=>") && (low.contains("=>0") || low.contains("=>1") || low.contains("=>\"") || low.contains("=>'") ) { return true; }
+    if low.contains("=>")
+        && (low.contains("=>0") || low.contains("=>1") || low.contains("=>\"") || low.contains("=>'"))
+    {
+        return true;
+    }
     false
 }
 
@@ -318,9 +519,15 @@ fn detect_print_only(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
     // Fast precheck: any known print/log patterns?
     const TOKENS: [&str; 5] = [
-        "console.log(", "print(", "logger.", "system.out.println(", "debug("
+        "console.log(",
+        "print(",
+        "logger.",
+        "system.out.println(",
+        "debug(",
     ];
-    if !TOKENS.iter().any(|t| low.contains(t)) { return false; }
+    if !TOKENS.iter().any(|t| low.contains(t)) {
+        return false;
+    }
     // Count alphanumeric characters while skipping known tokens to avoid allocation
     let bytes = low.as_bytes();
     let mut i = 0usize;
@@ -330,15 +537,19 @@ fn detect_print_only(code: &str) -> bool {
         let mut skipped = false;
         for t in TOKENS {
             let tb = t.as_bytes();
-            if i + tb.len() <= bytes.len() && &bytes[i..i+tb.len()] == tb {
+            if i + tb.len() <= bytes.len() && &bytes[i..i + tb.len()] == tb {
                 i += tb.len();
                 skipped = true;
                 break;
             }
         }
-        if skipped { continue; }
+        if skipped {
+            continue;
+        }
         let c = bytes[i] as char;
-        if c.is_ascii_alphanumeric() { alnum += 1; }
+        if c.is_ascii_alphanumeric() {
+            alnum += 1;
+        }
         i += 1;
     }
     alnum < 6
@@ -351,18 +562,28 @@ fn detect_todo_placeholder(code: &str) -> bool {
 
 fn detect_empty_catch_except(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
-    if low.contains("catch") && low.contains("{") && low.contains("}")
+    if low.contains("catch")
+        && low.contains("{")
+        && low.contains("}")
         && low.contains("catch(")
-        && (low.contains("catch(e){}") || low.contains("catch(e){
+        && (low.contains("catch(e){}")
+            || low.contains(
+                "catch(e){
 }
-"))
+",
+            ))
     {
         return true;
     }
-    if low.contains("except") && low.contains(":")
-        && (low.contains("except:
-    pass") || low.contains("except:
-    pass"))
+    if low.contains("except")
+        && low.contains(":")
+        && (low.contains(
+            "except:
+    pass",
+        ) || low.contains(
+            "except:
+    pass",
+        ))
     {
         return true;
     }
@@ -375,7 +596,9 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     if let (Some(old), Some(new)) = (old_opt.as_ref(), new_opt.as_ref()) {
         let norm_old = normalize_code_for_signal(old);
         let norm_new = normalize_code_for_signal(new);
-        if norm_old == norm_new { assess.is_whitespace_or_comments_only = true; }
+        if norm_old == norm_new {
+            assess.is_whitespace_or_comments_only = true;
+        }
     }
     let combined_new = new_opt.clone().unwrap_or_default();
     assess.is_return_constant_only = detect_return_constant(&combined_new);
@@ -388,13 +611,29 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
         assess.is_new_file_minimal = combined_new.trim().len() <= 64 || norm.len() <= 32;
     }
     let mut parts = Vec::new();
-    if assess.is_whitespace_or_comments_only { parts.push("no-op change (whitespace/comments only)".to_string()); }
-    if assess.is_return_constant_only { parts.push("returns constant only".to_string()); }
-    if assess.is_print_or_log_only { parts.push("print/log only".to_string()); }
-    if assess.has_todo_or_placeholder { parts.push("TODO/placeholder".to_string()); }
-    if assess.has_empty_catch_or_except { parts.push("empty catch/except".to_string()); }
-    if assess.is_new_file_minimal { parts.push("new minimal file".to_string()); }
-    assess.summary = if parts.is_empty() { "no red flags".to_string() } else { parts.join(", ") };
+    if assess.is_whitespace_or_comments_only {
+        parts.push("no-op change (whitespace/comments only)".to_string());
+    }
+    if assess.is_return_constant_only {
+        parts.push("returns constant only".to_string());
+    }
+    if assess.is_print_or_log_only {
+        parts.push("print/log only".to_string());
+    }
+    if assess.has_todo_or_placeholder {
+        parts.push("TODO/placeholder".to_string());
+    }
+    if assess.has_empty_catch_or_except {
+        parts.push("empty catch/except".to_string());
+    }
+    if assess.is_new_file_minimal {
+        parts.push("new minimal file".to_string());
+    }
+    assess.summary = if parts.is_empty() {
+        "no red flags".to_string()
+    } else {
+        parts.join(", ")
+    };
     assess
 }
 
@@ -414,7 +653,7 @@ fn validate_prompts_path(path: &PathBuf) -> Option<PathBuf> {
             }
         }
         Err(e) => {
-            eprintln!("Warning: Cannot validate prompts path: {}", e);
+            tracing::warn!(error=%e, "Cannot validate prompts path");
             None
         }
     }
@@ -426,8 +665,7 @@ fn get_prompts_dir() -> PathBuf {
     let exe_path = match std::env::current_exe() {
         Ok(path) => path,
         Err(e) => {
-            eprintln!("Error: Cannot determine executable path: {}", e);
-            eprintln!("Falling back to current directory + prompts");
+            tracing::error!(error=%e, "Cannot determine executable path; falling back to ./prompts");
             return PathBuf::from("prompts");
         }
     };
@@ -435,8 +673,7 @@ fn get_prompts_dir() -> PathBuf {
     let parent = match exe_path.parent() {
         Some(parent) => parent,
         None => {
-            eprintln!("Error: Cannot get parent directory of executable");
-            eprintln!("Falling back to current directory + prompts");
+            tracing::error!("Cannot get parent directory of executable; falling back to ./prompts");
             return PathBuf::from("prompts");
         }
     };
@@ -445,12 +682,12 @@ fn get_prompts_dir() -> PathBuf {
     let prompts_path = parent.join("prompts");
 
     if let Some(validated) = validate_prompts_path(&prompts_path) {
-        eprintln!("Using prompts directory: {:?}", validated);
+        tracing::info!(dir=?validated, "Using prompts directory");
         return validated;
     }
 
     // Final fallback
-    eprintln!("Warning: prompts directory not found next to executable, using current directory");
+    tracing::warn!("Prompts directory not found next to executable; using current directory");
     PathBuf::from("prompts")
 }
 
@@ -514,28 +751,27 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
             if let Some(msg) = entry.get("message") {
                 // Handle different message formats
                 if let Some(role) = msg.get("role").and_then(|v| v.as_str()) {
-                    let content =
-                        if let Some(content_arr) = msg.get("content").and_then(|v| v.as_array()) {
-                            // Handle content array (assistant messages)
-                            content_arr
-                                .iter()
-                                .filter_map(|c| {
+                    let content = if let Some(content_arr) = msg.get("content").and_then(|v| v.as_array()) {
+                        // Handle content array (assistant messages)
+                        content_arr
+                            .iter()
+                            .filter_map(|c| {
                                 if let Some(text) = c.get("text").and_then(|v| v.as_str()) {
-                                        Some(text.to_string())
-                                    } else {
-                                        c.get("name")
-                                            .and_then(|v| v.as_str())
-                                            .map(|tool_name| format!("[Tool: {}]", tool_name))
-                                    }
-                                })
-                                .collect::<Vec<_>>()
-                                .join(" ")
-                        } else if let Some(text) = msg.get("content").and_then(|v| v.as_str()) {
-                            // Handle simple string content (user messages)
-                            text.to_string()
-                        } else {
-                            String::new()
-                        };
+                                    Some(text.to_string())
+                                } else {
+                                    c.get("name")
+                                        .and_then(|v| v.as_str())
+                                        .map(|tool_name| format!("[Tool: {}]", tool_name))
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    } else if let Some(text) = msg.get("content").and_then(|v| v.as_str()) {
+                        // Handle simple string content (user messages)
+                        text.to_string()
+                    } else {
+                        String::new()
+                    };
 
                     if !content.is_empty() {
                         all_messages.push((role.to_string(), content));
@@ -572,10 +808,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
             current_task.clone()
         };
 
-        let task_str = format!(
-            "CURRENT USER TASK: {}\n\nRECENT CONVERSATION:\n",
-            task_truncated
-        );
+        let task_str = format!("CURRENT USER TASK: {}\n\nRECENT CONVERSATION:\n", task_truncated);
         result.push_str(&task_str);
         char_count += task_str.len();
     }
@@ -716,17 +949,17 @@ fn output_error_response(error: &anyhow::Error) {
     // Build and log error chain
     let error_chain = build_error_chain(&**error);
 
-    eprintln!("PreToolUse validation error:");
-    eprintln!("  Debug: {:?}", error);
-    eprintln!("  Display: {}", error);
-    eprintln!("  Chain depth: {}", error_chain.len());
+    tracing::error!("PreToolUse validation error");
+    tracing::debug!(?error, "Detailed debug error");
+    tracing::error!(%error, "Display error");
+    tracing::error!(depth = error_chain.len(), "Error chain depth");
     for (i, err) in error_chain.iter().enumerate() {
-        eprintln!("  Level {}: {}", i, err);
+        tracing::error!(level = i, %err, "Error chain element");
     }
 
     // Format comprehensive error message
     let error_message = format_error_message(&error_chain);
-    eprintln!("Final error message: {}", error_message);
+    tracing::error!(message=%error_message, "Final error message");
 
     // Create output structure
     let output = PreToolUseOutput {
@@ -744,7 +977,7 @@ fn output_error_response(error: &anyhow::Error) {
         }
         Err(ser_err) => {
             // Fallback with manual JSON construction
-            eprintln!("Serialization failed: {}", ser_err);
+            tracing::error!(error=%ser_err, "Serialization failed for PreToolUse output");
             let escaped = escape_json_string(&error_message);
             println!(
                 r#"{{"hook_specific_output":{{"hook_event_name":"PreToolUse","permission_decision":"deny","permission_decision_reason":"{}"}}}}"#,
@@ -757,11 +990,20 @@ fn output_error_response(error: &anyhow::Error) {
 /// Main PreToolUse hook execution
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Defensive: log any unexpected panic as a structured error
+    std::panic::set_hook(Box::new(|info| {
+        rust_validation_hooks::telemetry::init();
+        tracing::error!(panic=%info, "panic in pretooluse");
+    }));
+    // Initialize structured logging (stderr). Safe to call multiple times.
+    rust_validation_hooks::telemetry::init();
     // Optional offline AST-only mode (no network): decide allow/deny from local AST/security heuristics
     if std::env::var("PRETOOL_AST_ONLY").is_ok() {
         // Read input from stdin
         let mut input = String::new();
-        io::stdin().read_to_string(&mut input).context("Failed to read stdin")?;
+        io::stdin()
+            .read_to_string(&mut input)
+            .context("Failed to read stdin")?;
         let hook_input: HookInput = serde_json::from_str(&input).context("Failed to parse hook input")?;
 
         // Extract file path and content to analyze
@@ -789,18 +1031,32 @@ async fn main() -> Result<()> {
                 if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
                     let mut buf = String::new();
                     for e in edits.iter().take(1000) {
-                        if let Some(ns) = e.get("new_string").and_then(|v| v.as_str()) { buf.push_str(ns); buf.push('\n'); }
+                        if let Some(ns) = e.get("new_string").and_then(|v| v.as_str()) {
+                            buf.push_str(ns);
+                            buf.push('\n');
+                        }
                     }
                     buf
-                } else { std::fs::read_to_string(&file_path).unwrap_or_default() }
+                } else {
+                    std::fs::read_to_string(&file_path).unwrap_or_default()
+                }
             }
             _ => String::new(),
         };
 
         // Default to allow if no code/language
         if code.trim().is_empty() || language.is_none() {
-            let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "allow".to_string(), permission_decision_reason: None } };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            let output = PreToolUseOutput {
+                hook_specific_output: PreToolUseHookOutput {
+                    hook_event_name: "PreToolUse".to_string(),
+                    permission_decision: "allow".to_string(),
+                    permission_decision_reason: None,
+                },
+            };
+            println!(
+                "{}",
+                serde_json::to_string(&output).context("Failed to serialize output")?
+            );
             return Ok(());
         }
 
@@ -817,21 +1073,48 @@ async fn main() -> Result<()> {
                 if normalize_code_for_signal(&o) == normalize_code_for_signal(&n) {
                     // If dangerous patterns present, do not allow silently
                     let low = n.to_ascii_lowercase();
-                    let has_creds = low.contains("password") || low.contains("secret") || low.contains("api_key") || low.contains("token");
-                    let has_sql = (low.contains("select") && low.contains("where")) || (low.contains("insert") && low.contains("values")) || (low.contains("update") && low.contains("set")) || (low.contains("delete") && low.contains("from"));
+                    let has_creds = low.contains("password")
+                        || low.contains("secret")
+                        || low.contains("api_key")
+                        || low.contains("token");
+                    let has_sql = (low.contains("select") && low.contains("where"))
+                        || (low.contains("insert") && low.contains("values"))
+                        || (low.contains("update") && low.contains("set"))
+                        || (low.contains("delete") && low.contains("from"));
                     if !(has_creds || has_sql) {
-                        let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "allow".to_string(), permission_decision_reason: None } };
-                        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                        let output = PreToolUseOutput {
+                            hook_specific_output: PreToolUseHookOutput {
+                                hook_event_name: "PreToolUse".to_string(),
+                                permission_decision: "allow".to_string(),
+                                permission_decision_reason: None,
+                            },
+                        };
+                        println!(
+                            "{}",
+                            serde_json::to_string(&output).context("Failed to serialize output")?
+                        );
                         return Ok(());
                     }
                 }
             }
         }
 
-        if heur.has_todo_or_placeholder || heur.has_empty_catch_or_except || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal) {
+        if heur.has_todo_or_placeholder
+            || heur.has_empty_catch_or_except
+            || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
+        {
             let reason = format!("Anti-cheating: {}", heur.summary);
-            let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)) } };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            let output = PreToolUseOutput {
+                hook_specific_output: PreToolUseHookOutput {
+                    hook_event_name: "PreToolUse".to_string(),
+                    permission_decision: "deny".to_string(),
+                    permission_decision_reason: Some(format_quality_message(&reason)),
+                },
+            };
+            println!(
+                "{}",
+                serde_json::to_string(&output).context("Failed to serialize output")?
+            );
             return Ok(());
         }
 
@@ -841,8 +1124,17 @@ async fn main() -> Result<()> {
             if let (Some(o), Some(n)) = (old_opt, new_opt) {
                 if normalize_code_for_signal(&o) == normalize_code_for_signal(&n) {
                     let reason = "No-op change (whitespace/comments only)";
-                    let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(reason)) } };
-                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    let output = PreToolUseOutput {
+                        hook_specific_output: PreToolUseHookOutput {
+                            hook_event_name: "PreToolUse".to_string(),
+                            permission_decision: "deny".to_string(),
+                            permission_decision_reason: Some(format_quality_message(reason)),
+                        },
+                    };
+                    println!(
+                        "{}",
+                        serde_json::to_string(&output).context("Failed to serialize output")?
+                    );
                     return Ok(());
                 }
             }
@@ -852,12 +1144,24 @@ async fn main() -> Result<()> {
         if hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit" {
             let (path, old_opt, new_opt) = extract_old_new_contents(&hook_input);
             if let (Some(old), Some(new)) = (old_opt, new_opt) {
-                let lang = path.split('.').next_back().and_then(SupportedLanguage::from_extension);
+                let lang = path
+                    .split('.')
+                    .next_back()
+                    .and_then(SupportedLanguage::from_extension);
                 let reasons = contract_weakening_reasons(lang, &old, &new);
                 if !reasons.is_empty() {
                     let reason = format!("API contract weakening detected:\n{}", reasons.join("\n"));
-                    let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)) } };
-                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    let output = PreToolUseOutput {
+                        hook_specific_output: PreToolUseHookOutput {
+                            hook_event_name: "PreToolUse".to_string(),
+                            permission_decision: "deny".to_string(),
+                            permission_decision_reason: Some(format_quality_message(&reason)),
+                        },
+                    };
+                    println!(
+                        "{}",
+                        serde_json::to_string(&output).context("Failed to serialize output")?
+                    );
                     return Ok(());
                 }
             }
@@ -865,8 +1169,37 @@ async fn main() -> Result<()> {
 
         // Analyze with AST quality scorer
         let scorer = analysis::ast::quality_scorer::AstQualityScorer::new();
-        let score = scorer.analyze(&code, language.unwrap())
-            .unwrap_or_else(|_| analysis::ast::quality_scorer::QualityScore { total_score: 1000, functionality_score: 300, reliability_score: 200, maintainability_score: 200, performance_score: 150, security_score: 100, standards_score: 50, concrete_issues: vec![] });
+        // Avoid unwrap: re-check language presence defensively
+        let language = match language {
+            Some(l) => l,
+            None => {
+                let output = PreToolUseOutput {
+                    hook_specific_output: PreToolUseHookOutput {
+                        hook_event_name: "PreToolUse".to_string(),
+                        permission_decision: "allow".to_string(),
+                        permission_decision_reason: None,
+                    },
+                };
+                println!(
+                    "{}",
+                    serde_json::to_string(&output).context("Failed to serialize output")?
+                );
+                return Ok(());
+            }
+        };
+        let score =
+            scorer
+                .analyze(&code, language)
+                .unwrap_or_else(|_| analysis::ast::quality_scorer::QualityScore {
+                    total_score: 1000,
+                    functionality_score: 300,
+                    reliability_score: 200,
+                    maintainability_score: 200,
+                    performance_score: 150,
+                    security_score: 100,
+                    standards_score: 50,
+                    concrete_issues: vec![],
+                });
 
         // Load runtime config (sensitivity, ignore globs, environment)
         let cfg = config::load_config();
@@ -876,10 +1209,16 @@ async fn main() -> Result<()> {
         let mut deny_reasons: Vec<String> = Vec::new();
         for i in &score.concrete_issues {
             // Skip ignored files
-            if config::should_ignore_path(&cfg, &file_path) { continue; }
+            if config::should_ignore_path(&cfg, &file_path) {
+                continue;
+            }
 
             // Determine effective severity threshold by sensitivity
-            let min_sev = match cfg.sensitivity { config::Sensitivity::Low => IssueSeverity::Critical, config::Sensitivity::Medium => IssueSeverity::Major, config::Sensitivity::High => IssueSeverity::Minor };
+            let min_sev = match cfg.sensitivity {
+                config::Sensitivity::Low => IssueSeverity::Critical,
+                config::Sensitivity::Medium => IssueSeverity::Major,
+                config::Sensitivity::High => IssueSeverity::Minor,
+            };
 
             // In test context, relax creds if allowlisted variables present in code
             let is_test_ctx = config::is_test_context(&cfg, &file_path);
@@ -887,11 +1226,17 @@ async fn main() -> Result<()> {
 
             // Decide if issue should trigger deny
             let mut triggers = false;
-            if i.severity as u8 <= min_sev as u8 { // Severity ordering via discriminant: Critical(0) < Major(1) < Minor(2)
+            if i.severity as u8 <= min_sev as u8 {
+                // Severity ordering via discriminant: Critical(0) < Major(1) < Minor(2)
                 triggers = true;
             }
             // Always treat certain categories as critical triggers regardless of sensitivity
-            if matches!(i.category, IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal) { triggers = true; }
+            if matches!(
+                i.category,
+                IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal
+            ) {
+                triggers = true;
+            }
 
             // Relax hardcoded creds in test context with allowlisted vars
             if is_test_ctx && allowlisted && matches!(i.category, IssueCategory::HardcodedCredentials) {
@@ -904,13 +1249,25 @@ async fn main() -> Result<()> {
         }
 
         let (permission_decision, permission_decision_reason) = if !deny_reasons.is_empty() {
-            ("deny".to_string(), Some(format_quality_message(&deny_reasons.join("\n"))))
+            (
+                "deny".to_string(),
+                Some(format_quality_message(&deny_reasons.join("\n"))),
+            )
         } else {
             ("allow".to_string(), None)
         };
 
-        let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision, permission_decision_reason } };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        let output = PreToolUseOutput {
+            hook_specific_output: PreToolUseHookOutput {
+                hook_event_name: "PreToolUse".to_string(),
+                permission_decision,
+                permission_decision_reason,
+            },
+        };
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
         return Ok(());
     }
 
@@ -924,8 +1281,7 @@ async fn main() -> Result<()> {
         .context("Failed to read stdin")?;
 
     // Parse hook input
-    let hook_input: HookInput =
-        serde_json::from_str(&input).context("Failed to parse hook input")?;
+    let hook_input: HookInput = serde_json::from_str(&input).context("Failed to parse hook input")?;
 
     // Debug logging to file to see what context we receive
     let log_file_path = std::env::temp_dir().join("pretooluse_debug.log");
@@ -939,12 +1295,7 @@ async fn main() -> Result<()> {
         writeln!(log_file, "\n=== PreToolUse Hook Debug [{}] ===", timestamp).ok();
         writeln!(log_file, "Tool name: {}", hook_input.tool_name).ok();
         writeln!(log_file, "Session ID: {:?}", hook_input.session_id).ok();
-        writeln!(
-            log_file,
-            "Transcript path: {:?}",
-            hook_input.transcript_path
-        )
-        .ok();
+        writeln!(log_file, "Transcript path: {:?}", hook_input.transcript_path).ok();
         writeln!(log_file, "CWD: {:?}", hook_input.cwd).ok();
         writeln!(log_file, "Hook event: {:?}", hook_input.hook_event_name).ok();
         writeln!(
@@ -964,15 +1315,11 @@ async fn main() -> Result<()> {
             .ok();
             match read_transcript_summary(transcript_path, 15, 1500) {
                 Ok(summary) => {
-                    writeln!(
-                        log_file,
-                        "Transcript content (last 15 msgs, max 1500 chars):"
-                    )
-                    .ok();
+                    writeln!(log_file, "Transcript content (last 15 msgs, max 1500 chars):").ok();
                     writeln!(log_file, "{}", summary).ok();
                 }
                 Err(e) => {
-                    writeln!(log_file, "Could not read transcript: {}", e).ok();
+                    let _ = writeln!(log_file, "Could not read transcript: {}", e);
                 }
             }
         }
@@ -980,7 +1327,7 @@ async fn main() -> Result<()> {
     }
 
     // Also print to stderr for visibility
-    eprintln!("PreToolUse hook: Logged to {:?}", log_file_path);
+    tracing::info!(path=?log_file_path, "PreToolUse hook: decision logged");
 
     // Extract content and file path
     let content = extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);
@@ -1013,16 +1360,15 @@ async fn main() -> Result<()> {
                     // Note: Claude Code hooks only support "allow" and "deny" decisions
                     // "ask" must be converted to "deny" with an informative message
                     if validation.decision == "ask" {
-                        eprintln!("Info: 'ask' decision converted to 'deny' (Claude Code only supports allow/deny)");
+                        tracing::info!(
+                            "'ask' decision converted to 'deny' (Claude Code only supports allow/deny)"
+                        );
                     }
                     let formatted_reason = format_quality_message(&validation.reason);
                     ("deny".to_string(), Some(formatted_reason))
                 }
                 unknown => {
-                    eprintln!(
-                        "Warning: Unknown validation decision '{}', defaulting to deny for safety",
-                        unknown
-                    );
+                    tracing::warn!(decision=%unknown, "Unknown validation decision; defaulting to deny for safety");
                     let formatted_reason =
                         format_quality_message(&format!("Unknown decision type: {}", unknown));
                     ("deny".to_string(), Some(formatted_reason))
@@ -1059,16 +1405,8 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
     match hook_input.tool_name.as_str() {
         "Edit" => {
             // Extract old_string and new_string from tool_input
-            if let Some(old_string) = hook_input
-                .tool_input
-                .get("old_string")
-                .and_then(|v| v.as_str())
-            {
-                if let Some(new_string) = hook_input
-                    .tool_input
-                    .get("new_string")
-                    .and_then(|v| v.as_str())
-                {
+            if let Some(old_string) = hook_input.tool_input.get("old_string").and_then(|v| v.as_str()) {
+                if let Some(new_string) = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()) {
                     // Try to read the current file content for context
                     let file_content = std::fs::read_to_string(&file_path).ok();
 
@@ -1105,11 +1443,7 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
         }
         "Write" => {
             // For Write operations, show as new file creation
-            if let Some(content) = hook_input
-                .tool_input
-                .get("content")
-                .and_then(|v| v.as_str())
-            {
+            if let Some(content) = hook_input.tool_input.get("content").and_then(|v| v.as_str()) {
                 // Check if file exists
                 let old_content = std::fs::read_to_string(&file_path).ok();
 
@@ -1123,8 +1457,7 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
         }
         _ => {
             // For other operations, just show the content if available
-            let content =
-                extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);
+            let content = extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);
             if !content.is_empty() {
                 diff = format!("Content:\n{}", content);
             }
@@ -1141,8 +1474,7 @@ async fn perform_validation(
     hook_input: &HookInput,
 ) -> Result<SecurityValidation> {
     // Load security prompt and anti-patterns
-    let mut prompt =
-        load_prompt("edit_validation.txt").context("Failed to load edit validation prompt")?;
+    let mut prompt = load_prompt("edit_validation.txt").context("Failed to load edit validation prompt")?;
 
     // Load anti-patterns for comprehensive validation
     let anti_patterns = load_prompt("anti_patterns.txt").unwrap_or_else(|_| String::new());
@@ -1165,10 +1497,7 @@ async fn perform_validation(
     // Format the code changes as diff for better AI understanding
     let diff_context = format_code_as_diff(hook_input);
     if !diff_context.is_empty() {
-        prompt = format!(
-            "{}\n\nCODE CHANGES (diff format):\n{}",
-            prompt, diff_context
-        );
+        prompt = format!("{}\n\nCODE CHANGES (diff format):\n{}", prompt, diff_context);
     }
 
     // Add heuristic assessment to guide the validator
@@ -1182,7 +1511,7 @@ async fn perform_validation(
                 prompt = format!("{}\n\nCONTEXT - Recent chat history:\n{}", prompt, summary);
             }
             Err(e) => {
-                eprintln!("Could not read transcript: {}", e);
+                tracing::warn!(error=%e, "Could not read transcript");
             }
         }
     }
@@ -1233,15 +1562,10 @@ async fn perform_validation(
             );
             prompt = format!("{}{}", prompt, metrics);
 
-            eprintln!(
-                "PreToolUse: Added project structure context ({} files, {} dirs, ~{} LOC)",
-                structure.total_files,
-                structure.directories.len(),
-                total_loc
-            );
+            tracing::info!(files=%structure.total_files, dirs=%structure.directories.len(), est_loc=%total_loc, "Added project structure context");
         }
         Err(e) => {
-            eprintln!("PreToolUse: Could not scan project structure: {}", e);
+            tracing::warn!(error=%e, "Could not scan project structure");
         }
     }
 
@@ -1258,8 +1582,7 @@ async fn perform_validation(
             prompt = format!("{}{}", prompt, deps_summary);
 
             // Add details by package manager
-            let mut deps_by_manager: std::collections::HashMap<_, Vec<_>> =
-                std::collections::HashMap::new();
+            let mut deps_by_manager: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
             for dep in &dependencies.dependencies {
                 deps_by_manager
                     .entry(dep.package_manager.clone())
@@ -1272,13 +1595,10 @@ async fn perform_validation(
                 prompt = format!("{}{}", prompt, manager_summary);
             }
 
-            eprintln!(
-                "PreToolUse: Added dependencies context ({} total, {} outdated)",
-                dependencies.total_count, dependencies.outdated_count
-            );
+            tracing::info!(total=%dependencies.total_count, outdated=%dependencies.outdated_count, "Added dependencies context");
         }
         Err(e) => {
-            eprintln!("PreToolUse: Could not analyze dependencies: {}", e);
+            tracing::warn!(error=%e, "Could not analyze dependencies");
         }
     }
 
@@ -1291,10 +1611,7 @@ async fn perform_validation(
             .unwrap_or("");
 
         if let Some(language) = SupportedLanguage::from_extension(extension) {
-            eprintln!(
-                "PreToolUse: Performing AST analysis for {} file",
-                language
-            );
+            tracing::info!(%language, "Performing AST analysis");
 
             match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {
                 Ok(complexity_metrics) => {
@@ -1308,14 +1625,10 @@ async fn perform_validation(
                     );
                     prompt = format!("{}{}", prompt, ast_summary);
 
-                    eprintln!(
-                        "PreToolUse: AST analysis complete (cyclomatic: {}, cognitive: {})",
-                        complexity_metrics.cyclomatic_complexity,
-                        complexity_metrics.cognitive_complexity
-                    );
+                    tracing::info!(cyclomatic=%complexity_metrics.cyclomatic_complexity, cognitive=%complexity_metrics.cognitive_complexity, "AST analysis complete");
                 }
                 Err(e) => {
-                    eprintln!("PreToolUse: AST analysis failed: {}", e);
+                    tracing::warn!(error=%e, "AST analysis failed");
                 }
             }
         }
@@ -1328,10 +1641,16 @@ async fn perform_validation(
     if !file_path.is_empty() && (hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit") {
         let (path, old_opt, new_opt) = extract_old_new_contents(hook_input);
         if let (Some(old), Some(new)) = (old_opt, new_opt) {
-            let lang = path.split('.').next_back().and_then(SupportedLanguage::from_extension);
+            let lang = path
+                .split('.')
+                .next_back()
+                .and_then(SupportedLanguage::from_extension);
             let reasons = contract_weakening_reasons(lang, &old, &new);
             if !reasons.is_empty() {
-                let hs = format!("\n\nHEURISTIC SUMMARY:\nAPI contract weakening suspected:\n- {}\n", reasons.join("\n- "));
+                let hs = format!(
+                    "\n\nHEURISTIC SUMMARY:\nAPI contract weakening suspected:\n- {}\n",
+                    reasons.join("\n- ")
+                );
                 prompt.push_str(&hs);
             }
         }
@@ -1339,7 +1658,9 @@ async fn perform_validation(
 
     // Early gate: contract weakening under high sensitivity ⇒ deny
     if let Some(file_path) = hook_input.tool_input.get("file_path").and_then(|v| v.as_str()) {
-        let ext = std::path::Path::new(file_path).extension().and_then(|e| e.to_str());
+        let ext = std::path::Path::new(file_path)
+            .extension()
+            .and_then(|e| e.to_str());
         let lang = ext.and_then(SupportedLanguage::from_extension);
         // Load policy config (sensitivity)
         let policy_cfg = rust_validation_hooks::config::load_config();
@@ -1350,21 +1671,45 @@ async fn perform_validation(
                 if !reasons.is_empty() {
                     let code_new = if !content.is_empty() { content } else { &new };
                     let low = code_new.to_ascii_lowercase();
-                    let has_creds = low.contains("password") || low.contains("secret") || low.contains("api_key") || low.contains("token");
-                    let has_sql = (low.contains("select") && low.contains("where")) || (low.contains("insert") && low.contains("values")) || (low.contains("update") && low.contains("set")) || (low.contains("delete") && low.contains("from"));
-                    let has_cmd = low.contains("child_process.exec") || low.contains("subprocess.") || low.contains("os.system(");
+                    let has_creds = low.contains("password")
+                        || low.contains("secret")
+                        || low.contains("api_key")
+                        || low.contains("token");
+                    let has_sql = (low.contains("select") && low.contains("where"))
+                        || (low.contains("insert") && low.contains("values"))
+                        || (low.contains("update") && low.contains("set"))
+                        || (low.contains("delete") && low.contains("from"));
+                    let has_cmd = low.contains("child_process.exec")
+                        || low.contains("subprocess.")
+                        || low.contains("os.system(");
                     let sec_risk = has_creds || has_sql || has_cmd;
                     use rust_validation_hooks::config::Sensitivity;
                     let call_issues = find_contract_callsite_issues(lang, &old, code_new);
                     let trigger = matches!(policy_cfg.sensitivity, Sensitivity::High)
-                        || (matches!(policy_cfg.sensitivity, Sensitivity::Medium) && (sec_risk || !call_issues.is_empty()));
+                        || (matches!(policy_cfg.sensitivity, Sensitivity::Medium)
+                            && (sec_risk || !call_issues.is_empty()));
                     if trigger {
                         let mut msg = String::new();
-                        if sec_risk { msg.push_str("Security-sensitive change combined with API weakening. "); }
+                        if sec_risk {
+                            msg.push_str("Security-sensitive change combined with API weakening. ");
+                        }
                         msg.push_str("Please preserve API contract (do not remove/rename parameters) or provide a migration strategy.\n");
-                        msg.push_str("Detected issues:\n- "); msg.push_str(&reasons.join("\n- "));
-                        if !call_issues.is_empty() { msg.push_str("\n- "); msg.push_str(&call_issues.join("\n- ")); }
-                        return Ok(SecurityValidation{ decision: "deny".to_string(), reason: msg, security_concerns: Some(vec!["api_contract".to_string()]), risk_level: if sec_risk { "high".to_string() } else { "medium".to_string() }, });
+                        msg.push_str("Detected issues:\n- ");
+                        msg.push_str(&reasons.join("\n- "));
+                        if !call_issues.is_empty() {
+                            msg.push_str("\n- ");
+                            msg.push_str(&call_issues.join("\n- "));
+                        }
+                        return Ok(SecurityValidation {
+                            decision: "deny".to_string(),
+                            reason: msg,
+                            security_concerns: Some(vec!["api_contract".to_string()]),
+                            risk_level: if sec_risk {
+                                "high".to_string()
+                            } else {
+                                "medium".to_string()
+                            },
+                        });
                     }
                 }
             }

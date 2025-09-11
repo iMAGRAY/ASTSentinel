@@ -25,8 +25,14 @@ fn e2e_posttooluse_golden_sections_order_dry_run() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -38,8 +44,16 @@ fn e2e_posttooluse_golden_sections_order_dry_run() {
     let idx_contract = ctx.find("=== API CONTRACT ===");
     let idx_next = ctx.find("=== NEXT STEPS ===").unwrap();
     if let Some(ic) = idx_contract {
-        assert!(idx_change < idx_risk && idx_risk < idx_health && idx_health < ic && ic < idx_next, "order mismatch: {}", ctx);
+        assert!(
+            idx_change < idx_risk && idx_risk < idx_health && idx_health < ic && ic < idx_next,
+            "order mismatch: {}",
+            ctx
+        );
     } else {
-        assert!(idx_change < idx_risk && idx_risk < idx_health && idx_health < idx_next, "order mismatch (no contract): {}", ctx);
+        assert!(
+            idx_change < idx_risk && idx_risk < idx_health && idx_health < idx_next,
+            "order mismatch (no contract): {}",
+            ctx
+        );
     }
 }

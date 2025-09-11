@@ -37,10 +37,7 @@ fn test_compact_format() {
 
             // Verify format is compact - test with larger size to include STATS
             let formatted = format_project_structure_for_ai(&structure, 2000);
-            assert!(
-                formatted.contains("PROJECT:"),
-                "Should contain PROJECT: section"
-            );
+            assert!(formatted.contains("PROJECT:"), "Should contain PROJECT: section");
             assert!(
                 formatted.contains("STATS:"),
                 "Should contain STATS: section in full format"
@@ -60,10 +57,7 @@ fn test_compact_format() {
                 small_formatted.contains("PROJECT:"),
                 "Small format should have PROJECT:"
             );
-            assert!(
-                small_formatted.len() <= 500,
-                "Should be truncated to max size"
-            );
+            assert!(small_formatted.len() <= 500, "Should be truncated to max size");
 
             println!("\nTest passed! Format is ultra-compact.");
         }

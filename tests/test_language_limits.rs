@@ -13,4 +13,3 @@ fn analyze_with_tree_sitter_huge_source_errors_fast() {
     let res = MultiLanguageAnalyzer::analyze_with_tree_sitter(&huge, SupportedLanguage::JavaScript);
     assert!(res.is_err(), "Huge input should error early");
 }
-

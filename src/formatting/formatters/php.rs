@@ -66,10 +66,7 @@ impl CodeFormatter for PhpFormatter {
         let args = self.get_php_cs_fixer_args();
 
         // Execute php-cs-fixer with stdin input
-        match self
-            .executor
-            .execute_formatter("php-cs-fixer", &args, Some(code))
-        {
+        match self.executor.execute_formatter("php-cs-fixer", &args, Some(code)) {
             Ok(formatted_code) => {
                 let result = FormatResult::new(code.to_string(), formatted_code);
                 Ok(result)

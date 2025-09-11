@@ -19,20 +19,29 @@ fn unit_duplicate_detector_finds_duplicates_and_conflicts() {
     let groups = det.find_duplicates();
     assert!(!groups.is_empty());
 
-    let has_exact = groups.iter().any(|g| g.conflict_type == ConflictType::ExactDuplicate);
-    let has_version = groups.iter().any(|g| g.conflict_type == ConflictType::VersionConflict);
+    let has_exact = groups
+        .iter()
+        .any(|g| g.conflict_type == ConflictType::ExactDuplicate);
+    let has_version = groups
+        .iter()
+        .any(|g| g.conflict_type == ConflictType::VersionConflict);
     assert!(has_exact, "expected an ExactDuplicate group: {:?}", groups);
     assert!(has_version, "expected a VersionConflict group: {:?}", groups);
 
     // Ordering: ExactDuplicate should come first by priority
     let first_ty = &groups[0].conflict_type;
-    assert_eq!(first_ty, &ConflictType::ExactDuplicate, "first group is not ExactDuplicate: {:?}", groups[0]);
+    assert_eq!(
+        first_ty,
+        &ConflictType::ExactDuplicate,
+        "first group is not ExactDuplicate: {:?}",
+        groups[0]
+    );
 
     // Format report sanity
     let report = det.format_report(&groups);
     assert!(report.contains("КРИТИЧНО"));
     assert!(report.contains("Сводка по типам"));
-    
+
     // Per-directory summary present
     assert!(report.contains("Топ директорий"));
     // Grand totals present

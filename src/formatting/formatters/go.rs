@@ -63,20 +63,16 @@ impl CodeFormatter for GoFormatter {
         // Check if any Go formatter is available - graceful degradation
         if !self.is_available() {
             let mut result = FormatResult::unchanged(code.to_string());
-            result.messages.push(
-                "Go formatters (goimports/gofmt) not available - skipping Go formatting"
-                    .to_string(),
-            );
+            result
+                .messages
+                .push("Go formatters (goimports/gofmt) not available - skipping Go formatting".to_string());
             return Ok(result);
         }
 
         // Try goimports first (preferred), then fallback to gofmt
         if self.executor.command_exists("goimports") {
             let args = self.get_goimports_args();
-            match self
-                .executor
-                .execute_formatter("goimports", &args, Some(code))
-            {
+            match self.executor.execute_formatter("goimports", &args, Some(code)) {
                 Ok(formatted_code) => {
                     let result = FormatResult::new(code.to_string(), formatted_code);
                     return Ok(result);

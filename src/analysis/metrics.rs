@@ -40,9 +40,10 @@ pub fn calculate_js_complexity(content: &str) -> ComplexityMetrics {
             ..Default::default()
         };
     }
-    
+
     // Size limit check
-    if content.len() > 1_000_000 { // 1MB limit for JS analysis
+    if content.len() > 1_000_000 {
+        // 1MB limit for JS analysis
         return ComplexityMetrics {
             line_count: content.lines().count(),
             cyclomatic_complexity: 1,
@@ -50,13 +51,13 @@ pub fn calculate_js_complexity(content: &str) -> ComplexityMetrics {
             ..Default::default()
         };
     }
-    
+
     // Attempt Tree-sitter analysis first
     match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, SupportedLanguage::JavaScript) {
         Ok(metrics) => metrics,
         Err(e) => {
             // Log the error but continue with fallback
-            eprintln!("Tree-sitter JavaScript analysis failed: {}, using fallback", e);
+            tracing::debug!(error=%e, "Tree-sitter JavaScript analysis failed; using fallback");
             calculate_js_complexity_fallback(content)
         }
     }
@@ -66,7 +67,8 @@ pub fn calculate_js_complexity(content: &str) -> ComplexityMetrics {
 /// More sophisticated than the original implementation with DoS protection
 fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
     // Additional size protection for fallback analysis
-    if content.len() > 1_000_000 { // 1MB limit for fallback
+    if content.len() > 1_000_000 {
+        // 1MB limit for fallback
         return ComplexityMetrics {
             line_count: content.lines().count(),
             cyclomatic_complexity: 1,
@@ -74,42 +76,42 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
             ..Default::default()
         };
     }
-    
+
     // Initialize with known fields instead of assigning after Default
     let mut metrics = ComplexityMetrics {
         line_count: content.lines().count(),
         ..Default::default()
     };
-    
+
     let mut brace_depth = 0u32;
     let mut max_nesting = 0u32;
     let mut in_multiline_comment = false;
     let mut in_string = false;
     let mut string_char = '\0';
-    
+
     // Process content line by line for accurate analysis
     for line in content.lines() {
         let trimmed = line.trim();
-        
+
         // Skip empty lines and comments
         if trimmed.is_empty() || trimmed.starts_with("//") {
             continue;
         }
-        
+
         // Enhanced string and comment state tracking
         let mut chars = line.chars().peekable();
         let mut escaped = false;
-        
+
         while let Some(ch) = chars.next() {
             if escaped {
                 escaped = false;
                 continue;
             }
-            
+
             match ch {
                 '\\' if in_string => {
                     escaped = true;
-                },
+                }
                 '/' if !in_string && !in_multiline_comment => {
                     if chars.peek() == Some(&'*') {
                         in_multiline_comment = true;
@@ -117,13 +119,13 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
                     } else if chars.peek() == Some(&'/') {
                         break; // Rest of line is single-line comment
                     }
-                },
+                }
                 '*' if in_multiline_comment && !in_string => {
                     if chars.peek() == Some(&'/') {
                         in_multiline_comment = false;
                         chars.next();
                     }
-                },
+                }
                 '"' | '\'' if !in_multiline_comment => {
                     if !in_string {
                         in_string = true;
@@ -132,26 +134,26 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
                         in_string = false;
                         string_char = '\0';
                     }
-                },
+                }
                 '{' if !in_multiline_comment && !in_string => {
                     brace_depth += 1;
                     max_nesting = max_nesting.max(brace_depth);
-                },
+                }
                 '}' if !in_multiline_comment && !in_string => {
                     brace_depth = brace_depth.saturating_sub(1);
-                },
+                }
                 _ => {}
             }
         }
-        
+
         // Skip analysis if we're inside a multiline comment
         if in_multiline_comment {
             continue;
         }
-        
+
         // Enhanced pattern matching with word boundaries
         let line_clean = trimmed.to_lowercase();
-        
+
         // Control flow keywords
         if contains_keyword(&line_clean, "if") {
             metrics.cyclomatic_complexity += 1;
@@ -175,29 +177,29 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
             metrics.cyclomatic_complexity += 1;
             metrics.cognitive_complexity += 1;
         }
-        
+
         // Logical operators
         let logical_ops = line_clean.matches("&&").count() + line_clean.matches("||").count();
         metrics.cyclomatic_complexity += logical_ops as u32;
-        
+
         // Function declarations
         if contains_keyword(&line_clean, "function") || line_clean.contains("=>") {
             metrics.function_count += 1;
         }
-        
+
         // Return statements
         if contains_keyword(&line_clean, "return") {
             metrics.return_points += 1;
         }
     }
-    
+
     // Update nesting depth with maximum reached during analysis
     metrics.nesting_depth = max_nesting;
-    
+
     // Ensure minimum complexity
     metrics.cyclomatic_complexity = metrics.cyclomatic_complexity.max(1);
     metrics.cognitive_complexity = metrics.cognitive_complexity.max(1);
-    
+
     metrics
 }
 
@@ -208,7 +210,7 @@ fn contains_keyword(text: &str, keyword: &str) -> bool {
     if text.is_empty() || keyword.is_empty() {
         return false;
     }
-    
+
     if let Some(pos) = text.find(keyword) {
         // Safe boundary checking without unwrap() to prevent panics
         let before = pos == 0
@@ -216,14 +218,11 @@ fn contains_keyword(text: &str, keyword: &str) -> bool {
                 .chars()
                 .nth(pos.saturating_sub(1))
                 .is_none_or(|c| !c.is_alphanumeric());
-        
+
         let after_pos = pos + keyword.len();
-        let after = after_pos >= text.len()
-            || text
-                .chars()
-                .nth(after_pos)
-                .is_none_or(|c| !c.is_alphanumeric());
-        
+        let after =
+            after_pos >= text.len() || text.chars().nth(after_pos).is_none_or(|c| !c.is_alphanumeric());
+
         before && after
     } else {
         false
@@ -401,41 +400,44 @@ function complex(x, y) {
 
         // Validate basic metrics
         assert!(metrics.function_count >= 2, "Should detect at least 2 functions");
-        assert!(metrics.cyclomatic_complexity >= 5, "Complex function should have high cyclomatic complexity");
+        assert!(
+            metrics.cyclomatic_complexity >= 5,
+            "Complex function should have high cyclomatic complexity"
+        );
         assert!(metrics.return_points >= 3, "Should detect multiple return points");
         assert!(metrics.line_count > 10, "Should count lines correctly");
     }
-    
+
     #[test]
     fn test_js_complexity_fallback() {
         // Test fallback with syntactically invalid but parseable JS
         let problematic_js = "function test() { if (condition { return 1; }";
         let metrics = calculate_js_complexity(problematic_js);
-        
+
         println!("Fallback metrics: {:?}", metrics);
         assert!(metrics.function_count >= 1);
         assert!(metrics.cyclomatic_complexity >= 1);
         assert!(metrics.line_count > 0);
     }
-    
+
     #[test]
     fn test_js_empty_input() {
         let metrics = calculate_js_complexity("");
         assert_eq!(metrics.line_count, 0);
         assert_eq!(metrics.function_count, 0);
     }
-    
+
     #[test]
     fn test_js_large_input_protection() {
         // Create a large string to test DoS protection
         let large_js = "x".repeat(2_000_000); // 2MB string
         let metrics = calculate_js_complexity(&large_js);
-        
+
         // Should handle gracefully without crashing
         assert!(metrics.line_count > 0);
         assert_eq!(metrics.cyclomatic_complexity, 1); // Default fallback value
     }
-    
+
     /// Test keyword detection with proper word boundaries
     #[test]
     fn test_contains_keyword_basic() {
@@ -445,7 +447,7 @@ function complex(x, y) {
         assert!(contains_keyword("return value;", "return"));
         assert!(contains_keyword("while (true)", "while"));
         assert!(contains_keyword("for (let i = 0; i < 10; i++)", "for"));
-        
+
         // Negative cases - should not match (partial words)
         assert!(!contains_keyword("ifdef", "if"));
         assert!(!contains_keyword("elsewhere", "else"));
@@ -453,37 +455,37 @@ function complex(x, y) {
         assert!(!contains_keyword("awhile", "while"));
         assert!(!contains_keyword("before", "for"));
     }
-    
+
     /// Test edge cases for keyword detection
     #[test]
     fn test_contains_keyword_edge_cases() {
         // Exact match
         assert!(contains_keyword("if", "if"));
         assert!(contains_keyword("return", "return"));
-        
+
         // Empty inputs
         assert!(!contains_keyword("", "if"));
         assert!(!contains_keyword("test", ""));
         assert!(!contains_keyword("", ""));
-        
+
         // Boundary conditions
         assert!(contains_keyword("if()", "if"));
         assert!(contains_keyword("(if)", "if"));
         assert!(contains_keyword("if;", "if"));
         assert!(contains_keyword(";if;", "if"));
-        
+
         // Case sensitivity
         assert!(!contains_keyword("IF", "if")); // Should be case-sensitive in lowercase comparison
-        
+
         // Multiple occurrences
         assert!(contains_keyword("if (a) { if (b) }", "if"));
-        
+
         // Non-alphanumeric boundaries
         assert!(contains_keyword("if-statement", "if"));
         assert!(contains_keyword("if_statement", "if"));
         assert!(!contains_keyword("iffy", "if"));
     }
-    
+
     /// Test enhanced comment and string handling in fallback analysis
     #[test]
     fn test_js_comment_string_handling() {
@@ -496,28 +498,28 @@ function test() {
         return 1;
     }
 }"#;
-        
+
         let metrics = calculate_js_complexity_fallback(js_with_comments);
-        
+
         // Should only count the actual if statement, not the ones in comments/strings
         assert_eq!(metrics.function_count, 1);
         assert_eq!(metrics.cyclomatic_complexity, 4); // Base + if + string/comment detection in fallback
         assert_eq!(metrics.return_points, 1);
         assert!(metrics.nesting_depth >= 1);
     }
-    
+
     /// Test fallback DoS protection
-    #[test] 
+    #[test]
     fn test_fallback_dos_protection() {
         let large_content = "x".repeat(2_000_000); // 2MB
         let metrics = calculate_js_complexity_fallback(&large_content);
-        
+
         // Should return safe default values
         assert_eq!(metrics.cyclomatic_complexity, 1);
         assert_eq!(metrics.cognitive_complexity, 1);
         assert!(metrics.line_count > 0);
     }
-    
+
     #[test]
     fn test_keyword_detection() {
         assert!(contains_keyword("if (true)", "if"));
@@ -553,34 +555,31 @@ function test() {
         let simple_score = calculate_complexity_score(&simple);
         let complex_score = calculate_complexity_score(&complex);
 
-        println!(
-            "Simple score: {}, Complex score: {}",
-            simple_score, complex_score
-        );
+        println!("Simple score: {}, Complex score: {}", simple_score, complex_score);
 
         assert!(simple_score < 2.0);
         assert!(complex_score >= 1.0); // Complex metrics should yield score of 1.0
         assert!(complex_score <= 10.0);
     }
-    
+
     #[test]
     fn test_rust_invalid_syntax() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("invalid.rs");
-        
+
         fs::write(&file_path, "fn broken { missing_parentheses }").unwrap();
-        
+
         let result = calculate_rust_complexity(&file_path);
         assert!(result.is_err(), "Invalid syntax should cause error");
     }
-    
+
     #[test]
     fn test_rust_empty_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("empty.rs");
-        
+
         fs::write(&file_path, "").unwrap();
-        
+
         let result = calculate_rust_complexity(&file_path);
         // syn::parse_file now succeeds on empty files, returning an empty AST
         assert!(result.is_ok(), "Empty file should parse successfully");
@@ -589,14 +588,14 @@ function test() {
             assert_eq!(metrics.function_count, 0);
         }
     }
-    
+
     #[test]
     fn test_rust_whitespace_only() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("whitespace.rs");
-        
+
         fs::write(&file_path, "   \n\t\n  ").unwrap();
-        
+
         let result = calculate_rust_complexity(&file_path);
         // syn::parse_file now succeeds on whitespace-only files
         assert!(result.is_ok(), "Whitespace-only file should parse successfully");

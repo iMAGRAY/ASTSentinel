@@ -249,13 +249,11 @@ pub fn format_edit_as_unified_diff(
             let context_before = 3;
             let context_after = 3;
             let start_line = change_start_idx.saturating_sub(context_before);
-            let end_line =
-                (change_start_idx + new_lines.len() + context_after).min(content_lines.len());
+            let end_line = (change_start_idx + new_lines.len() + context_after).min(content_lines.len());
 
             // Generate proper unified diff hunk header
             let old_start = start_line + 1;
-            let old_count =
-                (end_line - start_line).saturating_sub(new_lines.len()) + old_lines.len();
+            let old_count = (end_line - start_line).saturating_sub(new_lines.len()) + old_lines.len();
             let new_start = start_line + 1;
             let new_count = end_line - start_line;
 
@@ -577,8 +575,7 @@ pub fn format_full_file_with_changes(
     // Safely truncate large files at line boundaries
     let (original, modified, was_truncated) = match (original_content, modified_content) {
         (Some(o), Some(m))
-            if o.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT
-                || m.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT =>
+            if o.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT || m.len() > MAX_FILE_SIZE_FOR_FULL_CONTEXT =>
         {
             let truncated_o = truncate_at_line_boundary(o, MAX_FILE_SIZE_FOR_FULL_CONTEXT);
             let truncated_m = truncate_at_line_boundary(m, MAX_FILE_SIZE_FOR_FULL_CONTEXT);
@@ -674,10 +671,7 @@ pub fn format_edit_full_context(
 ) -> String {
     let mut result = String::new();
 
-    result.push_str(&format!(
-        "=== Full file with Edit changes: {} ===\n",
-        file_path
-    ));
+    result.push_str(&format!("=== Full file with Edit changes: {} ===\n", file_path));
 
     if let Some(content) = file_content {
         // Apply the edit to get the new content
@@ -747,10 +741,7 @@ pub fn format_multi_edit_diff(
 
         if old_str.is_empty() {
             // Special case for empty old_string
-            result.push_str(&format!(
-                "  ! Edit #{} failed: empty search string\n",
-                i + 1
-            ));
+            result.push_str(&format!("  ! Edit #{} failed: empty search string\n", i + 1));
         } else if let Some(pos) = current_content.find(old_str) {
             // Show the specific change
             let line_num = current_content[..pos].lines().count() + 1;

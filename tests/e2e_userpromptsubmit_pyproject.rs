@@ -32,12 +32,21 @@ pytest = { version = "^7.4.0" }
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn userpromptsubmit");
+        .spawn()
+        .expect("spawn userpromptsubmit");
 
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let txt = String::from_utf8_lossy(&out.stdout);
-    assert!(txt.contains("Dependencies: total 2"), "expected 2 deps (prod+dev); output: {}", txt);
+    assert!(
+        txt.contains("Dependencies: total 2"),
+        "expected 2 deps (prod+dev); output: {}",
+        txt
+    );
 }
-

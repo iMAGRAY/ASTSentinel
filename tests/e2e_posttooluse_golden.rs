@@ -24,8 +24,14 @@ fn e2e_posttooluse_golden_sections_order() {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
-        .spawn().expect("spawn");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+        .spawn()
+        .expect("spawn");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
@@ -35,6 +41,9 @@ fn e2e_posttooluse_golden_sections_order() {
     let idx_change = ctx.find("=== CHANGE SUMMARY ===").unwrap();
     let idx_risk = ctx.find("=== RISK REPORT ===").unwrap();
     let idx_health = ctx.find("=== CODE HEALTH ===").unwrap();
-    assert!(idx_change < idx_risk && idx_risk < idx_health, "order mismatch: {}", ctx);
+    assert!(
+        idx_change < idx_risk && idx_risk < idx_health,
+        "order mismatch: {}",
+        ctx
+    );
 }
-
