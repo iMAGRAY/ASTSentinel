@@ -464,8 +464,10 @@ impl RustAstVisitor {
             }
 
             match stmt {
-                Stmt::Expr(Expr::Return(ExprReturn { .. }), _)
-                | _ if Self::is_panic_like_stmt(stmt) => {
+                Stmt::Expr(Expr::Return(ExprReturn { .. }), _) => {
+                    after_terminator = true;
+                }
+                _ if Self::is_panic_like_stmt(stmt) => {
                     after_terminator = true;
                 }
                 Stmt::Expr(Expr::Break(ExprBreak { .. }), _) if in_loop => {

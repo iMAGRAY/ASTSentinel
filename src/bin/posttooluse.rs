@@ -158,7 +158,12 @@ fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> Q
     }
     if changed.is_empty() { return score.clone(); }
     let mut filtered = score.clone();
-    filtered.concrete_issues = score.concrete_issues.iter().cloned().filter(|i| changed.contains(&i.line)).collect();
+    filtered.concrete_issues = score
+        .concrete_issues
+        .iter()
+        .filter(|i| changed.contains(&i.line))
+        .cloned()
+        .collect();
     filtered
 }
 
@@ -391,7 +396,9 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
             if n.kind() == "identifier" {
                 if let Ok(t) = n.utf8_text(bytes) { out.push(t.to_string()); }
             }
-            for i in 0..n.child_count() { if let Some(ch) = n.child(i) { st.push(ch); } }
+    for i in 0..n.child_count() {
+        if let Some(ch) = n.child(i) { st.push(ch); }
+    }
         }
         let mut seen = std::collections::HashSet::new();
         out.into_iter().filter(|s| seen.insert(s.clone())).collect()
@@ -505,17 +512,32 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                 if k == "function_definition" || k == "async_function_definition" {
                     let mut name = String::new();
                     let mut params_node = None;
-                    for i in 0..n.child_count() { if let Some(ch) = n.child(i) { if name.is_empty() && ch.kind() == "identifier" { if let Ok(t)=ch.utf8_text(bytes){name=t.to_string();} } if ch.kind()=="parameters" { params_node=Some(ch); } } }
+                    for i in 0..n.child_count() {
+                        if let Some(ch) = n.child(i) {
+                            if name.is_empty() && ch.kind() == "identifier" {
+                                if let Ok(t) = ch.utf8_text(bytes) { name = t.to_string(); }
+                            }
+                            if ch.kind() == "parameters" { params_node = Some(ch); }
+                        }
+                    }
                     let params = params_node.map(collect_params_py).unwrap_or_default();
-                    if !name.is_empty() { res.insert(name.clone(), FuncSignature { name, params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
+                    if !name.is_empty() { res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
                 }
             }
             SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => {
                 if k == "function_declaration" {
-                    let mut name = String::new(); let mut params_node=None;
-                    for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ if name.is_empty() && (ch.kind()=="identifier"||ch.kind()=="binding_identifier"){ if let Ok(t)=ch.utf8_text(bytes){name=t.to_string();} } if ch.kind()=="formal_parameters"{params_node=Some(ch);} } }
+                    let mut name = String::new();
+                    let mut params_node = None;
+                    for i in 0..n.child_count(){
+                        if let Some(ch) = n.child(i){
+                            if name.is_empty() && (ch.kind()=="identifier"||ch.kind()=="binding_identifier"){
+                                if let Ok(t)=ch.utf8_text(bytes){ name=t.to_string(); }
+                            }
+                            if ch.kind()=="formal_parameters"{ params_node=Some(ch); }
+                        }
+                    }
                     let params=params_node.map(collect_params_js_ts).unwrap_or_default();
-                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
+                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
                 } else if k == "method_definition" {
                     let mut name=String::new(); let mut params_node=None;
                     for i in 0..n.child_count(){
@@ -528,7 +550,7 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                         }
                     }
                     let params=params_node.map(collect_params_js_ts).unwrap_or_default();
-                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
+                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
                 } else if k == "arrow_function" || k == "function_expression" {
                     let mut cur=n; let mut name=String::new();
                     for _ in 0..6 {
@@ -560,7 +582,7 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                     if params.is_empty() {
                         for i in 0..n.child_count(){ if let Some(ch)=n.child(i){ let ck=ch.kind(); if ck=="identifier"||ck=="binding_identifier"{ if let Ok(t)=ch.utf8_text(bytes){ params.push(t.to_string()); } } } }
                     }
-                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature{name, params, start_byte:n.start_byte(), end_byte:n.end_byte()}); }
+                    if !name.is_empty(){ res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() }); }
                 } else if k == "pair" || k == "property_assignment" {
                     // Object literal method/property with function value: { foo(){} } or { foo: function(){} } or { foo: ()=>{} }
                     if let Some(key) = n.child(0) {
@@ -585,7 +607,7 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                                 }
                                 if let Some(pn) = params_node {
                                     let params=collect_params_js_ts(pn);
-                                    res.insert(kname.to_string(), FuncSignature{ name:kname.to_string(), params, start_byte: n.start_byte(), end_byte: n.end_byte() });
+                                    res.insert(kname.to_string(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() });
                                 }
                             }
                         }
@@ -606,7 +628,7 @@ fn extract_signatures_ast(language: SupportedLanguage, content: &str) -> std::co
                     if let (false, Some(func)) = (name.is_empty(), value_func) {
                         let mut params_node=None; for i in 0..func.child_count(){ if let Some(ch)=func.child(i){ if ch.kind()=="formal_parameters"{ params_node=Some(ch); break; } } }
                         let params=params_node.map(collect_params_js_ts).unwrap_or_default();
-                        res.insert(name.clone(), FuncSignature{ name, params, start_byte: n.start_byte(), end_byte: n.end_byte() });
+                        res.insert(name.clone(), FuncSignature { params, start_byte: n.start_byte(), end_byte: n.end_byte() });
                     }
                 }
             }
@@ -761,11 +783,11 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
     let mut after_ast = extract_signatures_ast(language, if after_code.is_empty() { content } else { &after_code });
     if before_ast.is_empty() && !before_code.is_empty() {
         let b = extract_functions_signatures(language, &before_code);
-        for (k, v) in b { before_ast.insert(k.clone(), FuncSignature { name: k, params: v, start_byte: 0, end_byte: content.len() }); }
+        for (k, v) in b { before_ast.insert(k.clone(), FuncSignature { params: v, start_byte: 0, end_byte: content.len() }); }
     }
     if after_ast.is_empty() {
         let a = extract_functions_signatures(language, if after_code.is_empty() { content } else { &after_code });
-        for (k, v) in a { after_ast.insert(k.clone(), FuncSignature { name: k, params: v, start_byte: 0, end_byte: content.len() }); }
+        for (k, v) in a { after_ast.insert(k.clone(), FuncSignature { params: v, start_byte: 0, end_byte: content.len() }); }
     }
 
     if before_ast.is_empty() && after_ast.is_empty() { return String::new(); }
@@ -1177,10 +1199,10 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
 
     // Do not pre-reject ".."/"~"/"$" substrings blindly — rely on canonicalization and scope checks below.
     // Special-case only unsafe home-expansion prefix on non-Windows.
-    if !cfg!(windows) {
-        if path.starts_with("~/") || path.starts_with("~\\") {
-            anyhow::bail!("Invalid file path: leading ~ home shortcut not allowed");
-        }
+    if !cfg!(windows)
+        && (path.starts_with("~/") || path.starts_with("~\\"))
+    {
+        anyhow::bail!("Invalid file path: leading ~ home shortcut not allowed");
     }
 
     let path_obj = Path::new(path);
@@ -1761,7 +1783,7 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
         let scorer = AstQualityScorer::new();
         let t0 = std::time::Instant::now();
         let res = scorer.analyze(&code, language);
-        if let Ok(_) = &res { crate::analysis::timings::record(&format!("score/{}", language), t0.elapsed().as_millis()); }
+        if res.is_ok() { crate::analysis::timings::record(&format!("score/{}", language), t0.elapsed().as_millis()); }
         res
     });
 
@@ -3527,4 +3549,3 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
-

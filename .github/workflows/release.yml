@@ -1,83 +1,3 @@
-name: release
-
-on:
-  push:
-    tags:
-      - 'v*'
-  workflow_dispatch:
-
-jobs:
-  build:
-    name: Build ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
-      - name: Build (release)
-        run: cargo build --release
-      - name: Package artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          out=artifacts
-          mkdir -p "$out"
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            cp target/release/pretooluse.exe "$out/"
-            cp target/release/posttooluse.exe "$out/"
-            cp target/release/userpromptsubmit.exe "$out/" || true
-            (cd "$out" && sha256sum * > SHA256SUMS.txt)
-            7z a windows-x86_64.zip "$out"/*
-            echo "windows-x86_64.zip" > artifact_name.txt
-          else
-            cp target/release/pretooluse "$out/"
-            cp target/release/posttooluse "$out/"
-            cp target/release/userpromptsubmit "$out/" || true
-            (cd "$out" && sha256sum * > SHA256SUMS.txt)
-            tar czf linux-x86_64.tar.gz -C "$out" .
-            echo "linux-x86_64.tar.gz" > artifact_name.txt
-          fi
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ runner.os }}-artifacts
-          path: |
-            *.zip
-            *.tar.gz
-            artifacts/SHA256SUMS.txt
-
-  release:
-    name: Create Release
-    runs-on: ubuntu-latest
-    needs: build
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Download artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: dist
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          name: ${{ github.ref_name }}
-          draft: false
-          prerelease: ${{ contains(github.ref_name, 'rc') || contains(github.ref_name, 'beta') }}
-          files: |
-            dist/*/*.zip
-            dist/*/*.tar.gz
-            dist/*/artifacts/SHA256SUMS.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 name: Release
 
 on:
@@ -127,8 +47,31 @@ jobs:
           name: ${{ steps.pkg.outputs.artifact }}
           path: ${{ steps.pkg.outputs.artifact }}
 
-  release:
+  update-badge:
     needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: master
+      - name: Update release badge with tag
+        run: |
+          set -euo pipefail
+          TAG="${{ github.ref_name }}"
+          sed -i "s/>latest</>$TAG</" assets/badges/release.svg
+      - name: Commit badge update
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add assets/badges/release.svg
+          git commit -m "docs(badge): update release badge to ${{ github.ref_name }} (@codex)" || echo "no changes"
+          git push
+
+  release:
+    needs: [build, update-badge]
     runs-on: ubuntu-latest
     steps:
       - name: Download build artifacts
@@ -139,6 +82,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          name: AST Sentinel ${{ github.ref_name }}
           files: |
             artifacts/**
           generate_release_notes: true

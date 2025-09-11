@@ -123,7 +123,7 @@ fn find_contract_callsite_issues(language: Option<SupportedLanguage>, old_code: 
             let c = bytes[i] as char;
             match c {
                 '(' | '[' | '{' => { depth += 1; token.clear(); }
-                ')' | ']' | '}' => { if depth>0 { depth -= 1; } }
+                ')' | ']' | '}' => { depth = depth.saturating_sub(1); }
                 ',' => { if depth==0 { count += 1; token.clear(); } }
                 '=' => { if depth==0 { let name = token.trim(); if !name.is_empty() { named.push(name.to_string()); } } }
                 _ => { if depth==0 { token.push(c); } }
@@ -330,11 +330,20 @@ fn detect_todo_placeholder(code: &str) -> bool {
 
 fn detect_empty_catch_except(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
-    if low.contains("catch") && low.contains("{") && low.contains("}") {
-        if low.contains("catch(") && (low.contains("catch(e){}") || low.contains("catch(e){\n}\n")) { return true; }
+    if low.contains("catch") && low.contains("{") && low.contains("}")
+        && low.contains("catch(")
+        && (low.contains("catch(e){}") || low.contains("catch(e){
+}
+"))
+    {
+        return true;
     }
-    if low.contains("except") && low.contains(":") {
-        if low.contains("except:\n    pass") || low.contains("except:\\n    pass") { return true; }
+    if low.contains("except") && low.contains(":")
+        && (low.contains("except:
+    pass") || low.contains("except:
+    pass"))
+    {
+        return true;
     }
     false
 }

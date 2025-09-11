@@ -372,10 +372,10 @@ impl MultiLanguageAnalyzer {
     pub fn analyze_files_concurrent(
         files: &[(String, SupportedLanguage)],
     ) -> Vec<Result<ComplexityMetrics>> {
-        use rayon::prelude::*;
+        // (sequential processing — rayon removed to avoid unused import warnings)
 
         files
-            .par_iter()
+            .iter()
             .map(|(content, lang)| Self::analyze_with_tree_sitter(content, *lang))
             .collect()
     }
@@ -387,7 +387,7 @@ impl MultiLanguageAnalyzer {
         use rayon::prelude::*;
         use std::fs;
 
-        rayon::slice::ParallelSlice::par_iter(file_paths)
+        file_paths.par_iter()
             .map(|path| {
                 let result = (|| -> Result<ComplexityMetrics> {
                     // Detect language from extension
@@ -423,7 +423,7 @@ impl MultiLanguageAnalyzer {
         max_depth: Option<usize>,
         exclude_patterns: &[&str],
     ) -> Result<AnalyzeProjectResult> {
-        use rayon::prelude::*;
+        // removed rayon parallelism for sequential processing
 
         // Collect all relevant files
         let mut files = Vec::new();
@@ -452,15 +452,14 @@ impl MultiLanguageAnalyzer {
             return Ok((Vec::new(), Vec::new()));
         }
 
-        use rayon::prelude::*;
         use std::fs;
+        use rayon::prelude::*;
 
         // Process files in parallel and collect
         let mut results: Vec<(std::path::PathBuf, ComplexityMetrics)> = Vec::new();
         let mut errors: Vec<(std::path::PathBuf, anyhow::Error)> = Vec::new();
 
-        let collected: Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> =
-            rayon::slice::ParallelSlice::par_iter(&files)
+        let collected: Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> = files.par_iter()
             .map(|path| {
                 let r = (|| -> Result<ComplexityMetrics> {
                     let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
@@ -1122,4 +1121,3 @@ mod tests {
         assert_eq!(metrics1.function_count, metrics2.function_count);
     }
 }
-
