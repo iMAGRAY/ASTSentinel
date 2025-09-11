@@ -15,6 +15,13 @@
   <img src="assets/workflow.svg" alt="AST Sentinel — Workflow" width="100%"/>
 </p>
 
+## Status
+
+- CI: see GitHub Actions (build + test matrix)
+  - https://github.com/iMAGRAY/ValidationCodeHook/actions
+- Releases: tagged builds for Windows/Linux
+  - https://github.com/iMAGRAY/ValidationCodeHook/releases
+
 ## Возможности
 
 - <img src="assets/icons/shield.svg" width="18" alt=""> Безопасность и анти‑чит: SQL/командные инъекции, подмена логики (стабы, иллюзии реализации), глушение исключений.
