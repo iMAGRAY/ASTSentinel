@@ -52,7 +52,7 @@ jobs:
 
       - name: Run perf gate (strict)
         run: |
-          python3 scripts/perf_gate.py --strict
+          python3 scripts/perf_gate.py --baseline reports/benchmarks/baseline --strict
 
       - name: Docs pointers
         if: always()

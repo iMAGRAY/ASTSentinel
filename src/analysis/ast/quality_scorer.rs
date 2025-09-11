@@ -85,6 +85,8 @@ pub enum IssueCategory {
     UnusedVariables,      // -5 points
     // Style/Readability (no direct score change unless mapped above)
     LongLine, // Lines exceeding recommended length
+    // Incompleteness (signals unfinished implementation)
+    UnfinishedWork, // TODO/FIXME/TBD/XXX/HACK/WIP markers
 }
 
 /// AST-based quality scorer
@@ -127,6 +129,8 @@ impl AstQualityScorer {
         self.register_rule(Box::new(ResourceLeakRule));
         // Register style/readability rules for multi-pass path
         self.register_rule(Box::new(LongLineRule { max_len: 120 }));
+        // Register unfinished work detector (TODO/FIXME/TBD/XXX/HACK/WIP)
+        self.register_rule(Box::new(TodoFixmeRule));
     }
 
     pub fn register_rule(&mut self, rule: Box<dyn AstRule>) {
@@ -348,6 +352,9 @@ impl AstQualityScorer {
                             score.maintainability_score =
                                 score.maintainability_score.saturating_sub(issue.points_deducted)
                         }
+                        IssueCategory::UnfinishedWork => {
+                            score.maintainability_score = score.maintainability_score.saturating_sub(15)
+                        }
                         IssueCategory::SqlInjection => {
                             score.security_score = score.security_score.saturating_sub(50)
                         }
@@ -386,6 +393,9 @@ impl AstQualityScorer {
                         score.maintainability_score =
                             score.maintainability_score.saturating_sub(issue.points_deducted)
                     }
+                    IssueCategory::UnfinishedWork => {
+                        score.maintainability_score = score.maintainability_score.saturating_sub(15)
+                    }
                     IssueCategory::SqlInjection => {
                         score.security_score = score.security_score.saturating_sub(50)
                     }
@@ -407,6 +417,89 @@ impl AstQualityScorer {
             + score.standards_score;
 
         Ok(score)
+    }
+}
+
+/// Rule: Detect TODO/FIXME/TBD/XXX/HACK/WIP markers indicating unfinished code
+struct TodoFixmeRule;
+
+impl TodoFixmeRule {
+    fn is_comment_node(language: SupportedLanguage, kind: &str) -> bool {
+        if kind.contains("comment") {
+            return true;
+        }
+        match language {
+            SupportedLanguage::Python => kind == "comment",
+            _ => kind.contains("comment"),
+        }
+    }
+}
+
+impl AstRule for TodoFixmeRule {
+    fn check(
+        &self,
+        ast: &tree_sitter::Tree,
+        source: &str,
+        language: SupportedLanguage,
+    ) -> Vec<ConcreteIssue> {
+        let mut issues = Vec::new();
+        let bytes = source.as_bytes();
+        let re = match regex::Regex::new(r"(?i)\b(TODO|FIXME|TBD|XXX|HACK|WIP|UNFINISHED|STUB)\b") {
+            Ok(r) => r,
+            Err(_) => return issues, // defensive: if regex fails to compile in this env, skip rule gracefully
+        };
+
+        // Prefer comment nodes when available
+        let mut saw_comment = false;
+        let mut stack = vec![ast.root_node()];
+        while let Some(n) = stack.pop() {
+            for i in (0..n.child_count()).rev() {
+                if let Some(ch) = n.child(i) {
+                    stack.push(ch);
+                }
+            }
+            if Self::is_comment_node(language, n.kind()) {
+                saw_comment = true;
+                if let Ok(text) = n.utf8_text(bytes) {
+                    if re.is_match(text) {
+                        issues.push(ConcreteIssue {
+                            severity: IssueSeverity::Major,
+                            category: IssueCategory::UnfinishedWork,
+                            message: "Unfinished work marker in comment (TODO/FIXME/TBD/...)".to_string(),
+                            file: String::new(),
+                            line: n.start_position().row + 1,
+                            column: n.start_position().column + 1,
+                            rule_id: "TODO001".to_string(),
+                            points_deducted: 15,
+                        });
+                    }
+                }
+            }
+        }
+
+        if !saw_comment {
+            // Fallback: fast line scan
+            for (i, line) in source.lines().enumerate() {
+                if re.is_match(line) {
+                    issues.push(ConcreteIssue {
+                        severity: IssueSeverity::Major,
+                        category: IssueCategory::UnfinishedWork,
+                        message: "Unfinished work marker (TODO/FIXME/TBD/...)".to_string(),
+                        file: String::new(),
+                        line: i + 1,
+                        column: 1,
+                        rule_id: "TODO001".to_string(),
+                        points_deducted: 15,
+                    });
+                }
+            }
+        }
+
+        issues
+    }
+
+    fn rule_id(&self) -> &str {
+        "TODO001"
     }
 }
 

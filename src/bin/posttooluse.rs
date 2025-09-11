@@ -171,6 +171,31 @@ fn build_risk_report(score: &QualityScore) -> String {
     s
 }
 
+fn build_unfinished_work_section(score: &QualityScore, max_items: usize, max_chars: usize) -> String {
+    use crate::analysis::ast::quality_scorer::IssueCategory;
+    let mut items: Vec<_> = score
+        .concrete_issues
+        .iter()
+        .filter(|i| matches!(i.category, IssueCategory::UnfinishedWork))
+        .collect();
+    if items.is_empty() {
+        return String::new();
+    }
+    // Sort deterministically by line then message
+    items.sort_by(|a, b| a.line.cmp(&b.line).then_with(|| a.message.cmp(&b.message)));
+    let mut out = String::new();
+    out.push_str("=== UNFINISHED WORK ===\n");
+    for i in items.into_iter().take(max_items) {
+        let mut msg = i.message.clone();
+        if msg.len() > max_chars {
+            msg.truncate(max_chars.saturating_sub(1));
+            msg.push('…');
+        }
+        out.push_str(&format!("- Line {}: {}\n", i.line, msg));
+    }
+    out
+}
+
 fn build_quick_tips_section(score: &QualityScore) -> String {
     let enabled = std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true);
     if !enabled {
@@ -3125,6 +3150,16 @@ async fn main() -> Result<()> {
                 };
             final_response.push_str(&build_risk_report(&filtered));
             final_response.push('\n');
+            let unfinished = build_unfinished_work_section(&filtered, 6, 120);
+            if !unfinished.is_empty() {
+                final_response.push_str(&unfinished);
+                final_response.push('\n');
+            }
+            let unfinished = build_unfinished_work_section(&filtered, 6, 120);
+            if !unfinished.is_empty() {
+                final_response.push_str(&unfinished);
+                final_response.push('\n');
+            }
             let tips = build_quick_tips_section(&filtered);
             if !tips.is_empty() {
                 final_response.push_str(&tips);
