@@ -25,6 +25,11 @@ jobs:
       - name: Build
         run: cargo build --release
 
+      - name: Format (rustfmt)
+        run: |
+          rustup component add rustfmt
+          cargo fmt --all -- --check
+
       - name: Clippy
         run: |
           rustup component add clippy

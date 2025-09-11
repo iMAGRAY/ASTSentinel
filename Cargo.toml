@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Claude Code Validation System"]
 description = "High-performance validation hooks for Claude Code using Rust"
+repository = "https://github.com/iMAGRAY/ValidationCodeHook"
+readme = "README.md"
+keywords = ["ast", "security", "hooks", "code", "claude"]
+categories = ["development-tools", "code-analysis", "security"]
 
 [[bin]]
 name = "pretooluse"
