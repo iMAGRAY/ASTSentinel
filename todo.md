@@ -112,6 +112,14 @@ ID K — Документация и примеры
 - [+] K6. Диаграммы как SVG (architecture.svg, workflow.svg)
   Критерий: вставлены в README; читаемы на тёмном фоне; без внешних ресурсов.
 
+ID R — Repo hygiene / Legacy cleanup
+- [+] R1. Удалены legacy каталоги/артефакты (src-tauri/, tmp_validation/, hooks/* binaries, yaml_debug_test.pdb, setup_python_path.ps1)
+  Критерий: нет мусора в дереве; .gitignore покрывает hooks/ и dist/; боты/IDE‑каталоги не трекаются.
+- [+] R2. Удалены устаревшие зависимости (quick-xml, crossbeam-channel, memmap2, uuid, lru)
+  Критерий: Cargo.toml очищен; импортов по этим пакетам нет.
+- [+] R3. Очистка dead code
+  Критерий: удалён неиспользуемый wrapper и функции; сняты #[allow(dead_code)] там, где код используется.
+
 ID Z — База (готово)
 - [+] Z1. Windows path validation: backslash/UNC корректны, e2e Windows — ОК
 - [+] Z2. JS/TS security: SQL‑строки (Critical), creds в assignment — ОК
