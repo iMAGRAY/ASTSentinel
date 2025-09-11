@@ -55,6 +55,25 @@ Notes:
 - Секреты можно хранить напрямую или подставлять из секрет‑менеджера при генерации файла.
 - Если файл не найден, хуки fallback’ом используют переменные окружения/`.env` (совместимость).
 
+### Prompts (Windows install)
+- В репозитории есть готовые промпты в папке `prompts/`.
+- Установка для хуков Claude Code на Windows:
+  - PowerShell: `scripts\install_prompts.ps1`
+  - По умолчанию — `%USERPROFILE%\.claude\hooks\rust_validation_hooks\prompts`.
+  - Для конкретного пользователя 1: `scripts\install_prompts.ps1 -TargetDir "C:\\Users\\1\\.claude\\hooks\\rust_validation_hooks\\prompts"`
+
+### Release Artifacts
+- GitHub Releases публикуют архивы для Windows и Linux, включающие:
+  - исполняемые файлы: `pretooluse(.exe)`, `posttooluse(.exe)`, `userpromptsubmit(.exe)`
+  - директорию `prompts/` с `language.txt`, `edit_validation.txt`, `post_edit_validation.txt`, `output_template.txt`
+  - `SHA256SUMS.txt`
+
+### Быстрый старт (Windows)
+- Скачайте `ast-sentinel-windows-x86_64.zip` и распакуйте.
+- Скопируйте исполняемые файлы в `C:\\Users\\1\\.claude\\hooks\\`.
+- Скопируйте `prompts/` в `C:\\Users\\1\\.claude\\hooks\\rust_validation_hooks\\prompts` или запустите:
+  - `scripts\install_prompts.ps1 -TargetDir "C:\\Users\\1\\.claude\\hooks\\rust_validation_hooks\\prompts"`
+
 ### Logging
 - Default logger: structured text to stderr; stdout remains reserved for hook JSON/text.
 - Control level via `RUST_LOG` (e.g., `RUST_LOG=info` or `RUST_LOG=debug`).
@@ -174,7 +193,7 @@ See `docs/PLAYBOOK_AST_FLAGS.md` for before/after examples and quick commands.
 
 1) Build release: `cargo build --release`
 2) Run hooks directly:
-   - PostToolUse (AST_ONLY):
+   - PostToolUse (AST-only):
      - `set POSTTOOL_AST_ONLY=1`
      - `set QUICK_TIPS=1`
      - `set AST_TIMINGS=1`

@@ -105,7 +105,7 @@ impl SupportedLanguage {
                 #[cfg(feature = "tree-sitter-gleam")]
                 {
                     // tree_sitter_gleam::LANGUAGE is a LanguageFn, call it to get Language
-                    Ok(tree_sitter_gleam::LANGUAGE.call())
+                    Ok(tree_sitter_gleam::LANGUAGE.into())
                 }
                 #[cfg(not(feature = "tree-sitter-gleam"))]
                 Err(anyhow::anyhow!(
@@ -152,17 +152,19 @@ lazy_static! {
 
 /// Language cache manager for efficient Tree-sitter language reuse
 ///
-/// This cache stores Tree-sitter Language objects for reuse across multiple parser creations.
-/// Languages are expensive to create and can be safely shared between parsers.
-/// We use a thread-safe cache to avoid recreating languages in multi-threaded scenarios.
+/// This cache stores Tree-sitter Language objects for reuse across multiple
+/// parser creations. Languages are expensive to create and can be safely shared
+/// between parsers. We use a thread-safe cache to avoid recreating languages in
+/// multi-threaded scenarios.
 pub struct LanguageCache;
 
 impl LanguageCache {
     /// Get or create a Tree-sitter language for the given language type
     ///
-    /// This method first checks the cache for an existing language. If not found,
-    /// it creates a new language and adds it to the cache for future use.
-    /// Returns the Language object that can be used to configure a Parser.
+    /// This method first checks the cache for an existing language. If not
+    /// found, it creates a new language and adds it to the cache for future
+    /// use. Returns the Language object that can be used to configure a
+    /// Parser.
     pub fn get_or_create_language(language: SupportedLanguage) -> Result<Language> {
         // Try to get existing language from cache (read lock scope)
         {
@@ -193,8 +195,9 @@ impl LanguageCache {
 
     /// Create a configured parser for the given language
     ///
-    /// This is a convenience method that combines language caching with parser creation.
-    /// It uses the cached language if available, otherwise creates and caches it.
+    /// This is a convenience method that combines language caching with parser
+    /// creation. It uses the cached language if available, otherwise
+    /// creates and caches it.
     pub fn create_parser_with_language(language: SupportedLanguage) -> Result<Parser> {
         let tree_sitter_lang = Self::get_or_create_language(language)?;
         let mut parser = Parser::new();
@@ -223,8 +226,8 @@ impl LanguageCache {
 
     /// Initialize cache with all supported languages
     ///
-    /// This pre-populates the cache to avoid initialization delays during analysis.
-    /// Useful for applications that need predictable performance.
+    /// This pre-populates the cache to avoid initialization delays during
+    /// analysis. Useful for applications that need predictable performance.
     pub fn initialize_all_languages() -> Result<()> {
         let languages = [
             SupportedLanguage::Python,

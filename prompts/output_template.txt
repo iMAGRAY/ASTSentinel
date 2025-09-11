@@ -1,1 +1,11 @@
-TEMPLATE
+=== REQUIRED OUTPUT FORMAT ===
+SUMMARY:
+- <1–3 bullets on what changed and why>
+
+RISKS:
+- <top 3 concrete issues, 1 line each>
+
+NEXT STEPS:
+- <up to 3 short, actionable steps>
+=== END FORMAT ===
+

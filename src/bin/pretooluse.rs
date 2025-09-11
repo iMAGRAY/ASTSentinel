@@ -435,7 +435,7 @@ fn extract_old_new_contents(hook_input: &HookInput) -> (String, Option<String>, 
 // -----------------
 #[cfg(test)]
 mod tests {
-    use super::{contract_weakening_reasons, extract_signatures_regex};
+    use super::{contract_weakening_reasons, extract_signatures_regex, detect_function_stub, detect_return_constant};
     use rust_validation_hooks::analysis::ast::SupportedLanguage;
 
     #[test]
@@ -457,6 +457,36 @@ mod tests {
         // sanity: разбор сигнатур видит два параметра
         let sig_old = extract_signatures_regex(Some(SupportedLanguage::JavaScript), old);
         assert_eq!(sig_old.get("sum").map(|v| v.len()), Some(2));
+    }
+
+    #[test]
+    fn unit_detects_return_constant_python() {
+        let code = "def f(x):\n    return 1\n";
+        assert!(detect_return_constant(code), "should detect return literal in python");
+    }
+
+    #[test]
+    fn unit_detects_return_constant_js() {
+        let code = "function f(){ return true; }";
+        assert!(detect_return_constant(code), "should detect return literal in js");
+    }
+
+    #[test]
+    fn unit_detects_function_stub_python_pass() {
+        let code = "def f(x):\n    # TODO\n    pass\n";
+        assert!(
+            detect_function_stub(Some(SupportedLanguage::Python), code),
+            "should detect python pass stub"
+        );
+    }
+
+    #[test]
+    fn unit_detects_function_stub_js_throw() {
+        let code = "function f(){ throw new Error('Not implemented'); }";
+        assert!(
+            detect_function_stub(Some(SupportedLanguage::JavaScript), code),
+            "should detect js throw Not implemented stub"
+        );
     }
 }
 
@@ -497,11 +527,12 @@ fn detect_return_constant(code: &str) -> bool {
     use once_cell::sync::Lazy;
     // Match: return <literal>  where literal is number/bool/null/none or quoted string.
     static RET_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
-        regex::Regex::new(r#"(?im)^\s*return\s+(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:;|$)"#)
+        // Match return literal anywhere on the line (not only at start)
+        regex::Regex::new(r#"(?i)\breturn\s+(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:;|[,})]|$)"#)
     });
     // Match arrow functions that immediately return a literal:  => <literal>
     static ARROW_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
-        regex::Regex::new(r#"(?m)=>\s*(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:[,)};]|$)"#)
+        regex::Regex::new(r#"=>\s*(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:[,)};]|$)"#)
     });
     if let Ok(re) = RET_RE.as_ref() {
         if re.is_match(code) {
@@ -514,6 +545,39 @@ fn detect_return_constant(code: &str) -> bool {
         }
     }
     false
+}
+
+fn detect_js_ts_function_stub(code: &str) -> bool {
+    use regex::Regex;
+    if let Ok(re) = Regex::new(r#"(?i)\bthrow\s+new\s+Error\s*\(\s*['\"][^'\"]*(not\s+implemented|todo)[^'\"]*['\"]\s*\)"#) {
+        if re.is_match(code) { return true; }
+    }
+    if let Ok(re) = Regex::new(r#"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{\s*(/\*.*?\*/|//.*?\n|\s)*\}"#) {
+        if re.is_match(code) { return true; }
+    }
+    if let Ok(re) = Regex::new(r#"(?s)^[ \t]*[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{\s*(/\*.*?\*/|//.*?\n|\s)*\}$"#) {
+        if re.is_match(code) { return true; }
+    }
+    false
+}
+
+fn detect_python_function_stub(code: &str) -> bool {
+    use regex::Regex;
+    if let Ok(re) = Regex::new(r#"(?sm)^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\):\s*(?:#.*\n|\s)*pass\s*$"#) {
+        if re.is_match(code) { return true; }
+    }
+    if let Ok(re) = Regex::new(r#"(?sm)^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\):\s*(?:#.*\n|\s)*raise\s+NotImplementedError\b[^\n]*$"#) {
+        if re.is_match(code) { return true; }
+    }
+    false
+}
+
+fn detect_function_stub(language: Option<SupportedLanguage>, code: &str) -> bool {
+    match language {
+        Some(SupportedLanguage::Python) => detect_python_function_stub(code),
+        Some(SupportedLanguage::JavaScript) | Some(SupportedLanguage::TypeScript) => detect_js_ts_function_stub(code),
+        _ => false,
+    }
 }
 
 #[inline]
@@ -1069,6 +1133,23 @@ async fn main() -> Result<()> {
             assess_change(&hook_input)
         };
 
+        // Structural sanity: fast syntax check where available
+        if let Some(lang) = language {
+            if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(&code, lang, std::time::Duration::from_millis(800)) {
+                // Treat parse/syntax errors as structural harm
+                let reason = format!("Structural integrity check failed: {}", e);
+                let output = PreToolUseOutput {
+                    hook_specific_output: PreToolUseHookOutput {
+                        hook_event_name: "PreToolUse".to_string(),
+                        permission_decision: "deny".to_string(),
+                        permission_decision_reason: Some(format_quality_message(&reason)),
+                    },
+                };
+                println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                return Ok(());
+            }
+        }
+
         // If WRITE is a no-op (old == new ignoring whitespace/comments), allow
         if hook_input.tool_name == "Write" {
             let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
@@ -1105,6 +1186,7 @@ async fn main() -> Result<()> {
         if /* do not block TODO/FIXME */
             heur.has_empty_catch_or_except
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
+            || (detect_function_stub(language, &code) && hook_input.tool_name != "Write")
         {
             let reason = format!("Anti-cheating: {}", heur.summary);
             let output = PreToolUseOutput {
@@ -1238,10 +1320,7 @@ async fn main() -> Result<()> {
                 triggers = true;
             }
             // Always treat certain categories as critical triggers regardless of sensitivity
-            if matches!(
-                i.category,
-                IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal
-            ) {
+            if matches!(i.category, IssueCategory::CommandInjection | IssueCategory::PathTraversal) {
                 triggers = true;
             }
 
@@ -1386,6 +1465,16 @@ async fn main() -> Result<()> {
         // Heuristic assessment
         let heur = assess_change(&hook_input);
 
+        // Structural sanity: fast syntax check
+        if let Some(lang) = language {
+            if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(&content, lang, std::time::Duration::from_millis(800)) {
+                let reason = format!("Structural integrity check failed: {}", e);
+                let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)), } };
+                println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                return Ok(());
+            }
+        }
+
         // If WRITE is a no-op (old == new ignoring whitespace/comments), allow unless dangerous patterns
         if hook_input.tool_name == "Write" {
             let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
@@ -1419,6 +1508,7 @@ async fn main() -> Result<()> {
         if /* do not block TODO/FIXME */
             heur.has_empty_catch_or_except
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
+            || (detect_function_stub(language, &content) && hook_input.tool_name != "Write")
         {
             let reason = format!("Anti-cheating: {}", heur.summary);
             let output = PreToolUseOutput {

@@ -1,0 +1,10 @@
+{
+  "pretool_provider": "openai",
+  "posttool_provider": "openai",
+  "pretool_model": "gpt-4.1-mini",
+  "posttool_model": "gpt-4.1-mini",
+  "openai_api_key": "${OPENAI_API_KEY}",
+  "request_timeout_secs": 60,
+  "connect_timeout_secs": 30,
+  "max_tokens": 4000
+}

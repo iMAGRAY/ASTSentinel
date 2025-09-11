@@ -31,6 +31,9 @@ jobs:
           cp target/release/pretooluse* dist/$NAME/ || true
           cp target/release/posttooluse* dist/$NAME/ || true
           cp target/release/userpromptsubmit* dist/$NAME/ || true
+          # Include prompts with the binaries
+          mkdir -p dist/$NAME/prompts
+          cp -r prompts/* dist/$NAME/prompts/ || true
           (cd dist/$NAME && sha256sum * > SHA256SUMS.txt)
           if [ "$NAME" = "windows-x86_64" ]; then
             7z a ast-sentinel-$NAME.zip dist/$NAME/*
