@@ -366,7 +366,6 @@ fn build_entity_context_snippets(
 
 // Function signatures via AST (Python/JS/TS)
 #[derive(Clone, Debug)]
-#[allow(dead_code)]
 struct FuncSignature {
     name: String,
     params: Vec<String>,
