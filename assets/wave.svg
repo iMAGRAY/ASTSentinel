@@ -1,15 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="32" viewBox="0 0 1200 32" preserveAspectRatio="none" aria-hidden="true">
-  <defs>
-    <linearGradient id="wgrad" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0%" stop-color="#5B8CFF"/>
-      <stop offset="100%" stop-color="#6EE7B7"/>
-    </linearGradient>
-  </defs>
-  <path fill="url(#wgrad)" d="M0,16 C 150,0 300,32 450,16 600,0 750,32 900,16 1050,0 1200,32 1350,16 L1350,32 L0,32 Z">
-    <animate attributeName="d" dur="6s" repeatCount="indefinite"
-      values="M0,16 C 150,0 300,32 450,16 600,0 750,32 900,16 1050,0 1200,32 1350,16 L1350,32 L0,32 Z;
-              M0,16 C 150,32 300,0 450,16 600,32 750,0 900,16 1050,32 1200,0 1350,16 L1350,32 L0,32 Z;
-              M0,16 C 150,0 300,32 450,16 600,0 750,32 900,16 1050,0 1200,32 1350,16 L1350,32 L0,32 Z"/>
-  </path>
+  <title>Decorative bar</title>
+  <desc>Static decorative bar for headers</desc>
+  <rect x="0" y="0" width="1200" height="32" fill="#2563EB"/>
 </svg>
-

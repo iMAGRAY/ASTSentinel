@@ -1,49 +1,58 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-label="AST Sentinel — Architecture">
-  <defs>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#5B8CFF"/>
-      <stop offset="100%" stop-color="#6EE7B7"/>
-    </linearGradient>
-  </defs>
-  <rect width="1000" height="360" rx="12" fill="#0F172A"/>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="360" viewBox="0 0 1000 360" role="img" aria-label="AST Sentinel Architecture" shape-rendering="geometricPrecision" text-rendering="optimizeLegibility">
+  <title>AST Sentinel Architecture</title>
+  <desc>High-level blocks: Hooks to Analysis Engines to Outputs</desc>
 
-  <g font-family="Segoe UI,Arial" font-size="18" fill="#E5E7EB">
+  <!-- Solid white background for maximum viewer compatibility -->
+  <rect width="1000" height="360" rx="12" fill="#FFFFFF"/>
+
+  <!-- Headline -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="18" fill="#111827">
     <text x="24" y="36">AST Sentinel — Architecture</text>
   </g>
 
-  <g fill="none" stroke="#2A3953" stroke-width="2">
+  <!-- Columns with dark gray borders -->
+  <g fill="#FFFFFF" stroke="#9CA3AF" stroke-width="2">
     <rect x="40" y="70" width="280" height="240" rx="12"/>
     <rect x="360" y="70" width="280" height="240" rx="12"/>
     <rect x="680" y="70" width="280" height="240" rx="12"/>
   </g>
 
-  <g font-family="Segoe UI,Arial" font-size="16" fill="#C7D2FE">
+  <!-- Column titles (slightly darker text) -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#1F2937">
     <text x="60" y="100">Hooks</text>
     <text x="380" y="100">Analysis Engines</text>
     <text x="700" y="100">Outputs</text>
   </g>
 
-  <g font-family="Consolas,Menlo,monospace" font-size="14" fill="#9AA4B2">
+  <!-- Items (medium gray) -->
+  <g font-family="Courier New, Consolas, monospace" font-size="14" fill="#374151">
     <text x="60" y="130">• PreToolUse</text>
     <text x="60" y="152">• PostToolUse</text>
     <text x="60" y="174">• UserPromptSubmit</text>
-    <text x="60" y="208">Config & Flags:</text>
-    <text x="60" y="230">AST_*, PERF_GATE_STRICT, API_CONTRACT</text>
+    <text x="60" y="208">Config &amp; Flags:</text>
+    <!-- Wrap long flags to avoid overflow -->
+    <text x="60" y="230">AST_*, PERF_GATE_STRICT,</text>
+    <text x="60" y="248">API_CONTRACT</text>
 
-    <text x="380" y="130">• AST parsers (TS/JS, Python, Rust, …)</text>
-    <text x="380" y="152">• Security + anti‑cheat heuristics</text>
-    <text x="380" y="174">• Diff‑aware snippets, API Contracts</text>
-    <text x="380" y="196">• Duplicates & Dependencies</text>
+    <text x="380" y="130">• AST parsers (TS/JS, Python, Rust, ...)</text>
+    <text x="380" y="152">• Security + anti-cheat heuristics</text>
+    <text x="380" y="174">• Diff-aware snippets, API Contracts</text>
+    <text x="380" y="196">• Duplicates &amp; Dependencies</text>
     <text x="380" y="218">• Timings, Budgets</text>
 
     <text x="700" y="130">• Structured Additional Context</text>
     <text x="700" y="152">• Snapshots (UserPromptSubmit)</text>
-    <text x="700" y="174">• Perf‑gate metrics</text>
+    <text x="700" y="174">• Perf-gate metrics</text>
     <text x="700" y="196">• CI artifacts / Releases</text>
   </g>
 
-  <g stroke="url(#accent)" stroke-width="3" fill="none">
+  <!-- Arrows in blue/green for visibility on white -->
+  <!-- Arrows start exactly at the column border, no inward bleed -->
+  <g stroke="#2563EB" stroke-width="3" fill="none" stroke-linecap="butt">
     <path d="M320,190h24"/>
+  </g>
+  <g stroke="#10B981" stroke-width="3" fill="none" stroke-linecap="butt">
     <path d="M640,190h24"/>
   </g>
 </svg>
