@@ -103,6 +103,15 @@ ID K — Документация и примеры
 - [+] K3. Главный README полностью в SVG
   Критерий: `README.md` содержит только `<img src="assets/readme.svg" ...>`; без fallback‑картинок/ссылок; отрисовывается на GitHub.
 
+- [+] K4. Полный текстовый README без эмодзи
+  Критерий: содержимое покрывает обзор, возможности, установку (Win/Linux), флаги, режимы, CI/CD, структуру, тесты; без эмодзи и внешних бейджей.
+
+- [+] K5. Новый hero.svg и набор иконок SVG
+  Критерий: hero.svg без анимаций; icons/*.svg в едином stroke‑стиле; ссылки обновлены в README.
+
+- [+] K6. Диаграммы как SVG (architecture.svg, workflow.svg)
+  Критерий: вставлены в README; читаемы на тёмном фоне; без внешних ресурсов.
+
 ID Z — База (готово)
 - [+] Z1. Windows path validation: backslash/UNC корректны, e2e Windows — ОК
 - [+] Z2. JS/TS security: SQL‑строки (Critical), creds в assignment — ОК
