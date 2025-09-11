@@ -72,6 +72,105 @@ fn normalize_tool_name(name: &str) -> (ToolKind, bool /* is_append */) {
 // =============================
 // Structured additionalContext builders
 // =============================
+async fn render_offline_posttooluse(
+    hook_input: &rust_validation_hooks::HookInput,
+    content: &str,
+    display_path: &str,
+    ast_score: &Option<QualityScore>,
+    formatting_changed: bool,
+) -> Result<()> {
+    let mut final_response = String::new();
+    let change = build_change_summary(hook_input, display_path).await;
+    if !change.is_empty() {
+        final_response.push_str(&change);
+        final_response.push('\n');
+    }
+    if let Some(note) = soft_budget_note(content, display_path) {
+        final_response.push_str(&note);
+        final_response.push('\n');
+    }
+    if let Some(ast_score) = ast_score {
+        let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(hook_input, display_path).await {
+            let ctxn = std::env::var("AST_DIFF_CONTEXT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3);
+            let changed = extract_changed_lines(&diff, ctxn);
+            let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() {
+                filter_issues_to_diff(ast_score, &diff, ctxn)
+            } else {
+                ast_score.clone()
+            };
+            let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+            let snips = if snips_enabled {
+                let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
+                let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
+                let lang = SupportedLanguage::from_extension(display_path.split('.').next_back().unwrap_or(""))
+                    .unwrap_or(SupportedLanguage::Python);
+                let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                if use_entity {
+                    let ent = build_entity_context_snippets(
+                        lang, content, &filtered, &changed, ctxn, max_snips, max_chars,
+                    );
+                    if !ent.is_empty() { ent } else { build_change_context_snippets(content, &filtered, &changed, ctxn, max_snips, max_chars) }
+                } else {
+                    build_change_context_snippets(content, &filtered, &changed, ctxn, max_snips, max_chars)
+                }
+            } else { String::new() };
+            (filtered, snips)
+        } else {
+            (ast_score.clone(), String::new())
+        };
+        final_response.push_str(&build_risk_report(&filtered));
+        final_response.push('\n');
+        let unfinished = build_unfinished_work_section(&filtered, 6, 120);
+        if !unfinished.is_empty() {
+            final_response.push_str(&unfinished);
+            final_response.push('\n');
+        }
+        let tips = build_quick_tips_section(&filtered);
+        if !tips.is_empty() {
+            final_response.push_str(&tips);
+            final_response.push('\n');
+        }
+        if !change_snippets.is_empty() {
+            final_response.push_str(&change_snippets);
+            final_response.push('\n');
+        }
+        final_response.push_str(&build_code_health(&filtered));
+        final_response.push('\n');
+        let lang = SupportedLanguage::from_extension(display_path.split('.').next_back().unwrap_or(""))
+            .unwrap_or(SupportedLanguage::Python);
+        let api = build_api_contract_report(lang, hook_input, content);
+        if !api.is_empty() {
+            final_response.push_str(&api);
+            final_response.push('\n');
+        }
+        final_response.push_str(&build_next_steps(&filtered));
+        final_response.push('\n');
+    }
+    if formatting_changed {
+        final_response.push_str("[FORMAT] Auto-format applied.\n\n");
+    }
+    if crate::analysis::timings::enabled() {
+        let sum = crate::analysis::timings::summary();
+        if !sum.is_empty() {
+            final_response.push_str(&sum);
+            final_response.push('\n');
+        }
+    }
+    let output = PostToolUseOutput {
+        hook_specific_output: PostToolUseHookOutput {
+            hook_event_name: "PostToolUse".to_string(),
+            additional_context: {
+                let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000);
+                truncate_utf8_safe(&final_response, lim)
+            },
+        },
+    };
+    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+    Ok(())
+}
 fn build_risk_report(score: &QualityScore) -> String {
     use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueSeverity};
     // Deterministic order base
@@ -3155,11 +3254,6 @@ async fn main() -> Result<()> {
                 final_response.push_str(&unfinished);
                 final_response.push('\n');
             }
-            let unfinished = build_unfinished_work_section(&filtered, 6, 120);
-            if !unfinished.is_empty() {
-                final_response.push_str(&unfinished);
-                final_response.push('\n');
-            }
             let tips = build_quick_tips_section(&filtered);
             if !tips.is_empty() {
                 final_response.push_str(&tips);
@@ -3217,6 +3311,27 @@ async fn main() -> Result<()> {
 
     // Load configuration from environment with graceful degradation
     let config = Config::from_file_or_env_graceful().context("Failed to load configuration")?;
+
+    // If missing API key for selected provider, fall back to offline rendering (symmetry with PreToolUse)
+    if config
+        .get_api_key_for_provider(&config.posttool_provider)
+        .is_empty()
+        && std::env::var("POSTTOOL_DRY_RUN").is_err()
+    {
+        tracing::warn!(provider=%config.posttool_provider, "No API key; falling back to AST-only rendering");
+        let display_path = hook_input
+            .tool_input
+            .get("file_path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        return render_offline_posttooluse(
+            &hook_input,
+            &content,
+            display_path,
+            &ast_analysis,
+            formatting_result.as_ref().map(|f| f.changed).unwrap_or(false),
+        ).await;
+    }
 
     // Load the analysis prompt
     let prompt = load_prompt_file("post_edit_validation.txt")

@@ -494,22 +494,24 @@ fn normalize_code_for_signal(code: &str) -> String {
 }
 
 fn detect_return_constant(code: &str) -> bool {
-    let low = code.to_ascii_lowercase();
-    let constants = ["true", "false", "null", "none", "0", "1"];
-    if low.contains("return") {
-        for c in &constants {
-            if low.contains(&format!("return{}", c)) || low.contains(&format!("return({})", c)) {
-                return true;
-            }
-        }
-        if low.contains("return\"") || low.contains("return'") {
+    use once_cell::sync::Lazy;
+    // Match: return <literal>  where literal is number/bool/null/none or quoted string.
+    static RET_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
+        regex::Regex::new(r#"(?im)^\s*return\s+(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:;|$)"#)
+    });
+    // Match arrow functions that immediately return a literal:  => <literal>
+    static ARROW_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
+        regex::Regex::new(r#"(?m)=>\s*(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:[,)};]|$)"#)
+    });
+    if let Ok(re) = RET_RE.as_ref() {
+        if re.is_match(code) {
             return true;
         }
     }
-    if low.contains("=>")
-        && (low.contains("=>0") || low.contains("=>1") || low.contains("=>\"") || low.contains("=>'"))
-    {
-        return true;
+    if let Ok(re) = ARROW_RE.as_ref() {
+        if re.is_match(code) {
+            return true;
+        }
     }
     false
 }
@@ -1277,7 +1279,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration
-    let config = Config::from_file_or_env().context("Failed to load configuration")?;
+    let config = Config::from_file_or_env_graceful().context("Failed to load configuration")?;
 
     // Read input from stdin
     let mut input = String::new();
