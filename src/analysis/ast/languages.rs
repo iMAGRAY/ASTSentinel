@@ -456,8 +456,8 @@ impl MultiLanguageAnalyzer {
         use rayon::prelude::*;
 
         // Process files in parallel and collect
-        let mut results: Vec<(std::path::PathBuf, ComplexityMetrics)> = Vec::new();
-        let mut errors: Vec<(std::path::PathBuf, anyhow::Error)> = Vec::new();
+        let mut results: Vec<(std::path::PathBuf, ComplexityMetrics)> = Vec::with_capacity(files.len());
+        let mut errors: Vec<(std::path::PathBuf, anyhow::Error)> = Vec::with_capacity(files.len());
 
         let collected: Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> = files.par_iter()
             .map(|path| {

@@ -129,8 +129,8 @@ fn build_quick_tips_section(score: &QualityScore) -> String {
 }
 
 fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> QualityScore {
-    use std::collections::BTreeSet;
-    let mut changed: BTreeSet<usize> = BTreeSet::new();
+    use std::collections::HashSet;
+    let mut changed: HashSet<usize> = HashSet::with_capacity(64);
     for line in diff_text.lines() {
         let t = line.trim_start();
         // Expect leading line number followed by space and a sign (+/-/ )
@@ -185,9 +185,9 @@ fn build_code_health(score: &QualityScore) -> String {
     s
 }
 
-fn extract_changed_lines(diff_text: &str, ctx: usize) -> std::collections::BTreeSet<usize> {
-    use std::collections::BTreeSet;
-    let mut changed: BTreeSet<usize> = BTreeSet::new();
+fn extract_changed_lines(diff_text: &str, ctx: usize) -> std::collections::HashSet<usize> {
+    use std::collections::HashSet;
+    let mut changed: HashSet<usize> = HashSet::with_capacity(64);
     for line in diff_text.lines() {
         let t = line.trim_start();
         // Leading number
@@ -215,7 +215,7 @@ fn extract_changed_lines(diff_text: &str, ctx: usize) -> std::collections::BTree
 fn build_change_context_snippets(
     content: &str,
     score: &QualityScore,
-    changed: &std::collections::BTreeSet<usize>,
+    changed: &std::collections::HashSet<usize>,
     ctx_lines: usize,
     max_snippets: usize,
     max_chars: usize,
@@ -273,7 +273,7 @@ fn build_entity_context_snippets(
     language: SupportedLanguage,
     content: &str,
     score: &QualityScore,
-    changed: &std::collections::BTreeSet<usize>,
+    changed: &std::collections::HashSet<usize>,
     ctx_lines: usize,
     max_snippets: usize,
     max_chars: usize,
@@ -3210,7 +3210,7 @@ def add(a, b):\n\
     return s\n\
 \n";
         let score = mk_quality_score(&[3]);
-        let mut changed = std::collections::BTreeSet::new();
+        let mut changed = std::collections::HashSet::new();
         changed.insert(3usize);
         let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 3, 2000);
         assert!(out.contains("=== CHANGE CONTEXT ==="));
@@ -3222,7 +3222,7 @@ def add(a, b):\n\
         let lang = SupportedLanguage::JavaScript;
         let content = "\nfunction sum(a, b){\n  const c = a + b;\n  return c;\n}\n";
         let score = mk_quality_score(&[3]);
-        let mut changed = std::collections::BTreeSet::new();
+        let mut changed = std::collections::HashSet::new();
         changed.insert(3usize);
         let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 3, 2000);
         assert!(out.contains("=== CHANGE CONTEXT ==="));
@@ -3237,7 +3237,7 @@ def f1():\n  return 1\n\n\
 def f2():\n  return 2\n\n\
 def f3():\n  return 3\n";
         let score = mk_quality_score(&[2, 5, 8]);
-        let mut changed = std::collections::BTreeSet::new();
+        let mut changed = std::collections::HashSet::new();
         for &ln in &[2usize, 5, 8] { changed.insert(ln); }
         let out = build_entity_context_snippets(lang, content, &score, &changed, 1, 2, 10_000);
         let headers = out.lines().filter(|l| l.starts_with("- [")).count();

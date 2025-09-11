@@ -313,14 +313,35 @@ fn detect_return_constant(code: &str) -> bool {
     false
 }
 
+#[inline]
 fn detect_print_only(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
-    let prints = ["print(", "console.log(", "debug(", "logger.", "system.out.println("]; 
-    let mut has_print = false;
-    for p in &prints { if low.contains(p) { has_print = true; break; } }
-    if !has_print { return false; }
-    let stripped = low.replace("console.log", "").replace("print", "").replace("logger", "").replace("system.out.println", "");
-    stripped.chars().filter(|c| c.is_alphanumeric()).count() < 6
+    // Fast precheck: any known print/log patterns?
+    const TOKENS: [&str; 5] = [
+        "console.log(", "print(", "logger.", "system.out.println(", "debug("
+    ];
+    if !TOKENS.iter().any(|t| low.contains(t)) { return false; }
+    // Count alphanumeric characters while skipping known tokens to avoid allocation
+    let bytes = low.as_bytes();
+    let mut i = 0usize;
+    let mut alnum = 0usize;
+    while i < bytes.len() {
+        // Try to skip a known token at current offset
+        let mut skipped = false;
+        for t in TOKENS {
+            let tb = t.as_bytes();
+            if i + tb.len() <= bytes.len() && &bytes[i..i+tb.len()] == tb {
+                i += tb.len();
+                skipped = true;
+                break;
+            }
+        }
+        if skipped { continue; }
+        let c = bytes[i] as char;
+        if c.is_ascii_alphanumeric() { alnum += 1; }
+        i += 1;
+    }
+    alnum < 6
 }
 
 fn detect_todo_placeholder(code: &str) -> bool {

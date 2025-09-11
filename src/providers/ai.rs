@@ -391,6 +391,22 @@ pub struct UniversalAIClient {
 }
 
 impl UniversalAIClient {
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    fn get_code_analysis_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "required": ["summary", "overall_quality", "issues", "suggestions"],
+            "additionalProperties": false,
+            "properties": {
+                "summary": {"type": "string"},
+                "overall_quality": {"type": "string"},
+                "issues": {"type": "array", "items": {"type": "object"}},
+                "suggestions": {"type": "array", "items": {"type": "object"}}
+            }
+        })
+    }
     pub fn new(config: Config) -> Result<Self> {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.request_timeout_secs))
@@ -919,6 +935,7 @@ impl UniversalAIClient {
 
     /// Analyze code with GPT-5 (uses Responses API)
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn analyze_with_gpt5(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
@@ -1300,6 +1317,7 @@ impl UniversalAIClient {
 
     /// Convert new validation format to GrokCodeAnalysis format
     #[cfg(test)]
+    #[allow(dead_code)]
     fn convert_new_format_to_grok_analysis(
         &self,
         new_format: serde_json::Value,
@@ -1488,6 +1506,7 @@ impl UniversalAIClient {
 
     /// Analyze code with standard OpenAI models
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn analyze_with_openai(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
@@ -1531,6 +1550,7 @@ impl UniversalAIClient {
 
     /// Analyze code with Anthropic Claude
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn analyze_with_anthropic(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
         let base_url = self
@@ -1566,6 +1586,7 @@ impl UniversalAIClient {
 
     /// Analyze code with Google Gemini
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn analyze_with_google(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Google);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::Google);
@@ -1606,6 +1627,7 @@ impl UniversalAIClient {
 
     /// Analyze code with xAI Grok
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn analyze_with_xai(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
@@ -1650,6 +1672,7 @@ impl UniversalAIClient {
     // Helper methods to parse analysis responses
 
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn parse_openai_analysis_response(
         &self,
         response: reqwest::Response,
@@ -1694,6 +1717,7 @@ impl UniversalAIClient {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn parse_anthropic_analysis_response(
         &self,
         response: reqwest::Response,
@@ -1732,6 +1756,7 @@ impl UniversalAIClient {
     }
 
     #[cfg(test)]
+    #[allow(dead_code)]
     async fn parse_google_analysis_response(
         &self,
         response: reqwest::Response,
