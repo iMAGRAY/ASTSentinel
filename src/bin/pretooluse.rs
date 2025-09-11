@@ -603,6 +603,7 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     let combined_new = new_opt.clone().unwrap_or_default();
     assess.is_return_constant_only = detect_return_constant(&combined_new);
     assess.is_print_or_log_only = detect_print_only(&combined_new);
+    // NOTE: we no дольше блокируем TODO/FIXME как таковые; оставляем для сводки
     assess.has_todo_or_placeholder = detect_todo_placeholder(&combined_new);
     assess.has_empty_catch_or_except = detect_empty_catch_except(&combined_new);
     // New, minimal file creation (do not block for simple stubs like print("ok"))
@@ -621,7 +622,7 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
         parts.push("print/log only".to_string());
     }
     if assess.has_todo_or_placeholder {
-        parts.push("TODO/placeholder".to_string());
+        parts.push("TODO present".to_string());
     }
     if assess.has_empty_catch_or_except {
         parts.push("empty catch/except".to_string());
@@ -1099,8 +1100,8 @@ async fn main() -> Result<()> {
             }
         }
 
-        if heur.has_todo_or_placeholder
-            || heur.has_empty_catch_or_except
+        if /* do not block TODO/FIXME */
+            heur.has_empty_catch_or_except
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
         {
             let reason = format!("Anti-cheating: {}", heur.summary);
@@ -1208,6 +1209,10 @@ async fn main() -> Result<()> {
         use analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
         let mut deny_reasons: Vec<String> = Vec::new();
         for i in &score.concrete_issues {
+            // Do not block on unfinished work markers (TODO/FIXME/etc.) per policy
+            if matches!(i.category, IssueCategory::UnfinishedWork) {
+                continue;
+            }
             // Skip ignored files
             if config::should_ignore_path(&cfg, &file_path) {
                 continue;
