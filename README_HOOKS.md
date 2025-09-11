@@ -1,12 +1,19 @@
-# Validation Hooks for Claude Code
+<p align="center">
+  <img src="assets/hero.svg" width="100%" alt="AST Sentinel — Deterministic AST Hooks"/>
+</p>
+
+# AST Sentinel — Hooks Reference
 
 ## Overview
-This project provides security and code quality validation hooks for Claude Code.
+AST Sentinel — набор детерминированных хуков и AST‑проверок для Claude Code:
+- PreToolUse — ранняя валидация изменений (безопасность, анти‑чит, contract‑check),
+- PostToolUse — дифф, структурированный AST‑контекст, рекомендации, тайминги/бюджеты,
+- UserPromptSubmit — снимок проекта (зависимости, дубликаты, краткое здоровье).
 
 ## Installation
 1. Build the hooks: `cargo build --release`
-2. Copy to hooks directory: Already done!
-3. Configure Claude Code to use the hooks
+2. Copy to hooks directory: binaries from `target/release` → your `hooks/`.
+3. Configure Claude Code to use the hooks.
 
 ## Configuration
 Edit `.env` file to configure:
@@ -38,12 +45,11 @@ Edit `.env` file to configure:
   - Примечание: `AST_MAX_ISSUES` имеет нижнюю границу 10 (clamp): значения <10 интерпретируются как 10.
 
 ### Project Context Sources
-- Данные, передаваемые в промпт (AI контекст) поверх структурированных секций:
-  - Структура проекта и метрики (кэшируемые);
-- Анализ зависимостей (npm/pip/cargo; компактный сводный отчёт в UserPromptSubmit, подробный — в контексте PostToolUse);
-- Анализ зависимостей (npm/pip/cargo/poetry; компактный сводный отчёт в UserPromptSubmit, подробный — в контексте PostToolUse);
-  - Отчёт о дубликатах/конфликтах файлов (DuplicateDetector) — как критический сигнал.
-- Эти разделы идут в промпт для валидации и не увеличивают `additionalContext` (кроме оффлайн AST‑режимов), сохраняя компактность вывода.
+- Данные, включаемые в AI‑контекст поверх секций PostToolUse:
+  - Структура проекта и метрики (кэш);
+  - Анализ зависимостей (npm/pip/cargo/poetry) — сводка в UserPromptSubmit, подробный отчёт в PostToolUse;
+  - Отчёт о дубликатах/конфликтах (DuplicateDetector) — критические сигналы.
+- Эти разделы не увеличивают `additionalContext` (кроме оффлайн AST‑режимов), сохраняя компактность.
   - См. docs/PLAYBOOK_AST_FLAGS.md для быстрых сценариев.
 
 #### Duplicate Report Caps
@@ -148,8 +154,8 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
 
 
 ### AST Timings (наблюдаемость)
-- AST_TIMINGS (set to any value) — включить сбор и вывод статистики таймингов в конце dditionalContext:
-  - Формат: === TIMINGS (ms) === с метриками per label: count, p50, p95, p99, vg.
+- AST_TIMINGS (set to any value) — включить сбор и вывод статистики таймингов в конце additionalContext:
+  - Формат: === TIMINGS (ms) === с метриками per label: count, p50, p95, p99, avg.
   - Лейблы: parse/<lang> (Tree‑sitter парсинг + метрики), score/<lang> (AST scoring).
   - Используйте для отладки и контроля производительности в оффлайн‑прогоне.
 
@@ -161,6 +167,16 @@ copy dist\windows-x86_64\pretooluse.exe hooks\
 - Анализ диффа/форматирование/прочий контекст не блокируются.
 
 See docs/PLAYBOOK_AST_FLAGS.md for before/after examples and quick commands.
+
+### Diagrams
+
+<p>
+  <img src="assets/architecture.svg" alt="AST Sentinel — Architecture" width="100%"/>
+</p>
+
+<p>
+  <img src="assets/workflow.svg" alt="AST Sentinel — Workflow" width="100%"/>
+</p>
 
 ## Flag Reference (полный справочник)
 
