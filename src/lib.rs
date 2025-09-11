@@ -354,6 +354,155 @@ pub struct Config {
 }
 
 impl Config {
+    /// Attempt to load runtime configuration from a config file (JSON / YAML / TOML).
+    /// If a file is not present or fails to parse, returns None and callers may fallback to env.
+    fn try_from_config_file_internal() -> Option<Self> {
+        use std::fs;
+        use std::path::PathBuf;
+
+        #[derive(Debug, Default, Deserialize)]
+        struct FileCfg {
+            // API keys
+            openai_api_key: Option<String>,
+            anthropic_api_key: Option<String>,
+            google_api_key: Option<String>,
+            xai_api_key: Option<String>,
+            // Base URLs
+            openai_base_url: Option<String>,
+            anthropic_base_url: Option<String>,
+            google_base_url: Option<String>,
+            xai_base_url: Option<String>,
+            // Providers / models
+            pretool_provider: Option<String>,
+            posttool_provider: Option<String>,
+            pretool_model: Option<String>,
+            posttool_model: Option<String>,
+            // Limits / timeouts
+            max_tokens: Option<u32>,
+            temperature: Option<f32>,
+            max_issues: Option<usize>,
+            request_timeout_secs: Option<u64>,
+            connect_timeout_secs: Option<u64>,
+            // Provider-specific output token caps
+            gpt5_max_output_tokens: Option<u32>,
+            claude_max_output_tokens: Option<u32>,
+            gemini_max_output_tokens: Option<u32>,
+            grok_max_output_tokens: Option<u32>,
+        }
+
+        fn parse_any(path: &PathBuf) -> Option<FileCfg> {
+            let text = fs::read_to_string(path).ok()?;
+            match path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+                "json" => serde_json::from_str::<FileCfg>(&text).ok(),
+                "yml" | "yaml" => serde_yaml::from_str::<FileCfg>(&text).ok(),
+                "toml" => toml::from_str::<FileCfg>(&text).ok(),
+                _ => None,
+            }
+        }
+
+        // Resolution order: explicit env var HOOKS_CONFIG_FILE, then defaults near CWD/exe
+        let mut candidates: Vec<PathBuf> = Vec::new();
+        if let Ok(p) = std::env::var("HOOKS_CONFIG_FILE") { candidates.push(PathBuf::from(p)); }
+        // Common default names
+        for name in [
+            ".hooks-config.json",
+            ".hooks-config.yaml",
+            ".hooks-config.yml",
+            ".hooks-config.toml",
+            "hooks.config.json",
+            "hooks.config.yaml",
+            "hooks.config.yml",
+            "hooks.config.toml",
+        ] { candidates.push(PathBuf::from(name)); }
+
+        // Next to executable as well
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                for name in [
+                    ".hooks-config.json",
+                    ".hooks-config.yaml",
+                    ".hooks-config.yml",
+                    ".hooks-config.toml",
+                ] {
+                    candidates.push(dir.join(name));
+                }
+            }
+        }
+
+        let fc = candidates
+            .into_iter()
+            .find(|p| p.exists())
+            .and_then(|p| parse_any(&p))?;
+
+        // Compose final Config with sensible defaults if not provided
+        let pretool_provider_str = fc.pretool_provider.unwrap_or_else(|| "xai".to_string());
+        let posttool_provider_str = fc.posttool_provider.unwrap_or_else(|| "xai".to_string());
+
+        let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>().ok()?;
+        let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>().ok()?;
+
+        let cfg = Config {
+            openai_api_key: fc.openai_api_key.unwrap_or_default(),
+            anthropic_api_key: fc.anthropic_api_key.unwrap_or_default(),
+            google_api_key: fc.google_api_key.unwrap_or_default(),
+            xai_api_key: fc.xai_api_key.unwrap_or_default(),
+            openai_base_url: fc
+                .openai_base_url
+                .unwrap_or_else(|| providers::AIProvider::OpenAI.default_base_url().to_string()),
+            anthropic_base_url: fc
+                .anthropic_base_url
+                .unwrap_or_else(|| providers::AIProvider::Anthropic.default_base_url().to_string()),
+            google_base_url: fc
+                .google_base_url
+                .unwrap_or_else(|| providers::AIProvider::Google.default_base_url().to_string()),
+            xai_base_url: fc
+                .xai_base_url
+                .unwrap_or_else(|| providers::AIProvider::XAI.default_base_url().to_string()),
+            pretool_provider,
+            posttool_provider,
+            pretool_model: fc.pretool_model.unwrap_or_else(|| "grok-code-fast-1".to_string()),
+            posttool_model: fc.posttool_model.unwrap_or_else(|| "grok-code-fast-1".to_string()),
+            max_tokens: fc.max_tokens.unwrap_or(4000).clamp(100, 100_000),
+            temperature: fc.temperature.unwrap_or(0.1).clamp(0.0, 2.0),
+            max_issues: fc.max_issues.unwrap_or(10).clamp(1, 50),
+            request_timeout_secs: fc.request_timeout_secs.unwrap_or(60).clamp(10, 600),
+            connect_timeout_secs: fc.connect_timeout_secs.unwrap_or(30).clamp(5, 120),
+            gpt5_max_output_tokens: fc
+                .gpt5_max_output_tokens
+                .unwrap_or(12000)
+                .clamp(1000, 128_000),
+            claude_max_output_tokens: fc
+                .claude_max_output_tokens
+                .unwrap_or(4000)
+                .clamp(1000, 8000),
+            gemini_max_output_tokens: fc
+                .gemini_max_output_tokens
+                .unwrap_or(8000)
+                .clamp(1000, 32_000),
+            grok_max_output_tokens: fc
+                .grok_max_output_tokens
+                .unwrap_or(8000)
+                .clamp(1000, 8000),
+        };
+
+        // Validate basics (do not require keys here; PreToolUse may require them separately)
+        if let Err(e) = cfg.validate() {
+            tracing::warn!(error=%e, "Runtime file config validation failed");
+        }
+        Some(cfg)
+    }
+
+    /// Preferred loader: try configuration file (JSON/YAML/TOML). If not present, fall back to env/.env.
+    pub fn from_file_or_env() -> Result<Self> {
+        if let Some(cfg) = Self::try_from_config_file_internal() { return Ok(cfg); }
+        Self::from_env()
+    }
+
+    /// Preferred loader (graceful): try config file, else graceful env loader.
+    pub fn from_file_or_env_graceful() -> Result<Self> {
+        if let Some(cfg) = Self::try_from_config_file_internal() { return Ok(cfg); }
+        Self::from_env_graceful()
+    }
     /// Create a new validated Config instance
     pub fn new(
         pretool_provider: providers::AIProvider,

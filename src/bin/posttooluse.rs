@@ -3216,7 +3216,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration from environment with graceful degradation
-    let config = Config::from_env_graceful().context("Failed to load configuration")?;
+    let config = Config::from_file_or_env_graceful().context("Failed to load configuration")?;
 
     // Load the analysis prompt
     let prompt = load_prompt_file("post_edit_validation.txt")

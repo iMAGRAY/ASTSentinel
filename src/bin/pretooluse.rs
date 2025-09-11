@@ -1277,7 +1277,7 @@ async fn main() -> Result<()> {
     }
 
     // Load configuration
-    let config = Config::from_env().context("Failed to load configuration")?;
+    let config = Config::from_file_or_env().context("Failed to load configuration")?;
 
     // Read input from stdin
     let mut input = String::new();

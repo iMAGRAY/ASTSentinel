@@ -27,11 +27,32 @@ AST Sentinel is a deterministic set of Claude Code hooks and multi‑language AS
 3. Configure Claude Code to use the hooks.
 
 ## Configuration
-Edit `.env` to configure:
-- API providers (OpenAI, Anthropic, Google, xAI)
-- Models for validation
-- Timeouts
-- Debug options
+Prefer a single repository config file over `.env`.
+
+- Create one of the following files in the project root (or alongside the hook binaries):
+  - `.hooks-config.json` (recommended)
+  - `.hooks-config.yaml` / `.hooks-config.yml`
+  - `.hooks-config.toml`
+  - Custom path via `HOOKS_CONFIG_FILE`
+
+Example `.hooks-config.json`:
+```
+{
+  "pretool_provider": "xai",
+  "posttool_provider": "openai",
+  "pretool_model": "grok-code-fast-1",
+  "posttool_model": "gpt-4.1-mini",
+  "xai_api_key": "${XAI_API_KEY}",
+  "openai_api_key": "${OPENAI_API_KEY}",
+  "request_timeout_secs": 60,
+  "connect_timeout_secs": 30,
+  "max_tokens": 4000
+}
+```
+
+Notes:
+- Keys can be stored directly или подтягиваться из вашего секрет‑менеджера при генерации файла.
+- Если файл не найден, хуки fallback’ом используют переменные окружения/`.env` (совместимость).
 
 ### Logging
 - Default logger: structured text to stderr; stdout remains reserved for hook JSON/text.
@@ -39,7 +60,7 @@ Edit `.env` to configure:
 - JSON logs for CI/production: set `LOG_JSON=1` or `HOOK_LOG_JSON=1`.
 - Extra verbose paths honor `DEBUG_HOOKS=true` but still go through `tracing::debug`.
 
-### AST Analysis Settings
+### AST Analysis Settings (policy config)
 - `AST_MAX_ISSUES` (default: 100, range 10..500) — overall cap for AST issues in context (deterministic sorting: severity → line → rule_id)
 - `AST_MAX_MAJOR` (optional) — cap for Major issues (defaults to `AST_MAX_ISSUES`)
 - `AST_MAX_MINOR` (optional) — cap for Minor issues (defaults to `AST_MAX_ISSUES`)
