@@ -1,37 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" role="img" aria-label="AST Sentinel">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="AST Sentinel — Deterministic AST Hooks">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#5B8CFF">
-        <animate attributeName="offset" values="0;1;0" dur="8s" repeatCount="indefinite"/>
-      </stop>
-      <stop offset="100%" stop-color="#6EE7B7">
-        <animate attributeName="offset" values="1;0;1" dur="8s" repeatCount="indefinite"/>
-      </stop>
-    </linearGradient>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0B1220"/>
       <stop offset="100%" stop-color="#0F172A"/>
     </linearGradient>
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="4" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
-    </filter>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#5B8CFF"/>
+      <stop offset="100%" stop-color="#6EE7B7"/>
+    </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0v24" fill="none" stroke="#1F2937" stroke-width="1"/>
+    </pattern>
   </defs>
-  <rect width="1200" height="280" fill="url(#bg)" rx="24"/>
-  <g fill="none" stroke="url(#grad)" opacity="0.25">
-    <path d="M0,200 C 200,120 400,260 600,180 800,100 1000,240 1200,160" stroke-width="3">
-      <animate attributeName="d" dur="12s" repeatCount="indefinite"
-               values="M0,200 C 200,120 400,260 600,180 800,100 1000,240 1200,160;
-                       M0,160 C 200,220 400,140 600,220 800,160 1000,120 1200,200;
-                       M0,200 C 200,120 400,260 600,180 800,100 1000,240 1200,160"/>
-    </path>
+
+  <rect width="1200" height="300" rx="24" fill="url(#bg)"/>
+  <rect x="0" y="0" width="1200" height="300" fill="url(#grid)" opacity="0.25"/>
+
+  <g transform="translate(60,70)">
+    <text x="0" y="0" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif" font-size="56" font-weight="800" fill="url(#accent)">
+      AST Sentinel
+    </text>
+    <text x="0" y="40" font-family="Consolas,Menlo,monospace" font-size="18" fill="#9AA4B2">
+      Deterministic AST • Diff‑Aware • Soft Budgets • Perf Gate
+    </text>
   </g>
-  <text x="50%" y="48%" text-anchor="middle" font-family="Segoe UI,Roboto,Helvetica,Arial,sans-serif"
-        font-size="58" font-weight="700" fill="url(#grad)" filter="url(#glow)">AST Sentinel</text>
-  <text x="50%" y="72%" text-anchor="middle" font-family="Consolas,Menlo,monospace" font-size="20" fill="#98A2B3">
-    Deterministic AST • Diff-Aware • Soft Budgets • Perf Gate
-  </text>
+
+  <g transform="translate(60,190)" fill="none" stroke="#2A3953" stroke-width="2" opacity="0.7">
+    <rect x="0" y="0" width="260" height="54" rx="10"/>
+    <rect x="276" y="0" width="260" height="54" rx="10"/>
+    <rect x="552" y="0" width="260" height="54" rx="10"/>
+    <rect x="828" y="0" width="260" height="54" rx="10"/>
+  </g>
+  <g transform="translate(60,190)" font-family="Consolas,Menlo,monospace" font-size="14" fill="#C7D2FE">
+    <text x="20" y="32">PreToolUse  • security + sanity</text>
+    <text x="296" y="32">Tools      • run / edit</text>
+    <text x="572" y="32">PostToolUse • diff + AST ctx</text>
+    <text x="848" y="32">UserPromptSubmit • project snapshot</text>
+  </g>
+
+  <g stroke="url(#accent)" stroke-width="3" fill="none">
+    <path d="M320,217 h-24" opacity="0.7"/>
+    <path d="M596,217 h-24" opacity="0.7"/>
+    <path d="M872,217 h-24" opacity="0.7"/>
+  </g>
 </svg>
