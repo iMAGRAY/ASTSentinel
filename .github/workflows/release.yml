@@ -78,4 +78,76 @@ jobs:
             dist/*/artifacts/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+name: Release
 
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build binaries (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          NAME=${{ runner.os == 'Windows' && 'windows-x86_64' || 'linux-x86_64' }}
+          mkdir -p dist/$NAME
+          cp target/release/pretooluse* dist/$NAME/ || true
+          cp target/release/posttooluse* dist/$NAME/ || true
+          cp target/release/userpromptsubmit* dist/$NAME/ || true
+          (cd dist/$NAME && sha256sum * > SHA256SUMS.txt)
+          if [ "$NAME" = "windows-x86_64" ]; then
+            7z a ast-sentinel-$NAME.zip dist/$NAME/*
+            echo "artifact=ast-sentinel-$NAME.zip" >> $GITHUB_OUTPUT
+          else
+            tar -C dist -czf ast-sentinel-$NAME.tar.gz $NAME
+            echo "artifact=ast-sentinel-$NAME.tar.gz" >> $GITHUB_OUTPUT
+          fi
+        id: pkg
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg.outputs.artifact }}
+          path: ${{ steps.pkg.outputs.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**
+          generate_release_notes: true
+          body: |
+            AST Sentinel release.
+
+            Documentation:
+            - Project overview: README.md
+            - Hooks reference: README_HOOKS.md
+            - Project structure: docs/PROJECT_STRUCTURE.md
+            - Testing guide: docs/TESTING.md
+            - AST flags playbook: docs/PLAYBOOK_AST_FLAGS.md

@@ -23,3 +23,40 @@ jobs:
         run: cargo build --release
       - name: Test
         run: cargo test --all --release
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+
+jobs:
+  build-test:
+    name: Build and test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Test (fast path)
+        run: cargo test --all --release
+
+      - name: Docs pointers
+        run: |
+          echo "AST Sentinel documentation links:"
+          echo " - Project overview: README.md"
+          echo " - Hooks reference: README_HOOKS.md"
+          echo " - Project structure: docs/PROJECT_STRUCTURE.md"
+          echo " - Testing guide: docs/TESTING.md"

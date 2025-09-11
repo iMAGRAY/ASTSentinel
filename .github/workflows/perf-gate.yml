@@ -28,3 +28,35 @@ jobs:
           PERF_GATE_STRICT: "1"
         run: |
           python scripts/perf_gate.py --baseline reports/benchmarks/baseline --threshold 0.2 --strict
+name: Perf Gate
+
+on:
+  pull_request:
+  push:
+    branches: [ master, main ]
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    env:
+      PERF_GATE_STRICT: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Run perf gate (strict)
+        run: |
+          python3 scripts/perf_gate.py --strict
+
+      - name: Docs pointers
+        if: always()
+        run: |
+          echo "Perf gate configured. See docs:"
+          echo " - README_HOOKS.md (AST_TIMINGS, soft budgets, perf gate)"
+          echo " - docs/PLAYBOOK_AST_FLAGS.md (before/after examples)"
