@@ -2,6 +2,15 @@
   <img src="assets/hero.svg" width="100%" alt="AST Sentinel — Deterministic AST Hooks"/>
 </p>
 
+<p align="center">
+  <a href="https://github.com/iMAGRAY/ValidationCodeHook/actions" title="CI">
+    <img src="assets/badges/ci.svg" alt="CI: passing"/>
+  </a>
+  &nbsp;
+  <a href="https://github.com/iMAGRAY/ValidationCodeHook/releases" title="Releases">
+    <img src="assets/badges/release.svg" alt="Release: latest"/>
+  </a>
+</p>
 # AST Sentinel — Hooks Reference
 
 ## Overview
@@ -171,4 +180,3 @@ See `docs/PLAYBOOK_AST_FLAGS.md` for before/after examples and quick commands.
 | BackupFile      | `.bak`, `.old`, `.backup`, trailing `~`        | Remove backup files                  |
 | TempFile        | `.tmp`, `.temp`, `.swp`                        | Remove temp files                    |
 | SimilarName     | Similar stems in same directory (likely drift) | Review and consolidate if needed     |
-

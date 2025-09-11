@@ -2,6 +2,17 @@
   <img src="assets/hero.svg" width="100%" alt="AST Sentinel — Deterministic AST Hooks"/>
 </p>
 
+
+<p align="center">
+  <a href="https://github.com/iMAGRAY/ValidationCodeHook/actions" title="CI">
+    <img src="assets/badges/ci.svg" alt="CI: passing"/>
+  </a>
+  &nbsp;
+  <a href="https://github.com/iMAGRAY/ValidationCodeHook/releases" title="Releases">
+    <img src="assets/badges/release.svg" alt="Release: latest"/>
+  </a>
+  <br/>
+</p>
 # AST Sentinel
 
 Детерминированный набор AST‑проверок и хуков для Claude Code:
@@ -14,13 +25,6 @@
 <p>
   <img src="assets/workflow.svg" alt="AST Sentinel — Workflow" width="100%"/>
 </p>
-
-## Status
-
-- CI: see GitHub Actions (build + test matrix)
-  - https://github.com/iMAGRAY/ValidationCodeHook/actions
-- Releases: tagged builds for Windows/Linux
-  - https://github.com/iMAGRAY/ValidationCodeHook/releases
 
 ## Возможности
 
