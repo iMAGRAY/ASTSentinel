@@ -224,7 +224,6 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
 }
 
 /// Perform AST analysis across all code files in the project
-#[allow(dead_code)]
 async fn perform_project_wide_ast_analysis(working_dir: &str) -> String {
     let mut results = Vec::new();
     let mut total_issues = 0;
@@ -290,7 +289,6 @@ async fn perform_project_wide_ast_analysis(working_dir: &str) -> String {
 }
 
 /// Recursively analyze directory for code files
-#[allow(dead_code)]
 async fn analyze_directory_recursive(
     path: &Path,
     results: &mut Vec<(String, usize, Vec<String>)>,

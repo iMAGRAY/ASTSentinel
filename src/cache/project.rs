@@ -299,63 +299,54 @@ pub fn count_lines_of_code(file_path: &Path) -> Result<(usize, usize, usize)> {
             multi_start: "/*",
             multi_end: "*/",
             doc_single: Some("///"),
-            doc_multi_start: Some("/**"),
         }),
         "js" | "ts" | "jsx" | "tsx" => Some(CommentConfig {
             single: "//",
             multi_start: "/*",
             multi_end: "*/",
             doc_single: None,
-            doc_multi_start: Some("/**"),
         }),
         "py" => Some(CommentConfig {
             single: "#",
             multi_start: "\"\"\"",
             multi_end: "\"\"\"",
             doc_single: None,
-            doc_multi_start: None,
         }),
         "java" | "c" | "cpp" | "go" => Some(CommentConfig {
             single: "//",
             multi_start: "/*",
             multi_end: "*/",
             doc_single: None,
-            doc_multi_start: Some("/**"),
         }),
         "rb" => Some(CommentConfig {
             single: "#",
             multi_start: "=begin",
             multi_end: "=end",
             doc_single: None,
-            doc_multi_start: None,
         }),
         "zig" => Some(CommentConfig {
             single: "//",
             multi_start: "", // Zig doesn't have multi-line comments
             multi_end: "",
             doc_single: Some("///"),
-            doc_multi_start: None,
         }),
         "v" => Some(CommentConfig {
             single: "//",
             multi_start: "/*",
             multi_end: "*/",
             doc_single: None,
-            doc_multi_start: None,
         }),
         "gleam" => Some(CommentConfig {
             single: "//",
             multi_start: "", // Gleam uses only single-line comments
             multi_end: "",
             doc_single: Some("///"),
-            doc_multi_start: None,
         }),
         "html" | "xml" => Some(CommentConfig {
             single: "",
             multi_start: "<!--",
             multi_end: "-->",
             doc_single: None,
-            doc_multi_start: None,
         }),
         _ => None,
     };
@@ -425,8 +416,6 @@ struct CommentConfig {
     multi_start: &'static str,
     multi_end: &'static str,
     doc_single: Option<&'static str>,
-    #[allow(dead_code)]
-    doc_multi_start: Option<&'static str>,
 }
 
 /// Calculate importance score for a file

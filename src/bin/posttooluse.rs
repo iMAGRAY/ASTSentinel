@@ -1008,24 +1008,7 @@ const TEMPLATE_FOOTER: &str = "\n=== END FORMAT ===\n";
 const FINAL_INSTRUCTION_PREFIX: &str =
     "\n\nOUTPUT EXACTLY AS TEMPLATE. ANY FORMAT ALLOWED IF TEMPLATE SHOWS IT.\nRESPOND IN ";
 
-/// Format the analysis prompt with instructions, project context and conversation
-/// Currently unused but kept for future API compatibility
-#[allow(dead_code)]
-async fn format_analysis_prompt(
-    prompt: &str,
-    project_context: Option<&str>,
-    diff_context: Option<&str>,
-    transcript_context: Option<&str>,
-) -> Result<String> {
-    format_analysis_prompt_with_ast(
-        prompt,
-        project_context,
-        diff_context,
-        transcript_context,
-        None,
-    )
-    .await
-}
+// Removed legacy wrapper `format_analysis_prompt` (use `format_analysis_prompt_with_ast` directly)
 
     // Tests live in the larger tests module further below
 

@@ -391,7 +391,6 @@ pub struct UniversalAIClient {
     config: Config,
 }
 
-#[allow(dead_code)]
 impl UniversalAIClient {
     pub fn new(config: Config) -> Result<Self> {
         let client = Client::builder()
@@ -785,7 +784,6 @@ impl UniversalAIClient {
     }
 
     /// Get the JSON schema for code analysis
-    #[allow(dead_code)]
     fn get_code_analysis_schema(&self) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
@@ -2254,7 +2252,6 @@ impl UniversalAIClient {
     }
 
     /// Detect code content in text (case-insensitive)
-    #[allow(dead_code)]
     fn detect_code_content(text_lower: &str) -> bool {
         text_lower.contains("```")
             || text_lower.contains("def ")
@@ -2270,7 +2267,6 @@ impl UniversalAIClient {
     }
 
     /// Detect error content in text (case-insensitive)
-    #[allow(dead_code)]
     fn detect_error_content(text_lower: &str) -> bool {
         text_lower.contains("error")
             || text_lower.contains("exception")
