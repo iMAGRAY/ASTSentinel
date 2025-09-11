@@ -367,7 +367,6 @@ fn build_entity_context_snippets(
 // Function signatures via AST (Python/JS/TS)
 #[derive(Clone, Debug)]
 struct FuncSignature {
-    name: String,
     params: Vec<String>,
     start_byte: usize,
     end_byte: usize,

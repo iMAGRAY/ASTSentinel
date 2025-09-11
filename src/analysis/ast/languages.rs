@@ -387,8 +387,7 @@ impl MultiLanguageAnalyzer {
         use rayon::prelude::*;
         use std::fs;
 
-        file_paths
-            .par_iter()
+        rayon::slice::ParallelSlice::par_iter(file_paths)
             .map(|path| {
                 let result = (|| -> Result<ComplexityMetrics> {
                     // Detect language from extension
@@ -460,8 +459,8 @@ impl MultiLanguageAnalyzer {
         let mut results: Vec<(std::path::PathBuf, ComplexityMetrics)> = Vec::new();
         let mut errors: Vec<(std::path::PathBuf, anyhow::Error)> = Vec::new();
 
-        let collected: Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> = files
-            .par_iter()
+        let collected: Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> =
+            rayon::slice::ParallelSlice::par_iter(&files)
             .map(|path| {
                 let r = (|| -> Result<ComplexityMetrics> {
                     let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");

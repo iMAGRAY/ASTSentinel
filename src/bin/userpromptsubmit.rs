@@ -6,9 +6,7 @@ use rust_validation_hooks::*;
 // Use project analysis for full context
 use rust_validation_hooks::analysis::project::scan_project_with_cache;
 // Use AST analysis for comprehensive error detection
-use rust_validation_hooks::analysis::ast::{
-    MultiLanguageAnalyzer, AstQualityScorer, SupportedLanguage, IssueSeverity,
-};
+use rust_validation_hooks::analysis::ast::{AstQualityScorer, SupportedLanguage};
 // Use duplicate detector for conflict awareness
 // Use dependency analysis
 use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
@@ -222,7 +220,5 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
     cats.truncate(5);
     Some(RiskHealth { total, critical: crit, major: maj, minor: min, top_categories: cats })
 }
-
-/// Perform AST analysis across all code files in the project
 
 // Removed unused project-wide AST analysis helpers
