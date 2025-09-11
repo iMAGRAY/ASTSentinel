@@ -8,9 +8,7 @@ use tree_sitter::Node;
 // Methods are included directly in this file for simplicity
 
 /// Tree-sitter visitor for calculating complexity metrics
-pub struct ComplexityVisitor<'a> {
-    #[allow(dead_code)]
-    source_code: &'a str,
+pub struct ComplexityVisitor {
     language: SupportedLanguage,
     // Optional fast-path: precomputed kind ids for hot nodes (per language)
     kind_ids: Option<KindIds>,
@@ -26,12 +24,11 @@ pub struct ComplexityVisitor<'a> {
     line_count: usize,
 }
 
-impl<'a> ComplexityVisitor<'a> {
-    pub fn new(source_code: &'a str, language: SupportedLanguage) -> Self {
+impl ComplexityVisitor {
+    pub fn new(source_code: &str, language: SupportedLanguage) -> Self {
         // Use precomputed kind ids when available (constant-time)
         let kind_ids = kind_ids::get_for_language(language);
         Self {
-            source_code,
             language,
             kind_ids,
             cyclomatic_complexity: 1, // Base complexity

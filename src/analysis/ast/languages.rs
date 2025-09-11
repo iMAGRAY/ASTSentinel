@@ -419,15 +419,12 @@ impl MultiLanguageAnalyzer {
 
     /// Analyze project directory concurrently with filtering
     /// Returns successful results and collected errors separately
-    /// Uses crossbeam-channel for efficient multi-producer multi-consumer communication
     pub fn analyze_project_concurrent(
         project_root: &std::path::Path,
         max_depth: Option<usize>,
         exclude_patterns: &[&str],
     ) -> Result<AnalyzeProjectResult> {
-        use crossbeam_channel::bounded;
         use rayon::prelude::*;
-        use std::thread;
 
         // Collect all relevant files
         let mut files = Vec::new();
@@ -456,123 +453,42 @@ impl MultiLanguageAnalyzer {
             return Ok((Vec::new(), Vec::new()));
         }
 
-        // Create bounded channels for better backpressure control
-        // Bounded channels prevent memory exhaustion with large file counts
-        let (results_tx, results_rx) = bounded::<(std::path::PathBuf, ComplexityMetrics)>(100);
-        let (errors_tx, errors_rx) = bounded::<(std::path::PathBuf, anyhow::Error)>(100);
+        use rayon::prelude::*;
+        use std::fs;
 
-        // Spawn collector thread with efficient channel handling
-        let total_files = files.len();
-        let collector_handle = thread::spawn(move || {
-            let mut final_results = Vec::new();
-            let mut final_errors = Vec::new();
-            let mut processed_count = 0;
+        // Process files in parallel and collect
+        let mut results: Vec<(std::path::PathBuf, ComplexityMetrics)> = Vec::new();
+        let mut errors: Vec<(std::path::PathBuf, anyhow::Error)> = Vec::new();
 
-            // Use crossbeam's select! macro for efficient multi-channel receiving
-            // This eliminates busy-wait and provides optimal performance
-            use crossbeam_channel::{select, RecvError};
-
-            loop {
-                // Exit when we've collected all expected results
-                if processed_count >= total_files {
-                    break;
-                }
-
-                // Use select! to efficiently wait on multiple channels
-                select! {
-                    recv(results_rx) -> msg => {
-                        match msg {
-                            Ok(result) => {
-                                final_results.push(result);
-                                processed_count += 1;
-                            },
-                            Err(RecvError) => {
-                                // Channel disconnected, drain remaining messages
-                                while let Ok(result) = results_rx.try_recv() {
-                                    final_results.push(result);
-                                    processed_count += 1;
-                                }
-                                // Continue to check errors channel
-                            }
-                        }
-                    },
-                    recv(errors_rx) -> msg => {
-                        match msg {
-                            Ok(error) => {
-                                final_errors.push(error);
-                                processed_count += 1;
-                            },
-                            Err(RecvError) => {
-                                // Channel disconnected, drain remaining messages
-                                while let Ok(error) = errors_rx.try_recv() {
-                                    final_errors.push(error);
-                                    processed_count += 1;
-                                }
-                                // Continue to check results channel
-                            }
-                        }
-                    },
-                    default(std::time::Duration::from_millis(100)) => {
-                        // Timeout after 100ms of no activity
-                        // Check if both channels are disconnected
-                        if results_rx.is_empty() && errors_rx.is_empty() {
-                            // Try one more drain to be sure
-                            while let Ok(result) = results_rx.try_recv() {
-                                final_results.push(result);
-                                processed_count += 1;
-                            }
-                            while let Ok(error) = errors_rx.try_recv() {
-                                final_errors.push(error);
-                                processed_count += 1;
-                            }
-
-                            // If still no progress and both channels are disconnected, exit
-                            // keep waiting; senders may still be active
-                        }
+        let collected: Vec<(std::path::PathBuf, Result<ComplexityMetrics>)> = files
+            .par_iter()
+            .map(|path| {
+                let r = (|| -> Result<ComplexityMetrics> {
+                    let extension = path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+                    let language = SupportedLanguage::from_extension(extension)
+                        .ok_or_else(|| anyhow::anyhow!("Unsupported file extension: {}", extension))?;
+                    if language == SupportedLanguage::Rust {
+                        return Err(anyhow::anyhow!("Rust files should use syn crate analysis"));
                     }
-                }
+                    let content = fs::read_to_string(path)
+                        .map_err(|e| anyhow::anyhow!("Failed to read file {}: {}", path.display(), e))?;
+                    Self::analyze_with_tree_sitter(&content, language)
+                })();
+                (path.clone(), r)
+            })
+            .collect();
+
+        for (p, r) in collected {
+            match r {
+                Ok(m) => results.push((p, m)),
+                Err(e) => errors.push((p, e)),
             }
+        }
 
-            (final_results, final_errors)
-        });
+        results.sort_by(|a, b| a.0.cmp(&b.0));
+        errors.sort_by(|a, b| a.0.cmp(&b.0));
 
-        // Process files concurrently without mutex contention
-        files.par_iter().for_each(|path| {
-            match Self::analyze_file_paths_concurrent(std::slice::from_ref(path))
-                .into_iter()
-                .next()
-            {
-                Some((_, Ok(metrics))) => {
-                    if let Err(e) = results_tx.send((path.clone(), metrics)) {
-                        eprintln!("Warning: Failed to send analysis result: {}", e);
-                    }
-                }
-                Some((p, Err(e))) => {
-                    #[cfg(test)]
-                    eprintln!("DEBUG: Analysis error for {}: {}", p.display(), e);
-
-                    if let Err(send_err) = errors_tx.send((p.clone(), e)) {
-                        eprintln!("Warning: Failed to send analysis error: {}", send_err);
-                    }
-                }
-                None => {
-                    let error =
-                        anyhow::anyhow!("No analysis result returned for {}", path.display());
-                    if let Err(send_err) = errors_tx.send((path.clone(), error)) {
-                        eprintln!("Warning: Failed to send empty result error: {}", send_err);
-                    }
-                }
-            }
-        });
-
-        // Drop senders to signal completion to collector
-        drop(results_tx);
-        drop(errors_tx);
-
-        // Wait for collector to finish and return results
-        collector_handle
-            .join()
-            .map_err(|_| anyhow::anyhow!("Failed to join collector thread"))
+        Ok((results, errors))
     }
 
     /// Strict version that fails on any error

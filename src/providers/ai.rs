@@ -783,86 +783,7 @@ impl UniversalAIClient {
         })
     }
 
-    /// Get the JSON schema for code analysis
-    fn get_code_analysis_schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "required": ["summary", "overall_quality", "issues", "suggestions"],
-            "additionalProperties": false,
-            "properties": {
-                "summary": {
-                    "type": "string",
-                    "maxLength": 500
-                },
-                "overall_quality": {
-                    "type": "string",
-                    "enum": ["excellent", "good", "needs_improvement", "poor"]
-                },
-                "issues": {
-                    "type": "array",
-                    "maxItems": 20,
-                    "items": {
-                        "type": "object",
-                        "required": ["severity", "category", "message"],
-                        "properties": {
-                            "severity": {
-                                "type": "string",
-                                "enum": ["info", "minor", "major", "critical", "blocker"]
-                            },
-                            "category": {
-                                "type": "string",
-                                "enum": ["intent", "correctness", "security", "robustness", "maintainability", "performance", "tests", "lint"]
-                            },
-                            "message": {
-                                "type": "string",
-                                "maxLength": 300
-                            },
-                            "line": {"type": "integer"},
-                            "impact": {"type": "integer", "minimum": 1, "maximum": 3},
-                            "fix_cost": {"type": "integer", "minimum": 1, "maximum": 3},
-                            "confidence": {"type": "number", "minimum": 0.5, "maximum": 1.0},
-                            "fix_suggestion": {"type": "string", "maxLength": 200}
-                        }
-                    }
-                },
-                "suggestions": {
-                    "type": "array",
-                    "maxItems": 10,
-                    "items": {
-                        "type": "object",
-                        "required": ["category", "description", "priority"],
-                        "properties": {
-                            "category": {"type": "string"},
-                            "description": {"type": "string", "maxLength": 300},
-                            "priority": {
-                                "type": "string",
-                                "enum": ["high", "medium", "low"]
-                            },
-                            "priority_score": {"type": "number", "minimum": 0, "maximum": 100},
-                            "code_example": {"type": "string"}
-                        }
-                    }
-                },
-                "metrics": {
-                    "type": "object",
-                    "properties": {
-                        "complexity": {
-                            "type": "string",
-                            "enum": ["low", "medium", "high"]
-                        },
-                        "readability": {
-                            "type": "string",
-                            "enum": ["excellent", "good", "fair", "poor"]
-                        },
-                        "test_coverage": {
-                            "type": "string",
-                            "enum": ["none", "partial", "good", "excellent"]
-                        }
-                    }
-                }
-            }
-        })
-    }
+    // (removed unused structured code analysis schema)
 
     /// Parse OpenAI-compatible response
     async fn parse_openai_response(
@@ -998,6 +919,7 @@ impl UniversalAIClient {
     // Code analysis methods for PostToolUse hook
 
     /// Analyze code with GPT-5 (uses Responses API)
+    #[cfg(test)]
     async fn analyze_with_gpt5(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
@@ -1378,6 +1300,7 @@ impl UniversalAIClient {
     }
 
     /// Convert new validation format to GrokCodeAnalysis format
+    #[cfg(test)]
     fn convert_new_format_to_grok_analysis(
         &self,
         new_format: serde_json::Value,
@@ -1565,6 +1488,7 @@ impl UniversalAIClient {
     }
 
     /// Analyze code with standard OpenAI models
+    #[cfg(test)]
     async fn analyze_with_openai(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
@@ -1607,6 +1531,7 @@ impl UniversalAIClient {
     }
 
     /// Analyze code with Anthropic Claude
+    #[cfg(test)]
     async fn analyze_with_anthropic(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Anthropic);
         let base_url = self
@@ -1641,6 +1566,7 @@ impl UniversalAIClient {
     }
 
     /// Analyze code with Google Gemini
+    #[cfg(test)]
     async fn analyze_with_google(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::Google);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::Google);
@@ -1680,6 +1606,7 @@ impl UniversalAIClient {
     }
 
     /// Analyze code with xAI Grok
+    #[cfg(test)]
     async fn analyze_with_xai(&self, code: &str, prompt: &str) -> Result<GrokCodeAnalysis> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
@@ -1723,6 +1650,7 @@ impl UniversalAIClient {
 
     // Helper methods to parse analysis responses
 
+    #[cfg(test)]
     async fn parse_openai_analysis_response(
         &self,
         response: reqwest::Response,
@@ -1766,6 +1694,7 @@ impl UniversalAIClient {
         Ok(analysis)
     }
 
+    #[cfg(test)]
     async fn parse_anthropic_analysis_response(
         &self,
         response: reqwest::Response,
@@ -1803,6 +1732,7 @@ impl UniversalAIClient {
         Ok(analysis)
     }
 
+    #[cfg(test)]
     async fn parse_google_analysis_response(
         &self,
         response: reqwest::Response,
@@ -2165,30 +2095,7 @@ impl UniversalAIClient {
     }
 
 
-    /// Detect code content in text (case-insensitive)
-    fn detect_code_content(text_lower: &str) -> bool {
-        text_lower.contains("```")
-            || text_lower.contains("def ")
-            || text_lower.contains("function")
-            || text_lower.contains("class ")
-            || text_lower.contains("import ")
-            || text_lower.contains("const ")
-            || text_lower.contains("let ")
-            || text_lower.contains("var ")
-            || text_lower.contains("fn ")
-            || text_lower.contains("struct ")
-            || text_lower.contains("impl ")
-    }
-
-    /// Detect error content in text (case-insensitive)
-    fn detect_error_content(text_lower: &str) -> bool {
-        text_lower.contains("error")
-            || text_lower.contains("exception")
-            || text_lower.contains("failed")
-            || text_lower.contains("panic")
-            || text_lower.contains("crash")
-            || text_lower.contains("bug")
-    }
+    // Removed deprecated text heuristics (detect_code_content/detect_error_content)
 
     /// Get the JSON schema for memory optimization
     fn get_memory_optimization_schema(&self) -> serde_json::Value {
