@@ -1,17 +1,24 @@
+<p align="center">
+  <img src="../assets/hero.svg" width="100%" alt="AST Sentinel — Deterministic AST Hooks"/>
+</p>
+
 # Testing & Coverage
 
 ## Running Tests
-- Default (fastpath): `cargo test`
+- Default (fast path): `cargo test`
 - Legacy multi‑pass: `cargo test --no-default-features`
 
 ## E2E
-- Hooks e2e находятся в `tests/` и не требуют сети в режимах:
-  - `POSTTOOL_AST_ONLY=1` (структурный контекст без сетевых вызовов)
-  - `POSTTOOL_DRY_RUN=1` (построение промпта/контекста без сетевых вызовов)
+- Hook e2e tests live in `tests/` and can run fully offline via:
+  - `POSTTOOL_AST_ONLY=1` — structured AST context only, no network
+  - `POSTTOOL_DRY_RUN=1` — build prompt/context, do not call providers
 
 ## Unit Highlights
-- AST single‑pass/legacy, безопасная обработка путей, парсеры deps (npm/pip/cargo/poetry), DuplicateDetector (caps, порядок, сводки)
+- AST single‑pass vs legacy parity
+- Safe path handling across platforms
+- Dependency parsers (npm/pip/cargo/poetry)
+- DuplicateDetector (deterministic ordering, caps, per‑type summary)
 
 ## Coverage
 - Tarpaulin (Linux): `cargo tarpaulin --features ast_fastpath --timeout 120 --out Html`
-- Цель: покрытие критичных путей AST/validation/duplicates/deps; остальной клей покрывается e2e.
+- Goal: cover critical AST/validation/duplicates/deps paths; glue covered by e2e.
