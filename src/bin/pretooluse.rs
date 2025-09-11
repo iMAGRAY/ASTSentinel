@@ -1356,6 +1356,186 @@ async fn main() -> Result<()> {
 
     // All file validation now handled by AI - no automatic skipping based on file extensions
 
+    // If no API key for selected provider, fall back to offline AST-based decision path
+    if config
+        .get_api_key_for_provider(&config.pretool_provider)
+        .is_empty()
+    {
+        tracing::warn!(provider=%config.pretool_provider, "No API key; falling back to AST-only validation");
+        // Determine language from file extension
+        let language = file_path
+            .split('.')
+            .next_back()
+            .and_then(SupportedLanguage::from_extension);
+
+        // Default to allow if no code/language
+        if content.trim().is_empty() || language.is_none() {
+            let output = PreToolUseOutput {
+                hook_specific_output: PreToolUseHookOutput {
+                    hook_event_name: "PreToolUse".to_string(),
+                    permission_decision: "allow".to_string(),
+                    permission_decision_reason: None,
+                },
+            };
+            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            return Ok(());
+        }
+
+        // Heuristic assessment
+        let heur = assess_change(&hook_input);
+
+        // If WRITE is a no-op (old == new ignoring whitespace/comments), allow unless dangerous patterns
+        if hook_input.tool_name == "Write" {
+            let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
+            if let (Some(o), Some(n)) = (old_opt, new_opt) {
+                if normalize_code_for_signal(&o) == normalize_code_for_signal(&n) {
+                    let low = n.to_ascii_lowercase();
+                    let has_creds = low.contains("password")
+                        || low.contains("secret")
+                        || low.contains("api_key")
+                        || low.contains("token");
+                    let has_sql = (low.contains("select") && low.contains("where"))
+                        || (low.contains("insert") && low.contains("values"))
+                        || (low.contains("update") && low.contains("set"))
+                        || (low.contains("delete") && low.contains("from"));
+                    if !(has_creds || has_sql) {
+                        let output = PreToolUseOutput {
+                            hook_specific_output: PreToolUseHookOutput {
+                                hook_event_name: "PreToolUse".to_string(),
+                                permission_decision: "allow".to_string(),
+                                permission_decision_reason: None,
+                            },
+                        };
+                        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        // Block fake implementations
+        if /* do not block TODO/FIXME */
+            heur.has_empty_catch_or_except
+            || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
+        {
+            let reason = format!("Anti-cheating: {}", heur.summary);
+            let output = PreToolUseOutput {
+                hook_specific_output: PreToolUseHookOutput {
+                    hook_event_name: "PreToolUse".to_string(),
+                    permission_decision: "deny".to_string(),
+                    permission_decision_reason: Some(format_quality_message(&reason)),
+                },
+            };
+            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            return Ok(());
+        }
+
+        // No-op Edit → deny
+        if hook_input.tool_name == "Edit" {
+            let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
+            if let (Some(o), Some(n)) = (old_opt, new_opt) {
+                if normalize_code_for_signal(&o) == normalize_code_for_signal(&n) {
+                    let reason = "No-op change (whitespace/comments only)";
+                    let output = PreToolUseOutput {
+                        hook_specific_output: PreToolUseHookOutput {
+                            hook_event_name: "PreToolUse".to_string(),
+                            permission_decision: "deny".to_string(),
+                            permission_decision_reason: Some(format_quality_message(reason)),
+                        },
+                    };
+                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    return Ok(());
+                }
+            }
+        }
+
+        // API contract weakening (deny)
+        if hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit" {
+            let (path, old_opt, new_opt) = extract_old_new_contents(&hook_input);
+            if let (Some(old), Some(new)) = (old_opt, new_opt) {
+                let lang = path.split('.').next_back().and_then(SupportedLanguage::from_extension);
+                let reasons = contract_weakening_reasons(lang, &old, &new);
+                if !reasons.is_empty() {
+                    let reason = format!("API contract weakening detected:\n{}", reasons.join("\n"));
+                    let output = PreToolUseOutput {
+                        hook_specific_output: PreToolUseHookOutput {
+                            hook_event_name: "PreToolUse".to_string(),
+                            permission_decision: "deny".to_string(),
+                            permission_decision_reason: Some(format_quality_message(&reason)),
+                        },
+                    };
+                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    return Ok(());
+                }
+            }
+        }
+
+        // AST scoring
+        let scorer = analysis::ast::quality_scorer::AstQualityScorer::new();
+        let language = match language {
+            Some(l) => l,
+            None => {
+                let output = PreToolUseOutput {
+                    hook_specific_output: PreToolUseHookOutput {
+                        hook_event_name: "PreToolUse".to_string(),
+                        permission_decision: "allow".to_string(),
+                        permission_decision_reason: None,
+                    },
+                };
+                println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                return Ok(());
+            }
+        };
+        let score = scorer.analyze(&content, language).unwrap_or_else(|_| analysis::ast::quality_scorer::QualityScore {
+            total_score: 1000,
+            functionality_score: 300,
+            reliability_score: 200,
+            maintainability_score: 200,
+            performance_score: 150,
+            security_score: 100,
+            standards_score: 50,
+            concrete_issues: vec![],
+        });
+
+        // Policy evaluation
+        let cfg = config::load_config();
+        use analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
+        let mut deny_reasons: Vec<String> = Vec::new();
+        for i in &score.concrete_issues {
+            if matches!(i.category, IssueCategory::UnfinishedWork) { continue; }
+            if config::should_ignore_path(&cfg, &file_path) { continue; }
+            let min_sev = match cfg.sensitivity {
+                config::Sensitivity::Low => IssueSeverity::Critical,
+                config::Sensitivity::Medium => IssueSeverity::Major,
+                config::Sensitivity::High => IssueSeverity::Minor,
+            };
+            let is_test_ctx = config::is_test_context(&cfg, &file_path);
+            let allowlisted = config::code_contains_allowlisted_vars(&cfg, &content);
+            let mut triggers = i.severity as u8 <= min_sev as u8;
+            if matches!(i.category, IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal) {
+                triggers = true;
+            }
+            if is_test_ctx && allowlisted && matches!(i.category, IssueCategory::HardcodedCredentials) {
+                triggers = false;
+            }
+            if triggers { deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id)); }
+        }
+        let (decision, reason) = if deny_reasons.is_empty() {
+            ("allow".to_string(), None)
+        } else {
+            ("deny".to_string(), Some(format_quality_message(&deny_reasons.join("\n"))))
+        };
+        let output = PreToolUseOutput {
+            hook_specific_output: PreToolUseHookOutput {
+                hook_event_name: "PreToolUse".to_string(),
+                permission_decision: decision,
+                permission_decision_reason: reason,
+            },
+        };
+        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        return Ok(());
+    }
+
     // Perform security validation with context
     match perform_validation(&config, &content, &hook_input).await {
         Ok(validation) => {

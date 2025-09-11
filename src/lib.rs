@@ -359,6 +359,7 @@ impl Config {
     fn try_from_config_file_internal() -> Option<Self> {
         use std::fs;
         use std::path::PathBuf;
+        use regex::Regex;
 
         #[derive(Debug, Default, Deserialize)]
         struct FileCfg {
@@ -435,33 +436,53 @@ impl Config {
             .and_then(|p| parse_any(&p))?;
 
         // Compose final Config with sensible defaults if not provided
-        let pretool_provider_str = fc.pretool_provider.unwrap_or_else(|| "xai".to_string());
-        let posttool_provider_str = fc.posttool_provider.unwrap_or_else(|| "xai".to_string());
+        // Environment variable expansion like ${VAR}
+        fn expand_env(s: String) -> String {
+            let re = match Regex::new(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}") {
+                Ok(r) => r,
+                Err(_) => return s, // defensive: if regex fails, return original string
+            };
+            let result = re.replace_all(&s, |caps: &regex::Captures| {
+                let key = &caps[1];
+                std::env::var(key)
+                    .or_else(|_| std::env::var(key.to_ascii_uppercase()))
+                    .unwrap_or_else(|_| "".to_string())
+            });
+            result.into_owned()
+        }
+        fn map_opt(v: Option<String>) -> Option<String> {
+            v.map(expand_env)
+        }
+
+        let pretool_provider_str = map_opt(fc.pretool_provider)
+            .unwrap_or_else(|| "xai".to_string());
+        let posttool_provider_str = map_opt(fc.posttool_provider)
+            .unwrap_or_else(|| "xai".to_string());
 
         let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>().ok()?;
         let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>().ok()?;
 
         let cfg = Config {
-            openai_api_key: fc.openai_api_key.unwrap_or_default(),
-            anthropic_api_key: fc.anthropic_api_key.unwrap_or_default(),
-            google_api_key: fc.google_api_key.unwrap_or_default(),
-            xai_api_key: fc.xai_api_key.unwrap_or_default(),
-            openai_base_url: fc
+            openai_api_key: map_opt(fc.openai_api_key).unwrap_or_default(),
+            anthropic_api_key: map_opt(fc.anthropic_api_key).unwrap_or_default(),
+            google_api_key: map_opt(fc.google_api_key).unwrap_or_default(),
+            xai_api_key: map_opt(fc.xai_api_key).unwrap_or_default(),
+            openai_base_url: map_opt(fc
                 .openai_base_url
-                .unwrap_or_else(|| providers::AIProvider::OpenAI.default_base_url().to_string()),
-            anthropic_base_url: fc
+                ).unwrap_or_else(|| providers::AIProvider::OpenAI.default_base_url().to_string()),
+            anthropic_base_url: map_opt(fc
                 .anthropic_base_url
-                .unwrap_or_else(|| providers::AIProvider::Anthropic.default_base_url().to_string()),
-            google_base_url: fc
+                ).unwrap_or_else(|| providers::AIProvider::Anthropic.default_base_url().to_string()),
+            google_base_url: map_opt(fc
                 .google_base_url
-                .unwrap_or_else(|| providers::AIProvider::Google.default_base_url().to_string()),
-            xai_base_url: fc
+                ).unwrap_or_else(|| providers::AIProvider::Google.default_base_url().to_string()),
+            xai_base_url: map_opt(fc
                 .xai_base_url
-                .unwrap_or_else(|| providers::AIProvider::XAI.default_base_url().to_string()),
+                ).unwrap_or_else(|| providers::AIProvider::XAI.default_base_url().to_string()),
             pretool_provider,
             posttool_provider,
-            pretool_model: fc.pretool_model.unwrap_or_else(|| "grok-code-fast-1".to_string()),
-            posttool_model: fc.posttool_model.unwrap_or_else(|| "grok-code-fast-1".to_string()),
+            pretool_model: map_opt(fc.pretool_model).unwrap_or_else(|| "grok-code-fast-1".to_string()),
+            posttool_model: map_opt(fc.posttool_model).unwrap_or_else(|| "grok-code-fast-1".to_string()),
             max_tokens: fc.max_tokens.unwrap_or(4000).clamp(100, 100_000),
             temperature: fc.temperature.unwrap_or(0.1).clamp(0.0, 2.0),
             max_issues: fc.max_issues.unwrap_or(10).clamp(1, 50),
