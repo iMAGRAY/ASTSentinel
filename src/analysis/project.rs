@@ -1014,9 +1014,12 @@ pub fn format_project_structure_for_ai_with_metrics(
     if compress {
         if let Some(m) = metrics {
             let compressed = compress_structure(structure, m);
-            return format!("COMPRESSED_PROJECT[v{compressed.format_version}][{}]\nMETRICS[{}]\nIMPORTANT[{}]\nTOKENS:{compressed.tree,
+            return format!(
+                "COMPRESSED_PROJECT[v{}][{}]\nMETRICS[{}]\nIMPORTANT[{}]\nTOKENS:{}",
+                compressed.format_version,
+                compressed.tree,
                 compressed.metrics,
-                compressed.important_files.join(","}"),
+                compressed.important_files.join(","),
                 compressed.token_estimate
             );
         }
@@ -1394,6 +1397,5 @@ mod tests {
         assert!(formatted.contains("bin[main.rs]")); // nested structure works
     }
 }
-
 
 
