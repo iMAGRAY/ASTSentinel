@@ -83,7 +83,7 @@ impl YamlFormatter {
                     return Ok(format!("{}{}:", prefix, key));
                 } else {
                     // Key with value - normalize spacing
-                    return Ok(format!("{prefix}{}: {key, value}"));
+                    return Ok(format!("{}{}: {}", prefix, key, value));
                 }
             }
         }
@@ -340,6 +340,5 @@ mod tests {
         assert!(formatted.contains("    grandchild: value2"));
     }
 }
-
 
 
