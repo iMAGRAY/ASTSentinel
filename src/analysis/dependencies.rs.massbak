@@ -182,7 +182,10 @@ impl ProjectDependencies {
                 current.sort_by(|a, b| a.name.cmp(&b.name));
                 for dep in current.iter().take(10) {
                     let dev_marker = if dep.is_dev_dependency { " (dev)" } else { "" };
-                    result.push_str(&format!("  • {v0}{v0}: {v0}\n", v0 = dep.name, v1 = dev_marker, v2 = dep.current_version));
+                    result.push_str(&format!(
+                        "  • {}{}: {}\n",
+                        dep.name, dev_marker, dep.current_version
+                    ));
                 }
                 if current.len() > 10 {
                     result.push_str(&format!("  ... and {} more\n", current.len() - 10));
@@ -750,4 +753,3 @@ async fn parse_pyproject_toml_poetry(file_path: &PathBuf) -> Result<Vec<Dependen
 
     Ok(dependencies)
 }
-

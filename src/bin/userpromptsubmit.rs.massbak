@@ -123,11 +123,17 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
         metrics.average_cyclomatic_complexity,
         metrics.average_cognitive_complexity
     ));
-    out.push_str(&format!("Dependencies: total {v0}, outdated {v0}\n", v0 = deps.total_count, v1 = deps.outdated_count));
+    out.push_str(&format!(
+        "Dependencies: total {}, outdated {}\n",
+        deps.total_count, deps.outdated_count
+    ));
 
     out.push_str("\n---\n\n=== RISK/HEALTH SNAPSHOT ===\n");
     if let Some(r) = rh {
-        out.push_str(&format!("Issues: total {v0} (Critical {v0} / Major {v0} / Minor {v0})\n", v0 = r.total, v1 = r.critical, v2 = r.major, v3 = r.minor));
+        out.push_str(&format!(
+            "Issues: total {} (Critical {} / Major {} / Minor {})\n",
+            r.total, r.critical, r.major, r.minor
+        ));
         if !r.top_categories.is_empty() {
             out.push_str("Top categories: ");
             out.push_str(
@@ -257,5 +263,4 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
 }
 
 // Removed unused project-wide AST analysis helpers
-
 

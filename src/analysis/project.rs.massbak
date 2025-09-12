@@ -1050,7 +1050,10 @@ pub fn format_project_structure_for_ai_with_metrics(
             sorted_langs.sort_by(|a, b| b.1.lines_of_code.cmp(&a.1.lines_of_code));
 
             for (lang, stats) in sorted_langs.iter() {
-                output.push_str(&format!("    - {v0}: {v0} files, {v0} LOC\n", v0 = lang, v1 = stats.file_count, v2 = stats.lines_of_code));
+                output.push_str(&format!(
+                    "    - {}: {} files, {} LOC\n",
+                    lang, stats.file_count, stats.lines_of_code
+                ));
             }
         }
 
@@ -1394,6 +1397,5 @@ mod tests {
         assert!(formatted.contains("bin[main.rs]")); // nested structure works
     }
 }
-
 
 

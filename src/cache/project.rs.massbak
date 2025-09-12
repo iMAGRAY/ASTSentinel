@@ -192,7 +192,14 @@ impl ProjectCache {
                 _ => {
                     // For Tree-sitter supported languages, use structural analysis
                     if let Ok(metrics) = MultiLanguageAnalyzer::analyze_with_tree_sitter(&content, language) {
-                        let structure_signature = format!("{v0}:{v0}:{v0}:{v0}:{v0}", v0 = metrics.function_count, v1 = metrics.cyclomatic_complexity, v2 = metrics.nesting_depth, v3 = metrics.parameter_count, v4 = metrics.return_points);
+                        let structure_signature = format!(
+                            "{}:{}:{}:{}:{}",
+                            metrics.function_count,
+                            metrics.cyclomatic_complexity,
+                            metrics.nesting_depth,
+                            metrics.parameter_count,
+                            metrics.return_points
+                        );
                         let mut hasher = Sha256::new();
                         hasher.update(structure_signature.as_bytes());
                         return Ok(format!("{:x}", hasher.finalize()));
@@ -643,4 +650,3 @@ pub fn build_incremental_update(cache: &ProjectCache, changed_files: Vec<PathBuf
 
     Ok(format!("INCREMENTAL[{}]", updates.join(",")))
 }
-

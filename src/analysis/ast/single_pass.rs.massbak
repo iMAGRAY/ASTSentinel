@@ -62,7 +62,10 @@ impl SinglePassEngine {
                     issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::HighComplexity,
-                        message: format!("High cyclomatic complexity: {v0} (threshold: {v0})", v0 = complexity, v1 = threshold),
+                        message: format!(
+                            "High cyclomatic complexity: {} (threshold: {})",
+                            complexity, threshold
+                        ),
                         file: String::new(),
                         line: node.start_position().row + 1,
                         column: node.start_position().column + 1,
@@ -811,4 +814,3 @@ fn scan_complexity(lang: SupportedLanguage, func: &tree_sitter::Node) -> (u32, u
     }
     (complexity, max_depth)
 }
-
