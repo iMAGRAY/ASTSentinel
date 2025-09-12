@@ -538,9 +538,9 @@ fn format_line(line_num: usize, marker: &str, content: &str) -> String {
     let padded_marker = if marker == " " {
         "  ".to_string()
     } else {
-        format!("{marker}")
+        marker.to_string()
     };
-    format!("{:4} {}{}\n", line_num, padded_marker, content)
+    format!("{line_num:4} {padded_marker}{content}\n")
 }
 
 /// Safely truncate content at line boundary to avoid splitting UTF-8 chars
