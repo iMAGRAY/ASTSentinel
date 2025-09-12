@@ -174,7 +174,10 @@ fn contract_weakening_reasons(
             } else {
                 for bp in bparams {
                     if !bp.is_empty() && !aparams.iter().any(|x| x == bp) {
-                        reasons.push(format!("Function `{v0}`: parameter `{v0}` removed or renamed", v0 = name, v1 = bp));
+                        reasons.push(format!(
+                            "Function `{}`: parameter `{}` removed or renamed",
+                            name, bp
+                        ));
                     }
                 }
             }
@@ -316,7 +319,7 @@ fn find_contract_callsite_issues(
                     let args_slice = &code[j..end];
                     let (_argc, named) = analyze_args_slice(args_slice);
                     for r in removed {
-
+                        let needle = format!("{}=", r);
                         if args_slice.contains(&needle) || named.iter().any(|n| n == r) {
                             seen_named.push(r.clone());
                         }
@@ -376,7 +379,10 @@ fn find_contract_callsite_issues(
             pos = after;
         }
         if offending > 0 {
-            issues.push(format!("Calls to `{v0}` exceed new arity ({v0} -> {v0}): {v0} occurrences", v0 = fname, v1 = old_n, v2 = new_n, v3 = offending));
+            issues.push(format!(
+                "Calls to `{}` exceed new arity ({} -> {}): {} occurrences",
+                fname, old_n, new_n, offending
+            ));
         }
     }
 
@@ -897,9 +903,9 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
 
         // Mark the last user message as current task
         let msg_str = if role == "user" && Some(content) == last_user_message.as_ref() {
-
+            format!("[{}] (CURRENT TASK): {}\n", role, truncated)
         } else {
-
+            format!("[{}]: {}\n", role, truncated)
         };
 
         // Stop if we exceed 2000 chars
@@ -1336,7 +1342,7 @@ async fn main() -> Result<()> {
             }
 
             if triggers {
-
+                deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id));
             }
         }
 
@@ -1615,7 +1621,7 @@ async fn main() -> Result<()> {
             if is_test_ctx && allowlisted && matches!(i.category, IssueCategory::HardcodedCredentials) {
                 triggers = false;
             }
-
+            if triggers { deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id)); }
         }
         let (decision, reason) = if deny_reasons.is_empty() {
             ("allow".to_string(), None)
@@ -1910,7 +1916,7 @@ async fn perform_validation(
     }
 
     // Add language instruction at the end
-
+    prompt = format!("{}\n\nIMPORTANT: Respond in {} language.", prompt, language);
 
     // Heuristic summary: API contract weakening (adds bias for safer decision)
     if !file_path.is_empty() && (hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit") {
@@ -2000,7 +2006,6 @@ async fn perform_validation(
         .await
         .context("Security validation failed")
 }
-
 
 
 

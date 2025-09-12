@@ -313,7 +313,7 @@ fn build_unfinished_work_section(score: &QualityScore, max_items: usize, max_cha
             msg.truncate(max_chars.saturating_sub(1));
             msg.push('…');
         }
-
+        out.push_str(&format!("- Line {}: {}\n", i.line, msg));
     }
     out
 }
@@ -442,7 +442,10 @@ fn build_code_health(score: &QualityScore) -> String {
     }
     let mut s = String::new();
     s.push_str("=== CODE HEALTH ===\n");
-    s.push_str(&format!("Too many params: {v0}\nDeep nesting: {v0}\nHigh complexity: {v0}\nLong methods: {v0}\n", v0 = params, v1 = nesting, v2 = complexity, v3 = long_method));
+    s.push_str(&format!(
+        "Too many params: {}\nDeep nesting: {}\nHigh complexity: {}\nLong methods: {}\n",
+        params, nesting, complexity, long_method
+    ));
     s
 }
 
@@ -1524,7 +1527,10 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
                         continue;
                     }
                     if !bp.is_empty() && !asig.params.iter().any(|x| x == bp) {
-                        s.push_str(&format!("- Function `{v0}`: parameter `{v0}` removed or renamed\n", v0 = name, v1 = bp));
+                        s.push_str(&format!(
+                            "- Function `{}`: parameter `{}` removed or renamed\n",
+                            name, bp
+                        ));
                     }
                 }
             }
@@ -1581,7 +1587,10 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
                 };
                 let used_re = word(p).map(|re| re.is_match(hay)).unwrap_or(false);
                 if !used_re {
-                    s.push_str(&format!("- Function `{v0}`: parameter `{v0}` appears unused\n", v0 = name, v1 = p));
+                    s.push_str(&format!(
+                        "- Function `{}`: parameter `{}` appears unused\n",
+                        name, p
+                    ));
                 }
             }
         }
@@ -2632,7 +2641,10 @@ fn soft_budget_note(content: &str, file_path: &str) -> Option<String> {
     } else { 10_000 }
     .clamp(1, 200_000);
     if bytes > max_bytes || lines > max_lines {
-        return Some(format!("[ANALYSIS] Skipped AST analysis due to soft budget ({v0} bytes, {v0} lines) for {v0} (limits: {v0} bytes, {v0} lines)", v0 = bytes, v1 = lines, v2 = file_path, v3 = max_bytes, v4 = max_lines));
+        return Some(format!(
+            "[ANALYSIS] Skipped AST analysis due to soft budget ({} bytes, {} lines) for {} (limits: {} bytes, {} lines)",
+            bytes, lines, file_path, max_bytes, max_lines
+        ));
     }
     None
 }
@@ -2680,7 +2692,10 @@ fn format_ast_results(score: &QualityScore) -> String {
             result.push_str(title);
             result.push('\n');
             for issue in group {
-                result.push_str(&format!("  Line {v0}: {v0} [{v0}] (-{v0} points)\n", v0 = issue.line, v1 = issue.message, v2 = issue.rule_id, v3 = issue.points_deducted));
+                result.push_str(&format!(
+                    "  Line {}: {} [{}] (-{} points)\n",
+                    issue.line, issue.message, issue.rule_id, issue.points_deducted
+                ));
             }
         }
     };
@@ -2795,7 +2810,7 @@ async fn perform_project_ast_analysis(working_dir: &str) -> String {
         results.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         analysis.push_str("\n### Files with Issues:\n");
         for (path, issues_count, _) in results.iter().take(10) {
-
+            analysis.push_str(&format!("- `{}`: {} issues\n", path, issues_count));
         }
         if results.len() > 10 {
             analysis.push_str(&format!(
@@ -2939,7 +2954,10 @@ async fn analyze_directory_recursive(
                             // Collect critical issues
                             for issue in &quality_score.concrete_issues {
                                 if issue.severity == IssueSeverity::Critical {
-                                    critical_issues.push(format!("{v0}: {v0} (line {v0})", v0 = path_str, v1 = issue.message, v2 = issue.line));
+                                    critical_issues.push(format!(
+                                        "{}: {} (line {})",
+                                        path_str, issue.message, issue.line
+                                    ));
                                 }
                             }
 
@@ -4507,7 +4525,6 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
-
 
 
 
