@@ -4348,7 +4348,7 @@ def f3():\n  return 3\n";
     fn validate_transcript_path_rejects_unc_on_non_windows() {
         let unc = r"\\server\share\file.jsonl";
         let err = validate_transcript_path(unc).unwrap_err();
-        assert!(format!("{err}").to_lowercase().contains("unc"));
+        assert!(format!("{}", err).to_lowercase().contains("unc"));
     }
 
     #[test]
@@ -4525,4 +4525,3 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
-
