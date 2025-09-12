@@ -27,13 +27,12 @@ AST Sentinel is a deterministic set of Claude Code hooks and multi‑language AS
 3. Configure Claude Code to use the hooks.
 
 ## Configuration
-Prefer a single repository config file over `.env`.
+By default, hooks read configuration from environment and a `.env` file next to the executable (.exe). This keeps deployment simple (drop `.exe` + `.env`).
 
-- Create one of the following files in the project root (or alongside the hook binaries):
-  - `.hooks-config.json` (recommended)
-  - `.hooks-config.yaml` / `.hooks-config.yml`
-  - `.hooks-config.toml`
-  - Custom path via `HOOKS_CONFIG_FILE`
+- Place `.env` alongside the binaries (e.g., `C:\\Users\\1\\.claude\\hooks\\pretooluse.exe` and `C:\\Users\\1\\.claude\\hooks\\.env`). Keys like `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY` are supported.
+- Optionally, you can use a file‑based config instead of env by setting `HOOKS_CONFIG_FILE` to one of:
+  - `.hooks-config.json` / `.hooks-config.yaml` / `.hooks-config.yml` / `.hooks-config.toml`
+  - See `.hooks-config.example.json` for a starting point.
 
 Example `.hooks-config.json`:
 ```
@@ -51,9 +50,37 @@ Example `.hooks-config.json`:
 ```
 
 Notes:
-- Поддерживается подстановка переменных окружения в значениях: `${VAR}` заменяется на `ENV[VAR]` (если нет — на пустую строку).
+- `.env` рядом с бинарями имеет приоритет; переменные среды поверх него.
+- Для file‑based конфига поддерживается подстановка переменных окружения в значениях: `${VAR}`.
 - Секреты можно хранить напрямую или подставлять из секрет‑менеджера при генерации файла.
-- Если файл не найден, хуки fallback’ом используют переменные окружения/`.env` (совместимость).
+
+### Production vs Debug/Test
+
+Поведение в продакшне жестко зафиксировано: часть флагов доступна только в debug/test сборках.
+
+Разрешено в проде:
+
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `XAI_API_KEY`
+- `OPENAI_BASE_URL`, `ANTHROPIC_BASE_URL`, `GOOGLE_BASE_URL`, `XAI_BASE_URL`
+- `PRETOOL_PROVIDER`, `POSTTOOL_PROVIDER`
+- `PRETOOL_MODEL`, `POSTTOOL_MODEL`
+- `MAX_TOKENS`, `TEMPERATURE`
+- `REQUEST_TIMEOUT_SECS`, `CONNECT_TIMEOUT_SECS`
+- `SENSITIVITY`
+- `ADDITIONAL_CONTEXT_LIMIT_CHARS`
+- `LOG_JSON` или `HOOK_LOG_JSON`
+
+Только debug/test (в проде игнорируются):
+
+- `POSTTOOL_DRY_RUN`, `PRETOOL_AST_ONLY`, `POSTTOOL_AST_ONLY`
+- `DEBUG_HOOKS`, `AST_TIMINGS`
+- `AST_DIFF_ONLY`, `AST_SNIPPETS`, `AST_MAX_SNIPPETS`, `AST_SNIPPETS_MAX_CHARS`
+- `AST_SOFT_BUDGET_BYTES`, `AST_SOFT_BUDGET_LINES`
+- `AST_ANALYSIS_TIMEOUT_SECS`, `FILE_READ_TIMEOUT`
+- `AST_ENV`, `AST_ALLOWLIST_VARS`, `AST_IGNORE_GLOBS`
+- `API_CONTRACT=0`
+
+Подробности: `docs/PRODUCTION_HARDENING.md`.
 
 ### Prompts (Windows install)
 - В репозитории есть готовые промпты в папке `prompts/`.

@@ -36,7 +36,23 @@ use rust_validation_hooks::analysis::duplicate_detector::DuplicateDetector;
 // Use code formatting service for automatic code formatting
 use rust_validation_hooks::formatting::FormattingService;
 use rust_validation_hooks::messages::glossary::build_quick_tips;
+use rust_validation_hooks::providers::AIProvider;
 
+#[inline]
+fn dev_flag_enabled(name: &str) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        match std::env::var(name) {
+            Ok(v) => v != "0" && !v.is_empty(),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = name;
+        false
+    }
+}
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ToolKind {
     Write,
@@ -91,23 +107,23 @@ async fn render_offline_posttooluse(
     }
     if let Some(ast_score) = ast_score {
         let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(hook_input, display_path).await {
-            let ctxn = std::env::var("AST_DIFF_CONTEXT")
+            let ctxn = if cfg!(debug_assertions) { std::env::var("AST_DIFF_CONTEXT")
                 .ok()
                 .and_then(|v| v.parse().ok())
-                .unwrap_or(3);
+                .unwrap_or(3) } else { 3 };
             let changed = extract_changed_lines(&diff, ctxn);
-            let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() {
+            let filtered = if dev_flag_enabled("AST_DIFF_ONLY") {
                 filter_issues_to_diff(ast_score, &diff, ctxn)
             } else {
                 ast_score.clone()
             };
-            let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+            let snips_enabled = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
             let snips = if snips_enabled {
-                let max_snips = std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3).clamp(1, 50);
-                let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500).clamp(200, 20_000);
+                let max_snips = if cfg!(debug_assertions) { std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3) } else { 3 }.clamp(1, 50);
+                let max_chars = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500) } else { 1500 }.clamp(200, 20_000);
                 let lang = SupportedLanguage::from_extension(display_path.split('.').next_back().unwrap_or(""))
                     .unwrap_or(SupportedLanguage::Python);
-                let use_entity = std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                let use_entity = if cfg!(debug_assertions) { std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
                 if use_entity {
                     let ent = build_entity_context_snippets(
                         lang, content, &filtered, &changed, ctxn, max_snips, max_chars,
@@ -152,6 +168,13 @@ async fn render_offline_posttooluse(
     if formatting_changed {
         final_response.push_str("[FORMAT] Auto-format applied.\n\n");
     }
+    // Always provide agent JSON for downstream agents (fallback from AST if needed)
+    if let Some(ast) = ast_score {
+        let agent = build_agent_json_from_score(ast);
+        final_response.push_str("AGENT_JSON_START\n");
+        final_response.push_str(&agent);
+        final_response.push_str("\nAGENT_JSON_END\n");
+    }
     if crate::analysis::timings::enabled() {
         let sum = crate::analysis::timings::summary();
         if !sum.is_empty() {
@@ -163,7 +186,7 @@ async fn render_offline_posttooluse(
         hook_specific_output: PostToolUseHookOutput {
             hook_event_name: "PostToolUse".to_string(),
             additional_context: {
-                let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000).clamp(10_000, 1_000_000);
+                let lim = if cfg!(debug_assertions) { std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000) } else { 100_000 }.clamp(10_000, 1_000_000);
                 truncate_utf8_safe(&final_response, lim)
             },
         },
@@ -181,20 +204,20 @@ fn build_risk_report(score: &QualityScore) -> String {
     };
 
     // Read caps
-    let global_cap: usize = std::env::var("AST_MAX_ISSUES")
+    let global_cap: usize = if cfg!(debug_assertions) { std::env::var("AST_MAX_ISSUES")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(100)
+        .unwrap_or(100) } else { 100 }
         .clamp(10, 500);
-    let cap_major: usize = std::env::var("AST_MAX_MAJOR")
+    let cap_major: usize = if cfg!(debug_assertions) { std::env::var("AST_MAX_MAJOR")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(global_cap)
+        .unwrap_or(global_cap) } else { global_cap }
         .clamp(5, 500);
-    let cap_minor: usize = std::env::var("AST_MAX_MINOR")
+    let cap_minor: usize = if cfg!(debug_assertions) { std::env::var("AST_MAX_MINOR")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(global_cap)
+        .unwrap_or(global_cap) } else { global_cap }
         .clamp(5, 500);
 
     // Group by severity
@@ -296,19 +319,19 @@ fn build_unfinished_work_section(score: &QualityScore, max_items: usize, max_cha
 }
 
 fn build_quick_tips_section(score: &QualityScore) -> String {
-    let enabled = std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true);
+    let enabled = if cfg!(debug_assertions) { std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true) } else { true };
     if !enabled {
         return String::new();
     }
-    let max_tips = std::env::var("QUICK_TIPS_MAX")
+    let max_tips = if cfg!(debug_assertions) { std::env::var("QUICK_TIPS_MAX")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(6)
+        .unwrap_or(6) } else { 6 }
         .clamp(1, 20);
-    let max_line = std::env::var("QUICK_TIPS_MAX_CHARS")
+    let max_line = if cfg!(debug_assertions) { std::env::var("QUICK_TIPS_MAX_CHARS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(120)
+        .unwrap_or(120) } else { 120 }
         .clamp(60, 180);
     let tips = build_quick_tips(score, max_tips, max_line);
     if tips.is_empty() {
@@ -322,6 +345,35 @@ fn build_quick_tips_section(score: &QualityScore) -> String {
         s.push('\n');
     }
     s
+}
+
+fn build_agent_json_from_score(score: &QualityScore) -> String {
+    // Map severities
+    let sev = |s: IssueSeverity| match s { IssueSeverity::Critical => "critical", IssueSeverity::Major => "major", IssueSeverity::Minor => "minor" };
+    // risk_summary top 10
+    let mut issues = score.concrete_issues.clone();
+    issues.sort_by(|a,b| a.line.cmp(&b.line));
+    issues.truncate(10);
+    let mut items = Vec::new();
+    for i in issues {
+        items.push(serde_json::json!({
+            "severity": sev(i.severity),
+            "line": i.line,
+            "rule": i.rule_id,
+            "msg": i.message
+        }));
+    }
+    // Minimal actions (empty edits/tests/refactors)
+    let j = serde_json::json!({
+        "schema_version": "1.1",
+        "quality": { "overall": score.total_score, "confidence": 0.85 },
+        "risk_summary": items,
+        "api_contract": { "removed_functions": [], "param_changes": [] },
+        "actions": { "edits": [], "tests": [], "refactors": [] },
+        "followup_tools": [],
+        "notes": []
+    });
+    serde_json::to_string(&j).unwrap_or_else(|_| "{}".to_string())
 }
 
 fn filter_issues_to_diff(score: &QualityScore, diff_text: &str, ctx: usize) -> QualityScore {
@@ -1366,7 +1418,9 @@ fn extract_functions_signatures(
 }
 
 fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput, content: &str) -> String {
-    if std::env::var("API_CONTRACT").map(|v| v == "0").unwrap_or(false) {
+    // API contract reporting cannot be disabled in release builds;
+    // in debug/test, allow API_CONTRACT=0 to suppress for local experiments.
+    if cfg!(debug_assertions) && std::env::var("API_CONTRACT").map(|v| v == "0").unwrap_or(false) {
         return String::new();
     }
 
@@ -1784,7 +1838,7 @@ async fn load_prompt_file(filename: &str) -> Result<String> {
         .context("Timeout reading prompt file")?
         .or_else(|e| {
             // In DRY_RUN mode, tolerate missing prompts and continue with empty content
-            if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
+            if dev_flag_enabled("POSTTOOL_DRY_RUN") {
                 tracing::warn!(error=%e, "Continuing with empty prompt due to DRY_RUN");
                 Ok(String::new())
             } else {
@@ -2024,11 +2078,13 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
         }
     };
 
-    // Add configurable timeout for file reads (default 10 seconds)
-    let timeout_secs = std::env::var("FILE_READ_TIMEOUT")
-        .unwrap_or_else(|_| "10".to_string())
-        .parse::<u64>()
-        .unwrap_or(10);
+    // Add configurable timeout for file reads (debug-only override)
+    let timeout_secs = if cfg!(debug_assertions) {
+        std::env::var("FILE_READ_TIMEOUT")
+            .unwrap_or_else(|_| "10".to_string())
+            .parse::<u64>()
+            .unwrap_or(10)
+    } else { 10 };
 
     // Use streaming read to prevent TOCTOU race condition
     match timeout(Duration::from_secs(timeout_secs), async {
@@ -2570,16 +2626,20 @@ fn soft_budget_note(content: &str, file_path: &str) -> Option<String> {
     // Allow very small budgets for tests; keep a sane upper bound for safety.
     // Previously we clamped to 50_000 bytes/1_000 lines which broke e2e expectations.
     // New policy: lower bound = 1 (caller decides), upper bound remains protective.
-    let max_bytes: usize = std::env::var("AST_SOFT_BUDGET_BYTES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(500_000)
-        .clamp(1, 5_000_000);
-    let max_lines: usize = std::env::var("AST_SOFT_BUDGET_LINES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(10_000)
-        .clamp(1, 200_000);
+    let max_bytes: usize = if cfg!(debug_assertions) {
+        std::env::var("AST_SOFT_BUDGET_BYTES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(500_000)
+    } else { 500_000 }
+    .clamp(1, 5_000_000);
+    let max_lines: usize = if cfg!(debug_assertions) {
+        std::env::var("AST_SOFT_BUDGET_LINES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10_000)
+    } else { 10_000 }
+    .clamp(1, 200_000);
     if bytes > max_bytes || lines > max_lines {
         return Some(format!(
             "[ANALYSIS] Skipped AST analysis due to soft budget ({} bytes, {} lines) for {} (limits: {} bytes, {} lines)",
@@ -2705,7 +2765,7 @@ async fn perform_project_ast_analysis(working_dir: &str) -> String {
             )
             .await
             {
-                if std::env::var("DEBUG_HOOKS").is_ok() {
+                if dev_flag_enabled("DEBUG_HOOKS") {
                     tracing::debug!(path=%entry.path().display(), error=%e, "Failed to analyze path");
                 }
             }
@@ -2804,7 +2864,7 @@ async fn analyze_directory_recursive(
     // Depth limit to prevent infinite recursion - properly enforced
     const MAX_DEPTH: usize = 10;
     if depth >= MAX_DEPTH {
-        if std::env::var("DEBUG_HOOKS").is_ok() {
+        if dev_flag_enabled("DEBUG_HOOKS") {
             tracing::debug!(max_depth=MAX_DEPTH, path=%path.display(), "Max depth reached");
         }
         return Ok(());
@@ -2847,17 +2907,17 @@ async fn analyze_directory_recursive(
                     // Skip very large files but track them
                     if content.len() > 500_000 {
                         *skipped_large_files += 1;
-                        if std::env::var("DEBUG_HOOKS").is_ok() {
+                        if dev_flag_enabled("DEBUG_HOOKS") {
                             tracing::debug!(bytes=%content.len(), path=%path.display(), "Skipped large file");
                         }
                         return Ok(());
                     }
 
                     // Enforce per-file AST analysis timeout
-                    let timeout_secs: u64 = std::env::var("AST_ANALYSIS_TIMEOUT_SECS")
+                    let timeout_secs: u64 = if cfg!(debug_assertions) { std::env::var("AST_ANALYSIS_TIMEOUT_SECS")
                         .ok()
                         .and_then(|v| v.parse().ok())
-                        .unwrap_or(8)
+                        .unwrap_or(8) } else { 8 }
                         .clamp(1, 30);
 
                     let start = std::time::Instant::now();
@@ -2905,16 +2965,16 @@ async fn analyze_directory_recursive(
                         }
                     } else if let Ok(Err(join_err)) = analysis {
                         *skipped_error_files += 1;
-                        if std::env::var("DEBUG_HOOKS").is_ok() {
+                        if dev_flag_enabled("DEBUG_HOOKS") {
                             tracing::debug!(path=%path.display(), error=%join_err, "AST analysis join error");
                         }
-                    } else if analysis.is_err() && std::env::var("DEBUG_HOOKS").is_ok() {
+                    } else if analysis.is_err() && dev_flag_enabled("DEBUG_HOOKS") {
                         tracing::debug!(timeout=%timeout_secs, path=%path.display(), "AST analysis timeout");
                     }
                 }
                 Err(e) => {
                     *skipped_error_files += 1;
-                    if std::env::var("DEBUG_HOOKS").is_ok() {
+                    if dev_flag_enabled("DEBUG_HOOKS") {
                         tracing::debug!(path=%path.display(), error=%e, "Error reading file");
                     }
                 }
@@ -3050,15 +3110,15 @@ async fn main() -> Result<()> {
     // Since PostToolUse runs AFTER the operation, read the actual file from disk
     let content = match read_file_content_safe(file_path).await? {
         Some(file_content) => {
-            if std::env::var("DEBUG_HOOKS").is_ok() {
-                tracing::debug!(bytes=%file_content.len(), file=%file_path, "Read file");
-            }
+        if dev_flag_enabled("DEBUG_HOOKS") {
+            tracing::debug!(bytes=%file_content.len(), file=%file_path, "Read file");
+        }
             file_content
         }
         None => {
-            if std::env::var("DEBUG_HOOKS").is_ok() {
-                tracing::debug!(%file_path, "Could not read file content");
-            }
+        if dev_flag_enabled("DEBUG_HOOKS") {
+            tracing::debug!(%file_path, "Could not read file content");
+        }
             // Fallback to extracting partial content from tool_input if file read fails
             match normalize_tool_name(&hook_input.tool_name).0 {
                 ToolKind::Write => hook_input
@@ -3103,9 +3163,9 @@ async fn main() -> Result<()> {
                             }
                         }
 
-                        if std::env::var("DEBUG_HOOKS").is_ok() {
-                            tracing::debug!(bytes=%aggregated.len(), valid_edits=%valid_edits, total_edits=%edits.len(), "MultiEdit fallback aggregation");
-                        }
+                if dev_flag_enabled("DEBUG_HOOKS") {
+                    tracing::debug!(bytes=%aggregated.len(), valid_edits=%valid_edits, total_edits=%edits.len(), "MultiEdit fallback aggregation");
+                }
                         aggregated
                     } else {
                         String::new()
@@ -3132,11 +3192,11 @@ async fn main() -> Result<()> {
     }
 
     // Perform AST-based quality analysis for deterministic scoring
-    if std::env::var("DEBUG_HOOKS").is_ok() {
+    if dev_flag_enabled("DEBUG_HOOKS") {
         tracing::debug!(%file_path, "Starting AST analysis for file");
     }
     let ast_analysis = perform_ast_analysis(&content, file_path).await;
-    if std::env::var("DEBUG_HOOKS").is_ok() {
+    if dev_flag_enabled("DEBUG_HOOKS") {
         tracing::debug!(has_result=%ast_analysis.is_some(), "AST analysis result");
     }
 
@@ -3177,7 +3237,7 @@ async fn main() -> Result<()> {
     };
 
     // In offline/e2e tests we may want to skip network and prompt loading entirely
-    if std::env::var("POSTTOOL_AST_ONLY").is_ok() {
+    if dev_flag_enabled("POSTTOOL_AST_ONLY") {
         let mut final_response = String::new();
         let display_path = hook_input
             .tool_input
@@ -3196,34 +3256,32 @@ async fn main() -> Result<()> {
         if let Some(ast_score) = &ast_analysis {
             let (filtered, change_snippets) =
                 if let Ok(diff) = generate_diff_context(&hook_input, display_path).await {
-                    let ctxn = std::env::var("AST_DIFF_CONTEXT")
+                    let ctxn = if cfg!(debug_assertions) { std::env::var("AST_DIFF_CONTEXT")
                         .ok()
                         .and_then(|v| v.parse().ok())
-                        .unwrap_or(3);
+                        .unwrap_or(3) } else { 3 };
                     let changed = extract_changed_lines(&diff, ctxn);
-                    let filtered = if std::env::var("AST_DIFF_ONLY").is_ok() {
+                    let filtered = if dev_flag_enabled("AST_DIFF_ONLY") {
                         filter_issues_to_diff(ast_score, &diff, ctxn)
                     } else {
                         ast_score.clone()
                     };
-                    let snips_enabled = std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true);
+                    let snips_enabled = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
                     let snips = if snips_enabled {
-                        let max_snips = std::env::var("AST_MAX_SNIPPETS")
+                        let max_snips = if cfg!(debug_assertions) { std::env::var("AST_MAX_SNIPPETS")
                             .ok()
                             .and_then(|v| v.parse().ok())
-                            .unwrap_or(3)
+                            .unwrap_or(3) } else { 3 }
                             .clamp(1, 50);
-                        let max_chars = std::env::var("AST_SNIPPETS_MAX_CHARS")
+                        let max_chars = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS_MAX_CHARS")
                             .ok()
                             .and_then(|v| v.parse().ok())
-                            .unwrap_or(1500)
+                            .unwrap_or(1500) } else { 1500 }
                             .clamp(200, 20_000);
                         let lang =
                             SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
                                 .unwrap_or(SupportedLanguage::Python);
-                        let use_entity = std::env::var("AST_ENTITY_SNIPPETS")
-                            .map(|v| v != "0")
-                            .unwrap_or(true);
+                        let use_entity = if cfg!(debug_assertions) { std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
                         if use_entity {
                             let ent = build_entity_context_snippets(
                                 lang, &content, &filtered, &changed, ctxn, max_snips, max_chars,
@@ -3282,7 +3340,7 @@ async fn main() -> Result<()> {
             }
         }
         // Append timings if enabled
-        if crate::analysis::timings::enabled() {
+        if dev_flag_enabled("AST_TIMINGS") && crate::analysis::timings::enabled() {
             let sum = crate::analysis::timings::summary();
             if !sum.is_empty() {
                 final_response.push_str(&sum);
@@ -3293,11 +3351,11 @@ async fn main() -> Result<()> {
             hook_specific_output: PostToolUseHookOutput {
                 hook_event_name: "PostToolUse".to_string(),
                 additional_context: {
-                    let lim = std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(100_000)
-                        .clamp(10_000, 1_000_000);
+            let lim = if cfg!(debug_assertions) { std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(100_000) } else { 100_000 }
+                .clamp(10_000, 1_000_000);
                     truncate_utf8_safe(&final_response, lim)
                 },
             },
@@ -3309,14 +3367,14 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Load configuration from environment with graceful degradation
-    let config = Config::from_file_or_env_graceful().context("Failed to load configuration")?;
+    // Load configuration from environment with graceful degradation (.env next to executable)
+    let config = Config::from_env_graceful().context("Failed to load configuration")?;
 
     // If missing API key for selected provider, fall back to offline rendering (symmetry with PreToolUse)
     if config
         .get_api_key_for_provider(&config.posttool_provider)
         .is_empty()
-        && std::env::var("POSTTOOL_DRY_RUN").is_err()
+        && !dev_flag_enabled("POSTTOOL_DRY_RUN")
     {
         tracing::warn!(provider=%config.posttool_provider, "No API key; falling back to AST-only rendering");
         let display_path = hook_input
@@ -3426,7 +3484,7 @@ async fn main() -> Result<()> {
     let transcript_context = if let Some(transcript_path) = &hook_input.transcript_path {
         match read_transcript_summary(transcript_path, 10, 2000).await {
             Ok(summary) => {
-                if std::env::var("DEBUG_HOOKS").is_ok() {
+                if dev_flag_enabled("DEBUG_HOOKS") {
                     tracing::debug!("Transcript summary read successfully");
                     // Safe UTF-8 truncation using standard library
                     let truncated: String = summary.chars().take(500).collect();
@@ -3440,7 +3498,7 @@ async fn main() -> Result<()> {
             }
         }
     } else {
-        if std::env::var("DEBUG_HOOKS").is_ok() {
+        if dev_flag_enabled("DEBUG_HOOKS") {
             tracing::debug!("No transcript_path provided");
         }
         None
@@ -3492,7 +3550,7 @@ async fn main() -> Result<()> {
     .await?;
 
     // DEBUG: Write the exact prompt to a file for inspection
-    if std::env::var("DEBUG_HOOKS").is_ok() {
+    if dev_flag_enabled("DEBUG_HOOKS") {
         if let Ok(mut debug_file) = tokio::fs::File::create("post-context.txt").await {
             use tokio::io::AsyncWriteExt;
             let _ = debug_file.write_all(formatted_prompt.as_bytes()).await;
@@ -3502,7 +3560,7 @@ async fn main() -> Result<()> {
     }
 
     // Dry-run mode: build prompt and contexts, skip network call; return structured AST details in additionalContext
-    if std::env::var("POSTTOOL_DRY_RUN").is_ok() {
+    if dev_flag_enabled("POSTTOOL_DRY_RUN") {
         let mut final_response = String::new();
         // Include change summary
         let change = build_change_summary(&hook_input, &display_path).await;
@@ -3732,8 +3790,16 @@ async fn main() -> Result<()> {
                 }
             }
 
-            // Add AI response
-            final_response.push_str(&ai_response);
+            // Add AI response (with OpenAI JSON wrapper or fallback JSON from AST)
+            let wrapped = if config.posttool_provider == AIProvider::OpenAI {
+                let content = if ai_response.trim().is_empty() {
+                    if let Some(ast_score) = &ast_analysis { build_agent_json_from_score(ast_score) } else { String::from("{}") }
+                } else { ai_response };
+                format!("AGENT_JSON_START\n{}\nAGENT_JSON_END\n", content)
+            } else {
+                ai_response
+            };
+            final_response.push_str(&wrapped);
 
             let output = PostToolUseOutput {
                 hook_specific_output: PostToolUseHookOutput {
@@ -3755,20 +3821,23 @@ async fn main() -> Result<()> {
             );
         }
         Err(e) => {
-            // Log error but don't block the operation
+            // Log error and gracefully fall back to offline AST renderer
             tracing::error!(error=%e, "PostToolUse analysis error");
 
-            // Pass through with minimal feedback
-            let output = PostToolUseOutput {
-                hook_specific_output: PostToolUseHookOutput {
-                    hook_event_name: "PostToolUse".to_string(),
-                    additional_context: String::new(),
-                },
-            };
-            println!(
-                "{}",
-                serde_json::to_string(&output).context("Failed to serialize output")?
-            );
+            let display_path = hook_input
+                .tool_input
+                .get("file_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            return render_offline_posttooluse(
+                &hook_input,
+                &content,
+                display_path,
+                &ast_analysis,
+                formatting_result.as_ref().map(|f| f.changed).unwrap_or(false),
+            )
+            .await;
         }
     }
 

@@ -52,7 +52,8 @@ pub fn load_config() -> Config {
         };
     }
 
-    // Environment
+    // Environment: allow override only in debug/test builds
+    #[cfg(any(debug_assertions, test))]
     if let Ok(val) = std::env::var("AST_ENV") {
         cfg.env = match val.to_ascii_lowercase().as_str() {
             "test" => Environment::Test,
@@ -60,7 +61,8 @@ pub fn load_config() -> Config {
         };
     }
 
-    // Allowlist vars
+    // Allowlist vars: dev/test only to avoid weakening checks in prod
+    #[cfg(any(debug_assertions, test))]
     if let Ok(val) = std::env::var("AST_ALLOWLIST_VARS") {
         let list = val
             .split(',')
@@ -72,7 +74,8 @@ pub fn load_config() -> Config {
         }
     }
 
-    // Ignore globs
+    // Ignore globs: dev/test only (prod должен анализировать всё)
+    #[cfg(any(debug_assertions, test))]
     if let Ok(val) = std::env::var("AST_IGNORE_GLOBS") {
         let mut builder = GlobSetBuilder::new();
         for pat in val.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {

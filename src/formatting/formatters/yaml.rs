@@ -176,12 +176,12 @@ impl CodeFormatter for YamlFormatter {
         messages.extend(
             security_warnings
                 .into_iter()
-                .map(|w| format!("YAML security warning: {}", w)),
+                .map(|w| format!("YAML security warning: {w}")),
         );
 
         // Validate syntax
         if let Err(e) = self.validate_yaml_syntax(content) {
-            messages.push(format!("YAML syntax error: {}", e));
+            messages.push(format!("YAML syntax error: {e}"));
             return Ok(FormatResult {
                 original: content.to_string(),
                 formatted: content.to_string(),
@@ -203,7 +203,7 @@ impl CodeFormatter for YamlFormatter {
                 })
             }
             Err(e) => {
-                messages.push(format!("YAML formatting error: {}", e));
+                messages.push(format!("YAML formatting error: {e}"));
                 Ok(FormatResult {
                     original: content.to_string(),
                     formatted: content.to_string(),

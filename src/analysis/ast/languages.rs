@@ -85,8 +85,8 @@ impl SupportedLanguage {
     pub fn get_tree_sitter_language(self) -> Result<Language> {
         match self {
             Self::Rust => anyhow::bail!("Rust uses regex-based analysis, not tree-sitter"),
-            Self::Python => Ok(tree_sitter_python::language()),
-            Self::JavaScript => Ok(tree_sitter_javascript::language()),
+            Self::Python => Ok(tree_sitter_python::LANGUAGE.into()),
+            Self::JavaScript => Ok(tree_sitter_javascript::LANGUAGE.into()),
             Self::TypeScript => Ok(tree_sitter_typescript::language_typescript()),
             Self::Java => Ok(tree_sitter_java::language()),
             Self::CSharp => Ok(tree_sitter_c_sharp::language()),
@@ -104,7 +104,6 @@ impl SupportedLanguage {
             Self::Gleam => {
                 #[cfg(feature = "tree-sitter-gleam")]
                 {
-                    // tree_sitter_gleam::LANGUAGE is a LanguageFn, call it to get Language
                     Ok(tree_sitter_gleam::LANGUAGE.into())
                 }
                 #[cfg(not(feature = "tree-sitter-gleam"))]

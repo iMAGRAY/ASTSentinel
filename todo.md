@@ -198,3 +198,7 @@ M — Snapshots
 N — Docs Finalization
 - [+] N1. README_HOOKS: Flag Reference + Windows Quick Start
 - [+] N2. Table: Sections vs. Flags
+
+- 2025-09-12: Audit started — repository scan completed; next: run tests and static review. (status: in_progress)
+
+- 2025-09-12: Ran cargo test --all — all tests: PASS. Ran cargo clippy --all — failed with 104 errors (mainly format! inlining and needless borrows). Next: fix clippy issues in src/formatting (yaml.rs, mod.rs). (status: tests_passed, clippy_failed)

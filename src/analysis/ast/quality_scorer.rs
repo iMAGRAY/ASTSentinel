@@ -1185,7 +1185,7 @@ impl AstRule for SecurityPatternRule {
 
         // Only apply to Python language (patterns are Python-specific)
         if language != SupportedLanguage::Python {
-            if std::env::var("DEBUG_HOOKS").is_ok() {
+            if cfg!(debug_assertions) && std::env::var("DEBUG_HOOKS").is_ok() {
                 tracing::debug!(%language, "SecurityPatternRule skipped - not Python language");
             }
             return issues;

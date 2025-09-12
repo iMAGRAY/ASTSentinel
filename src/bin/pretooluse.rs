@@ -29,6 +29,21 @@ use rust_validation_hooks::validation::diff_formatter::{
     format_code_diff, format_edit_diff, format_multi_edit_diff,
 };
 
+#[inline]
+fn dev_flag_enabled(name: &str) -> bool {
+    #[cfg(debug_assertions)]
+    {
+        match std::env::var(name) {
+            Ok(v) => v != "0" && !v.is_empty(),
+            Err(_) => false,
+        }
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = name;
+        false
+    }
+}
 // =============================
 // Heuristics for anti-cheating
 // =============================
@@ -1065,7 +1080,7 @@ async fn main() -> Result<()> {
     // Initialize structured logging (stderr). Safe to call multiple times.
     rust_validation_hooks::telemetry::init();
     // Optional offline AST-only mode (no network): decide allow/deny from local AST/security heuristics
-    if std::env::var("PRETOOL_AST_ONLY").is_ok() {
+    if dev_flag_enabled("PRETOOL_AST_ONLY") {
         // Read input from stdin
         let mut input = String::new();
         io::stdin()
@@ -1357,8 +1372,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Load configuration
-    let config = Config::from_file_or_env_graceful().context("Failed to load configuration")?;
+    // Load configuration (env/.env next to executable has priority)
+    let config = Config::from_env_graceful().context("Failed to load configuration")?;
 
     // Read input from stdin
     let mut input = String::new();
@@ -1369,51 +1384,50 @@ async fn main() -> Result<()> {
     // Parse hook input
     let hook_input: HookInput = serde_json::from_str(&input).context("Failed to parse hook input")?;
 
-    // Debug logging to file to see what context we receive
-    let log_file_path = std::env::temp_dir().join("pretooluse_debug.log");
-    if let Ok(mut log_file) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_file_path)
-    {
-        use std::io::Write;
-        let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        writeln!(log_file, "\n=== PreToolUse Hook Debug [{}] ===", timestamp).ok();
-        writeln!(log_file, "Tool name: {}", hook_input.tool_name).ok();
-        writeln!(log_file, "Session ID: {:?}", hook_input.session_id).ok();
-        writeln!(log_file, "Transcript path: {:?}", hook_input.transcript_path).ok();
-        writeln!(log_file, "CWD: {:?}", hook_input.cwd).ok();
-        writeln!(log_file, "Hook event: {:?}", hook_input.hook_event_name).ok();
-        writeln!(
-            log_file,
-            "CLAUDE_PROJECT_DIR env: {:?}",
-            std::env::var("CLAUDE_PROJECT_DIR").ok()
-        )
-        .ok();
-
-        // If transcript path is provided, show its content
-        if let Some(transcript_path) = &hook_input.transcript_path {
+    // Debug logging (to file) is disabled in release builds
+    if cfg!(debug_assertions) {
+        let log_file_path = std::env::temp_dir().join("pretooluse_debug.log");
+        if let Ok(mut log_file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log_file_path)
+        {
+            use std::io::Write;
+            let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
+            writeln!(log_file, "\n=== PreToolUse Hook Debug [{}] ===", timestamp).ok();
+            writeln!(log_file, "Tool name: {}", hook_input.tool_name).ok();
+            writeln!(log_file, "Session ID: {:?}", hook_input.session_id).ok();
+            writeln!(log_file, "Transcript path: {:?}", hook_input.transcript_path).ok();
+            writeln!(log_file, "CWD: {:?}", hook_input.cwd).ok();
+            writeln!(log_file, "Hook event: {:?}", hook_input.hook_event_name).ok();
             writeln!(
                 log_file,
-                "Attempting to read transcript from: {}",
-                transcript_path
+                "CLAUDE_PROJECT_DIR env: {:?}",
+                std::env::var("CLAUDE_PROJECT_DIR").ok()
             )
             .ok();
-            match read_transcript_summary(transcript_path, 15, 1500) {
-                Ok(summary) => {
-                    writeln!(log_file, "Transcript content (last 15 msgs, max 1500 chars):").ok();
-                    writeln!(log_file, "{}", summary).ok();
-                }
-                Err(e) => {
-                    let _ = writeln!(log_file, "Could not read transcript: {}", e);
+
+            if let Some(transcript_path) = &hook_input.transcript_path {
+                writeln!(
+                    log_file,
+                    "Attempting to read transcript from: {}",
+                    transcript_path
+                )
+                .ok();
+                match read_transcript_summary(transcript_path, 15, 1500) {
+                    Ok(summary) => {
+                        writeln!(log_file, "Transcript content (last 15 msgs, max 1500 chars):").ok();
+                        writeln!(log_file, "{}", summary).ok();
+                    }
+                    Err(e) => {
+                        let _ = writeln!(log_file, "Could not read transcript: {}", e);
+                    }
                 }
             }
+            writeln!(log_file, "==============================").ok();
         }
-        writeln!(log_file, "==============================").ok();
+        tracing::info!(path=?log_file_path, "PreToolUse hook: decision logged");
     }
-
-    // Also print to stderr for visibility
-    tracing::info!(path=?log_file_path, "PreToolUse hook: decision logged");
 
     // Extract content and file path
     let content = extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);

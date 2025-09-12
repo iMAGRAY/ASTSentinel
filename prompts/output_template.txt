@@ -1,11 +1,26 @@
 === REQUIRED OUTPUT FORMAT ===
+AGENT_JSON_START
+{
+  "schema_version": "1.1",
+  "quality": { "overall": <0..1000>, "confidence": <0.0..1.0> },
+  "risk_summary": [ { "severity": "critical|major|minor", "line": <int|null>, "rule": "<ID>", "msg": "<short>" } ],
+  "api_contract": { "removed_functions": [ { "name": "<fn>", "file": "<path>" } ], "param_changes": [ { "name": "<fn>", "file": "<path>", "removed": ["<param>"] } ] },
+  "actions": {
+    "edits": [ { "file": "<path>", "op": "replace|insert|delete", "anchor": { "type": "line|regex|symbol", "value": "<anchor>" }, "before": "<optional>", "after": "<minimal patch>" } ],
+    "tests": [ { "file": "<path>", "framework": "<pytest|jest|...>", "name": "<test_name>", "content": "<sketch or steps>" } ],
+    "refactors": [ { "file": "<path>", "entity": "<fn|class>", "goal": "<what>", "steps": ["<step>"] } ]
+  },
+  "followup_tools": [ { "tool": "Write|Edit|MultiEdit", "file": "<path>", "note": "<why>" } ],
+  "notes": ["<short important notes>"]
+}
+AGENT_JSON_END
+
 SUMMARY:
-- <1–3 bullets on what changed and why>
+- <1–3 bullets — что изменили и зачем>
 
 RISKS:
-- <top 3 concrete issues, 1 line each>
+- <до 3 конкретных риска/дефекта, 1 строка каждый>
 
 NEXT STEPS:
-- <up to 3 short, actionable steps>
+- <до 3 коротких, исполнимых шага для агента>
 === END FORMAT ===
-

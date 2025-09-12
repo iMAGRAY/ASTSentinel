@@ -22,33 +22,52 @@ jobs:
       - name: Build
         run: cargo build --release
 
-      - name: Package artifact
+      - name: Package artifact (Linux)
+        if: runner.os == 'Linux'
+        id: pkg-linux
         shell: bash
         run: |
           set -euo pipefail
-          NAME=${{ runner.os == 'Windows' && 'windows-x86_64' || 'linux-x86_64' }}
+          NAME=linux-x86_64
           mkdir -p dist/$NAME
-          cp target/release/pretooluse* dist/$NAME/ || true
-          cp target/release/posttooluse* dist/$NAME/ || true
-          cp target/release/userpromptsubmit* dist/$NAME/ || true
-          # Include prompts with the binaries
+          cp target/release/pretooluse dist/$NAME/
+          cp target/release/posttooluse dist/$NAME/
+          cp target/release/userpromptsubmit dist/$NAME/
           mkdir -p dist/$NAME/prompts
           cp -r prompts/* dist/$NAME/prompts/ || true
           (cd dist/$NAME && sha256sum * > SHA256SUMS.txt)
-          if [ "$NAME" = "windows-x86_64" ]; then
-            7z a ast-sentinel-$NAME.zip dist/$NAME/*
-            echo "artifact=ast-sentinel-$NAME.zip" >> $GITHUB_OUTPUT
-          else
-            tar -C dist -czf ast-sentinel-$NAME.tar.gz $NAME
-            echo "artifact=ast-sentinel-$NAME.tar.gz" >> $GITHUB_OUTPUT
-          fi
-        id: pkg
+          tar -C dist -czf ast-sentinel-$NAME.tar.gz $NAME
+          echo "artifact=ast-sentinel-$NAME.tar.gz" >> $GITHUB_OUTPUT
 
-      - name: Upload artifact
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.pkg.outputs.artifact }}
-          path: ${{ steps.pkg.outputs.artifact }}
+          name: ${{ steps.pkg-linux.outputs.artifact }}
+          path: ${{ steps.pkg-linux.outputs.artifact }}
+
+      - name: Package artifact (Windows)
+        if: runner.os == 'Windows'
+        id: pkg-win
+        shell: pwsh
+        run: |
+          $Name = 'windows-x86_64'
+          New-Item -ItemType Directory -Force -Path "dist/$Name" | Out-Null
+          Copy-Item target/release/pretooluse.exe "dist/$Name/" -ErrorAction SilentlyContinue
+          Copy-Item target/release/posttooluse.exe "dist/$Name/" -ErrorAction SilentlyContinue
+          Copy-Item target/release/userpromptsubmit.exe "dist/$Name/" -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "dist/$Name/prompts" | Out-Null
+          Copy-Item prompts/* "dist/$Name/prompts/" -Recurse -ErrorAction SilentlyContinue
+          Get-ChildItem "dist/$Name" | ForEach-Object { Get-FileHash $_.FullName -Algorithm SHA256 } | ForEach-Object { $_.Hash + '  ' + (Split-Path $_.Path -Leaf) } | Set-Content "dist/$Name/SHA256SUMS.txt"
+          Compress-Archive -Path "dist/$Name/*" -DestinationPath "ast-sentinel-$Name.zip" -Force
+          "artifact=ast-sentinel-$Name.zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.pkg-win.outputs.artifact }}
+          path: ${{ steps.pkg-win.outputs.artifact }}
 
   update-badge:
     needs: build

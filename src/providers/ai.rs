@@ -438,7 +438,7 @@ impl UniversalAIClient {
         // Return raw response from AI instead of parsing into structures
         match self.config.posttool_provider {
             AIProvider::OpenAI => {
-                // Check if it's GPT-5 (uses different API)
+                // For GPT-5 family use Responses API with strict JSON schema; otherwise use Chat Completions
                 if self.config.posttool_model.starts_with("gpt-5") {
                     self.analyze_with_gpt5_raw(code, prompt).await
                 } else {
@@ -525,7 +525,7 @@ impl UniversalAIClient {
         }
 
         // Log only in debug mode
-        if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
+        if debug_hooks_enabled() {
             tracing::debug!(len = response_text.len(), "GPT-5 response length");
             if response_text.len() < 500 {
                 tracing::debug!(response=%response_text, "GPT-5 response");
@@ -554,7 +554,7 @@ impl UniversalAIClient {
         }
 
         // Log only in debug mode
-        if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
+        if debug_hooks_enabled() {
             tracing::debug!(snippet=%json_text.chars().take(200).collect::<String>(), "GPT-5 content to parse");
         }
 
@@ -980,7 +980,7 @@ impl UniversalAIClient {
         Ok(analysis)
     }
 
-    /// Analyze with GPT-5 and return raw response
+    /// Analyze with GPT-5 (Responses API) and return raw JSON string (strict JSON via json_schema)
     async fn analyze_with_gpt5_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
@@ -992,8 +992,14 @@ impl UniversalAIClient {
             "model": self.config.posttool_model,
             "input": combined_input,
             "max_output_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::OpenAI),
-            "reasoning": {
-                "effort": "medium"  // Stable reasoning effort for consistent behavior
+            "reasoning": { "effort": "medium" },
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "AgentActionPlan",
+                    "schema": self.get_agent_action_schema(),
+                    "strict": true
+                }
             },
             "store": false
         });
@@ -1013,14 +1019,30 @@ impl UniversalAIClient {
             return Err(anyhow::anyhow!("GPT-5 API error: {}", error_text));
         }
 
-        #[derive(Deserialize)]
-        struct Gpt5Response {
-            output_text: String,
+        let v: serde_json::Value = response.json().await.context("Failed to parse GPT-5 response")?;
+        // Extract concatenated text from output.message.content[].text
+        let mut collected = String::new();
+        if let Some(arr) = v.get("output").and_then(|x| x.as_array()) {
+            for item in arr {
+                if item.get("type").and_then(|t| t.as_str()) == Some("message") {
+                    if let Some(content) = item.get("content").and_then(|c| c.as_array()) {
+                        for c in content {
+                            if let Some(t) = c.get("text").and_then(|t| t.as_str()) {
+                                if !collected.is_empty() { collected.push('\n'); }
+                                collected.push_str(t);
+                            }
+                        }
+                    }
+                }
+            }
         }
-
-        let gpt5_response: Gpt5Response = response.json().await.context("Failed to parse GPT-5 response")?;
-
-        Ok(gpt5_response.output_text)
+        if collected.trim().is_empty() {
+            // Fallback: try a top-level message.content[0].text shape if present
+            if let Some(text) = v.get("output_text").and_then(|t| t.as_str()) {
+                collected = text.to_string();
+            }
+        }
+        Ok(collected)
     }
 
     /// Analyze with OpenAI and return raw response
@@ -1028,21 +1050,29 @@ impl UniversalAIClient {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
 
+        // Enforce strict JSON using Chat Completions + json_schema
+        let system = format!(
+            "{}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.",
+            prompt
+        );
+        let user = format!("Code to analyze:\n{}\n\nReturn ONLY JSON.", code);
+
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": prompt
-                },
-                {
-                    "role": "user",
-                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
-                }
+                { "role": "system", "content": system },
+                { "role": "user",   "content": user }
             ],
-            // Don't enforce response format
-            "max_tokens": 4500,
-            "temperature": self.config.temperature
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "AgentActionPlan",
+                    "schema": self.get_agent_action_schema(),
+                    "strict": true
+                }
+            },
+            "max_tokens": 2000,
+            "reasoning_effort": "medium"
         });
 
         let response = self
@@ -1082,6 +1112,66 @@ impl UniversalAIClient {
             .first()
             .map(|choice| choice.message.content.clone())
             .ok_or_else(|| anyhow::anyhow!("No response from OpenAI"))
+    }
+
+    fn get_agent_action_schema(&self) -> serde_json::Value {
+        serde_json::json!({
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_version", "quality", "risk_summary", "actions"],
+          "properties": {
+            "schema_version": {"type":"string"},
+            "quality": {"type":"object", "additionalProperties": false, "required":["overall","confidence"],
+              "properties": {
+                "overall": {"type":"integer","minimum":0,"maximum":1000},
+                "confidence": {"type":"number","minimum":0.0,"maximum":1.0}
+              }
+            },
+            "risk_summary": {"type":"array", "maxItems": 10, "items": {"type":"object", "additionalProperties": false,
+              "required":["severity","msg"],
+              "properties": {
+                "severity": {"type":"string","enum":["critical","major","minor"]},
+                "line": {"type":["integer","null"]},
+                "rule": {"type":["string","null"]},
+                "msg": {"type":"string","maxLength": 200}
+              }
+            }},
+            "api_contract": {"type":"object", "additionalProperties": false, "properties": {
+              "removed_functions": {"type":"array","maxItems":20,"items": {"type":"object", "additionalProperties": false,
+                "required":["name","file"], "properties": {"name":{"type":"string"}, "file":{"type":"string"}}
+              }},
+              "param_changes": {"type":"array","maxItems":20,"items": {"type":"object", "additionalProperties": false,
+                "required":["name","file","removed"], "properties": {"name":{"type":"string"}, "file":{"type":"string"}, "removed": {"type":"array","items":{"type":"string"}, "maxItems": 20}}
+              }}
+            }},
+            "actions": {"type":"object", "additionalProperties": false, "required":["edits"], "properties": {
+              "edits": {"type":"array","maxItems": 10, "items": {"type":"object", "additionalProperties": false,
+                "required":["file","op","anchor","after"],
+                "properties": {
+                  "file": {"type":"string"},
+                  "op": {"type":"string","enum":["replace","insert","delete"]},
+                  "anchor": {"type":"object", "additionalProperties": false, "required":["type","value"], "properties": {
+                    "type": {"type":"string","enum":["line","regex","symbol"]},
+                    "value": {"type":"string"}
+                  }},
+                  "before": {"type":["string","null"]},
+                  "after": {"type":"string"}
+                }
+              }},
+              "tests": {"type":"array","maxItems": 5, "items": {"type":"object", "additionalProperties": false,
+                "required":["file","framework","name","content"],
+                "properties": {"file":{"type":"string"},"framework":{"type":"string"},"name":{"type":"string"},"content":{"type":"string"}}
+              }},
+              "refactors": {"type":"array","maxItems":5, "items": {"type":"object", "additionalProperties": false,
+                "required":["file","entity","goal","steps"],
+                "properties": {"file":{"type":"string"}, "entity":{"type":"string"}, "goal":{"type":"string"}, "steps":{"type":"array","maxItems":6, "items":{"type":"string"}}}
+              }}
+            }},
+            "followup_tools": {"type":"array","maxItems":5, "items": {"type":"object", "additionalProperties": false,
+              "required":["tool","file"], "properties": {"tool": {"type":"string","enum":["Write","Edit","MultiEdit"]}, "file": {"type":"string"}, "note": {"type":"string"}}}},
+            "notes": {"type":"array","maxItems":8, "items": {"type":"string"}}
+          }
+        })
     }
 
     /// Analyze with Anthropic and return raw response
@@ -1211,59 +1301,114 @@ impl UniversalAIClient {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::XAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::XAI);
 
-        let request_body = serde_json::json!({
-            "model": self.config.posttool_model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": prompt
-                },
-                {
-                    "role": "user",
-                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
+        // Helper: OpenAI-compatible route
+        #[allow(clippy::too_many_arguments)]
+        async fn xai_chat(
+            client: &reqwest::Client,
+            base_url: &str,
+            api_key: &str,
+            model: &str,
+            system: &str,
+            user: &str,
+            max_tokens: u32,
+            temperature: f32,
+        ) -> anyhow::Result<String> {
+            let body = serde_json::json!({
+                "model": model,
+                "messages": [
+                    {"role":"system","content": system},
+                    {"role":"user","content": user}
+                ],
+                "max_tokens": max_tokens,
+                "temperature": temperature
+            });
+            let resp = client
+                .post(format!("{}/chat/completions", base_url))
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .context("Failed to send request to xAI (chat/completions)")?;
+            if !resp.status().is_success() {
+                let err = resp.text().await.unwrap_or_default();
+                anyhow::bail!("xAI API error: {}", err);
+            }
+            #[derive(Deserialize)]
+            struct XaiResponse { choices: Vec<XaiChoice> }
+            #[derive(Deserialize)]
+            struct XaiChoice { message: XaiMessage }
+            #[derive(Deserialize)]
+            struct XaiMessage { content: String }
+            let xai: XaiResponse = resp.json().await.context("Failed to parse xAI response (chat)")?;
+            let content = xai
+                .choices
+                .first()
+                .map(|c| c.message.content.clone())
+                .ok_or_else(|| anyhow::anyhow!("No response from xAI (chat)"))?;
+            Ok(content)
+        }
+
+        // Helper: Anthropic-compatible route (messages). Non-streaming.
+        async fn xai_messages(
+            client: &reqwest::Client,
+            base_url: &str,
+            api_key: &str,
+            model: &str,
+            user: &str,
+        ) -> anyhow::Result<String> {
+            let body = serde_json::json!({
+                "model": model,
+                "messages": [ {"role":"user","content": user} ],
+                "stream": false
+            });
+            let resp = client
+                .post(format!("{}/messages", base_url))
+                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Content-Type", "application/json")
+                .json(&body)
+                .send()
+                .await
+                .context("Failed to send request to xAI (messages)")?;
+            if !resp.status().is_success() {
+                let err = resp.text().await.unwrap_or_default();
+                anyhow::bail!("xAI API error (messages): {}", err);
+            }
+            // Try two common shapes: {content:[{text:"..."}]} or {choices:[{message:{content:"..."}}]}
+            let text = resp.text().await.unwrap_or_default();
+            #[derive(Deserialize)]
+            struct ContentText { text: String }
+            #[derive(Deserialize)]
+            struct MsgContent { content: Vec<ContentText> }
+            #[derive(Deserialize)]
+            struct RespA { content: Vec<ContentText> }
+            if let Ok(a) = serde_json::from_str::<RespA>(&text) {
+                if let Some(first) = a.content.first() { return Ok(first.text.clone()); }
+            }
+            #[derive(Deserialize)] struct Choice { message: MsgContent }
+            #[derive(Deserialize)] struct RespB { choices: Vec<Choice> }
+            if let Ok(b) = serde_json::from_str::<RespB>(&text) {
+                if let Some(first) = b.choices.first().and_then(|c| c.message.content.first()) {
+                    return Ok(first.text.clone());
                 }
-            ],
-            "max_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::XAI),
-            "temperature": self.config.temperature
-        });
-
-        let response = self
-            .client
-            .post(format!("{base_url}/chat/completions"))
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("Content-Type", "application/json")
-            .json(&request_body)
-            .send()
-            .await
-            .context("Failed to send request to xAI")?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!("xAI API error: {}", error_text));
+            }
+            // Fallback to raw text
+            Ok(text)
         }
 
-        #[derive(Deserialize)]
-        struct XaiResponse {
-            choices: Vec<XaiChoice>,
+        let system = prompt;
+        let user = format!("Analyze this code and provide detailed review:\n\n{}", code);
+        let max = self.config.get_max_output_tokens_for_provider(&AIProvider::XAI);
+        let temp = self.config.temperature;
+
+        match xai_chat(&self.client, base_url, api_key, &self.config.posttool_model, system, &user, max, temp).await {
+            Ok(s) => Ok(s),
+            Err(e1) => {
+                // Fallback to messages endpoint
+                tracing::warn!(error=%e1, "xAI chat/completions failed; trying /v1/messages");
+                xai_messages(&self.client, base_url, api_key, &self.config.posttool_model, &user).await
+            }
         }
-
-        #[derive(Deserialize)]
-        struct XaiChoice {
-            message: XaiMessage,
-        }
-
-        #[derive(Deserialize)]
-        struct XaiMessage {
-            content: String,
-        }
-
-        let xai_response: XaiResponse = response.json().await.context("Failed to parse xAI response")?;
-
-        xai_response
-            .choices
-            .first()
-            .map(|choice| choice.message.content.clone())
-            .ok_or_else(|| anyhow::anyhow!("No response from xAI"))
     }
 
     /// Convert new validation format to GrokCodeAnalysis format
@@ -1894,7 +2039,7 @@ impl UniversalAIClient {
         });
 
         // Debug logging for GPT-5 troubleshooting (only in debug mode)
-        if std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true" {
+        if debug_hooks_enabled() {
             tracing::debug!(model=%model, "GPT-5 Debug: model");
         }
 
@@ -2174,5 +2319,16 @@ impl UniversalAIClient {
                 }
             }
         })
+    }
+}
+#[inline]
+fn debug_hooks_enabled() -> bool {
+    #[cfg(debug_assertions)]
+    {
+        std::env::var("DEBUG_HOOKS").unwrap_or_default() == "true"
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        false
     }
 }

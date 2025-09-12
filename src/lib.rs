@@ -662,14 +662,17 @@ impl Config {
                     tracing::debug!(".env file not found");
                 }
 
-                // Additionally check for .env.local to override settings in development
-                let env_local = exe_dir.join(".env.local");
-                if env_local.exists() {
-                    tracing::debug!("Found .env.local, loading overrides");
-                    if let Err(e) = dotenvy::from_path(&env_local) {
-                        tracing::warn!(error=%e, "Failed to load .env.local");
-                    } else {
-                        tracing::debug!(".env.local loaded successfully");
+                // Additionally check for .env.local to override settings only in debug/test builds
+                #[cfg(any(debug_assertions, test))]
+                {
+                    let env_local = exe_dir.join(".env.local");
+                    if env_local.exists() {
+                        tracing::debug!("Found .env.local, loading overrides");
+                        if let Err(e) = dotenvy::from_path(&env_local) {
+                            tracing::warn!(error=%e, "Failed to load .env.local");
+                        } else {
+                            tracing::debug!(".env.local loaded successfully");
+                        }
                     }
                 }
             }
@@ -800,11 +803,14 @@ impl Config {
                     }
                 }
 
-                // Additionally check for .env.local to override settings in development
-                let env_local = exe_dir.join(".env.local");
-                if env_local.exists() {
-                    if let Err(e) = dotenvy::from_path(&env_local) {
-                        tracing::warn!(error=%e, "Failed to load .env.local");
+                // .env.local overrides only in debug/test builds
+                #[cfg(any(debug_assertions, test))]
+                {
+                    let env_local = exe_dir.join(".env.local");
+                    if env_local.exists() {
+                        if let Err(e) = dotenvy::from_path(&env_local) {
+                            tracing::warn!(error=%e, "Failed to load .env.local");
+                        }
                     }
                 }
             }
