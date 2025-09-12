@@ -1048,11 +1048,8 @@ impl UniversalAIClient {
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
 
         // Enforce strict JSON using Chat Completions + json_schema
-        let system = format!(
-            "{}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.",
-            prompt
-        );
-        let user = format!("Code to analyze:\n{}\n\nReturn ONLY JSON.", code);
+        let system = format!("{}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.", prompt);
+        let user = format!("Code to analyze:\n{code}\n\nReturn ONLY JSON.");
 
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
