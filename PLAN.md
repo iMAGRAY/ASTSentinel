@@ -139,3 +139,4 @@ Updates (QA hardening)
 
 
 
+\n\n2025-09-12: Clippy run - added temporary allows for uninlined_format_args in binaries. Next: replace positional format args with named placeholders and remove allows.

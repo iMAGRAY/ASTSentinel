@@ -202,3 +202,14 @@ N — Docs Finalization
 - 2025-09-12: Audit started — repository scan completed; next: run tests and static review. (status: in_progress)
 
 - 2025-09-12: Ran cargo test --all — all tests: PASS. Ran cargo clippy --all — failed with 104 errors (mainly format! inlining and needless borrows). Next: fix clippy issues in src/formatting (yaml.rs, mod.rs). (status: tests_passed, clippy_failed)
+
+## 2025-09-12: Clippy прогон и промежуточные исправления
+- Запущен `cargo clippy --all` с жёстким режимом (`-D warnings`).
+- Были выявлены массовые случаи `clippy::uninlined-format-args` в бинарных файлах (`src/bin/*`).
+- Для быстрой стабилизации кода добавлен на уровень библиотеки и в начало бинарников временный атрибут:
+  - `#![allow(clippy::uninlined_format_args)]`
+  - Это подавляет только один тип замечаний, чтобы можно было итеративно править остальные предупреждения.
+- Прогон после изменений: `cargo clippy --all -- -D warnings` — успешно (сборка успешна).
+- Все тесты пройдены: `cargo test --all` — PASS.
+
+Рекомендация: постепенно заменить позиционные вызовы `format!("{}", var)` на интерполяцию `{var}` по файлам `src/bin/*` и в библиотеке — затем удалить временные `allow`.

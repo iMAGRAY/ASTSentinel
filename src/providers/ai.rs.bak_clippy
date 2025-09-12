@@ -1048,7 +1048,7 @@ impl UniversalAIClient {
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
 
         // Enforce strict JSON using Chat Completions + json_schema
-        let system = format!("{prompt}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.");
+        let system = format!("{}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.", prompt);
         let user = format!("Code to analyze:\n{code}\n\nReturn ONLY JSON.");
 
         let request_body = serde_json::json!({
@@ -1694,7 +1694,9 @@ impl UniversalAIClient {
         let model_name = &self.config.posttool_model;
         let response = self
             .client
-            .post(format!("{base_url}/models/{model_name}:generateContent?key={api_key}"
+            .post(format!(
+                "{}/models/{}:generateContent?key={}",
+                base_url, model_name, api_key
             ))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -2022,7 +2024,8 @@ impl UniversalAIClient {
         let json_schema_str = serde_json::to_string_pretty(&self.get_memory_optimization_schema())?;
         let request_body = serde_json::json!({
             "model": model,
-            "input": format!("{prompt}\n\n{context}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{json_schema_str}"),
+            "input": format!("{}\n\n{}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{}",
+                prompt, context, json_schema_str),
             "max_output_tokens": 12000,
             "reasoning": {
                 "effort": "medium"

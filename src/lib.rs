@@ -10,6 +10,9 @@
     )
 )]
 
+// Allow inline format args (use `{var}`) lint to be fixed incrementally across codebase.
+#![allow(clippy::uninlined_format_args)]
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

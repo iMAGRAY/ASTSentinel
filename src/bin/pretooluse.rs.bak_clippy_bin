@@ -9,8 +9,6 @@
         clippy::dbg_macro
     )
 )]
-
-#![allow(clippy::uninlined_format_args)]
 #![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::fs::File;
@@ -176,13 +174,15 @@ fn contract_weakening_reasons(
             } else {
                 for bp in bparams {
                     if !bp.is_empty() && !aparams.iter().any(|x| x == bp) {
-                        reasons.push(format!("Function `{name}`: parameter `{bp}` removed or renamed"
+                        reasons.push(format!(
+                            "Function `{}`: parameter `{}` removed or renamed",
+                            name, bp
                         ));
                     }
                 }
             }
         } else {
-            reasons.push(format!("Function `{name}`: removed from module"));
+            reasons.push(format!("Function `{}`: removed from module", name));
         }
     }
     reasons
@@ -273,7 +273,7 @@ fn find_contract_callsite_issues(
             }
         } else {
             // Function removed entirely — flag
-            issues.push(format!("Function `{name}` removed; consider migration plan"));
+            issues.push(format!("Function `{}` removed; consider migration plan", name));
         }
     }
 
@@ -319,7 +319,7 @@ fn find_contract_callsite_issues(
                     let args_slice = &code[j..end];
                     let (_argc, named) = analyze_args_slice(args_slice);
                     for r in removed {
-                        let needle = format!("{r}=");
+                        let needle = format!("{}=", r);
                         if args_slice.contains(&needle) || named.iter().any(|n| n == r) {
                             seen_named.push(r.clone());
                         }
@@ -382,7 +382,9 @@ fn find_contract_callsite_issues(
             pos = after;
         }
         if offending > 0 {
-            issues.push(format!("Calls to `{fname}` exceed new arity ({old_n} -> {new_n}): {offending} occurrences"
+            issues.push(format!(
+                "Calls to `{}` exceed new arity ({} -> {}): {} occurrences",
+                fname, old_n, new_n, offending
             ));
         }
     }
@@ -806,7 +808,7 @@ fn load_prompt(prompt_file: &str) -> Result<String> {
     }
 
     std::fs::read_to_string(&prompt_path)
-        .with_context(|| format!("Failed to read prompt file: {prompt_path:?}"))
+        .with_context(|| format!("Failed to read prompt file: {:?}", prompt_path))
 }
 
 /// Read and summarize transcript from JSONL file with current task identification
@@ -841,7 +843,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
                                 } else {
                                     c.get("name")
                                         .and_then(|v| v.as_str())
-                                        .map(|tool_name| format!("[Tool: {tool_name}]"))
+                                        .map(|tool_name| format!("[Tool: {}]", tool_name))
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -883,12 +885,12 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
     if let Some(current_task) = &last_user_message {
         let task_truncated = if current_task.chars().count() > 150 {
             let truncated_chars: String = current_task.chars().take(147).collect();
-            format!("{truncated_chars}...")
+            format!("{}...", truncated_chars)
         } else {
             current_task.clone()
         };
 
-        let task_str = format!("CURRENT USER TASK: {task_truncated}\n\nRECENT CONVERSATION:\n");
+        let task_str = format!("CURRENT USER TASK: {}\n\nRECENT CONVERSATION:\n", task_truncated);
         result.push_str(&task_str);
         char_count += task_str.len();
     }
@@ -897,16 +899,16 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
         // Truncate individual messages to 100 chars (UTF-8 safe)
         let truncated = if content.chars().count() > 100 {
             let truncated_chars: String = content.chars().take(97).collect();
-            format!("{truncated_chars}...")
+            format!("{}...", truncated_chars)
         } else {
             content.clone()
         };
 
         // Mark the last user message as current task
         let msg_str = if role == "user" && Some(content) == last_user_message.as_ref() {
-            format!("[{role}] (CURRENT TASK): {truncated}\n")
+            format!("[{}] (CURRENT TASK): {}\n", role, truncated)
         } else {
-            format!("[{role}]: {truncated}\n")
+            format!("[{}]: {}\n", role, truncated)
         };
 
         // Stop if we exceed 2000 chars
@@ -1011,14 +1013,16 @@ fn format_quality_message(reason: &str) -> String {
     // Replace literal \n with actual newlines from AI response
     let cleaned_reason = reason.replace("\\n", "\n");
 
-    format!("РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ
+    format!(
+        "РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ
 [плохой и поддельный код всегда будет заблокирован]
 
 выявленные проблемы в ваших изменениях:
-{cleaned_reason}
+{}
 
 УЛУЧШИТЕ СВОЮ РАБОТУ — не убегайте от проблем, создавая минимальные упрощённые реализации
-[попытки сделать это также будут заблокированы]"
+[попытки сделать это также будут заблокированы]",
+        cleaned_reason
     )
 }
 
@@ -1199,7 +1203,7 @@ async fn main() -> Result<()> {
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &code) && hook_input.tool_name != "Write")
         {
-            let reason = format!("Anti-cheating: {}", heur.summary);
+            let reason = format!("Anti-cheating: {heur.summary}");
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -1520,7 +1524,7 @@ async fn main() -> Result<()> {
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &content) && hook_input.tool_name != "Write")
         {
-            let reason = format!("Anti-cheating: {}", heur.summary);
+            let reason = format!("Anti-cheating: {heur.summary}");
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -1789,7 +1793,7 @@ async fn perform_validation(
 
     // Add heuristic assessment to guide the validator
     let assessment = assess_change(hook_input);
-    prompt = format!("{}\n\nHEURISTIC SUMMARY: {}", prompt, assessment.summary);
+    prompt = format!("{prompt}\n\nHEURISTIC SUMMARY: {assessment.summary}");
 
     // Add context from transcript if available
     if let Some(transcript_path) = &hook_input.transcript_path {
@@ -1841,11 +1845,8 @@ async fn perform_validation(
                 .map(|f| f.size_bytes as usize / 50) // Rough estimate: 50 bytes per line
                 .sum();
 
-            let metrics = format!(
-                "\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
-                structure.total_files,
-                total_loc,
-                structure.files.iter().filter(|f| f.is_code_file).count()
+            let metrics = format!("\n\nPROJECT METRICS:\n  Total files: {structure.total_files}\n  Estimated LOC: {}\n  Code files: {total_loc,
+                structure.files.iter(}").filter(|f| f.is_code_file).count()
             );
             prompt = format!("{prompt}{metrics}");
 
@@ -1902,14 +1903,10 @@ async fn perform_validation(
 
             match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {
                 Ok(complexity_metrics) => {
-                    let ast_summary = format!(
-                        "\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {}",
-                        complexity_metrics.cyclomatic_complexity,
-                        complexity_metrics.cognitive_complexity,
+                    let ast_summary = format!("\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {complexity_metrics.cyclomatic_complexity}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {complexity_metrics.cognitive_complexity,
                         complexity_metrics.nesting_depth,
                         complexity_metrics.function_count,
-                        complexity_metrics.line_count
-                    );
+                        complexity_metrics.line_count}");
                     prompt = format!("{prompt}{ast_summary}");
 
                     tracing::info!(cyclomatic=%complexity_metrics.cyclomatic_complexity, cognitive=%complexity_metrics.cognitive_complexity, "AST analysis complete");
@@ -1922,7 +1919,7 @@ async fn perform_validation(
     }
 
     // Add language instruction at the end
-    prompt = format!("{prompt}\n\nIMPORTANT: Respond in {language} language.");
+    prompt = format!("{}\n\nIMPORTANT: Respond in {} language.", prompt, language);
 
     // Heuristic summary: API contract weakening (adds bias for safer decision)
     if !file_path.is_empty() && (hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit") {
@@ -2012,3 +2009,7 @@ async fn perform_validation(
         .await
         .context("Security validation failed")
 }
+
+
+
+

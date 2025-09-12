@@ -845,13 +845,13 @@ fn build_machine_readable_tree(structure: &ProjectStructure) -> String {
         if dir == "." {
             // Root files
             for file in files {
-                output.push_str(&format!("  /{file}\n"));
+                output.push_str(&format!("  /{}\n", file));
             }
         } else {
             // Directory and its files
-            output.push_str(&format!("  /{dir}/\n"));
+            output.push_str(&format!("  /{}/\n", dir));
             for file in files {
-                output.push_str(&format!("    {file}\n"));
+                output.push_str(&format!("    {}\n", file));
             }
         }
     }
@@ -882,7 +882,7 @@ fn build_complete_project_tree(structure: &ProjectStructure) -> String {
             Node::File(name) => name.clone(),
             Node::Dir(name, children) => {
                 if children.is_empty() {
-                    format!("{name}[]")
+                    format!("{}[]", name)
                 } else {
                     let children_str: Vec<String> = children.iter().map(format_node).collect();
                     format!("{}[{}]", name, children_str.join(","))
@@ -1122,7 +1122,7 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
 
     // Build complete tree structure with files and directories
     let tree = build_complete_project_tree(structure);
-    output.push_str(&format!("PROJECT:[{tree}]\n"));
+    output.push_str(&format!("PROJECT:[{}]\n", tree));
 
     // File type statistics - ultra compact
     let mut file_types = std::collections::HashMap::new();

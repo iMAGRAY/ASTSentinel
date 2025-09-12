@@ -1,4 +1,3 @@
-#![allow(clippy::uninlined_format_args)]
 #![cfg_attr(
     not(test),
     deny(
@@ -10,8 +9,6 @@
         clippy::dbg_macro
     )
 )]
-
-#![allow(clippy::uninlined_format_args)]
 #![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::io::{self, Read};
