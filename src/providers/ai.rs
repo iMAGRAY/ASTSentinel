@@ -647,7 +647,7 @@ impl UniversalAIClient {
             "messages": [
                 {
                     "role": "user",
-                    "content": format!("{}\n\nAnalyze this code for security risks:\n\n{}", prompt, code)
+                    "content": format!("{prompt}\n\nAnalyze this code for security risks:\n\n{code}")
                 }
             ],
             "max_tokens": 1024,
@@ -679,7 +679,7 @@ impl UniversalAIClient {
                 {
                     "parts": [
                         {
-                            "text": format!("{}\n\nAnalyze this code for security risks:\n\n{}", prompt, code)
+                            "text": format!("{prompt}\n\nAnalyze this code for security risks:\n\n{code}")
                         }
                     ]
                 }
@@ -926,7 +926,7 @@ impl UniversalAIClient {
                     "content": [
                         {
                             "type": "input_text",
-                            "text": format!("Analyze this code and provide detailed review:\n\n{}", code)
+                            "text": format!("Analyze this code and provide detailed review:\n\n{code}")
                         }
                     ]
                 }
@@ -986,7 +986,7 @@ impl UniversalAIClient {
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
 
         // Use proper GPT-5 Responses API format
-        let combined_input = format!("{}\n\nCode to analyze:\n{}", prompt, code);
+        let combined_input = format!("{prompt}\n\nCode to analyze:\n{code}");
 
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
@@ -1184,7 +1184,7 @@ impl UniversalAIClient {
             "messages": [
                 {
                     "role": "user",
-                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
+                    "content": format!("Analyze this code and provide detailed review:\n\n{code}")
                 }
             ],
             "max_tokens": self.config.get_max_output_tokens_for_provider(&AIProvider::Anthropic),
@@ -1240,7 +1240,7 @@ impl UniversalAIClient {
                 {
                     "parts": [
                         {
-                            "text": format!("{}\n\nAnalyze this code and provide detailed review:\n\n{}", prompt, code)
+                            "text": format!("{prompt}\n\nAnalyze this code and provide detailed review:\n\n{code}")
                         }
                     ]
                 }
@@ -1253,7 +1253,7 @@ impl UniversalAIClient {
 
         let response = self
             .client
-            .post(format!("{}?key={}", base_url, api_key))
+            .post(format!("{base_url}?key={api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -1324,7 +1324,7 @@ impl UniversalAIClient {
             });
             let resp = client
                 .post(format!("{}/chat/completions", base_url))
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .header("Content-Type", "application/json")
                 .json(&body)
                 .send()
@@ -1364,7 +1364,7 @@ impl UniversalAIClient {
             });
             let resp = client
                 .post(format!("{}/messages", base_url))
-                .header("Authorization", format!("Bearer {}", api_key))
+                .header("Authorization", format!("Bearer {api_key}"))
                 .header("Content-Type", "application/json")
                 .json(&body)
                 .send()
@@ -1397,7 +1397,7 @@ impl UniversalAIClient {
         }
 
         let system = prompt;
-        let user = format!("Analyze this code and provide detailed review:\n\n{}", code);
+        let user = format!("Analyze this code and provide detailed review:\n\n{code}");
         let max = self.config.get_max_output_tokens_for_provider(&AIProvider::XAI);
         let temp = self.config.temperature;
 
@@ -1610,7 +1610,7 @@ impl UniversalAIClient {
                 },
                 {
                     "role": "user",
-                    "content": format!("Analyze this code and provide detailed review:\n\n{}", code)
+                    "content": format!("Analyze this code and provide detailed review:\n\n{code}")
                 }
             ],
             "response_format": {
@@ -1650,7 +1650,7 @@ impl UniversalAIClient {
             "messages": [
                 {
                     "role": "user",
-                    "content": format!("{}\\n\\nAnalyze this code and provide detailed review:\\n\\n{}", prompt, code)
+                    "content": format!("{prompt}\\n\\nAnalyze this code and provide detailed review:\\n\\n{code}")
                 }
             ],
             "max_tokens": 2048,
@@ -1684,7 +1684,7 @@ impl UniversalAIClient {
                 {
                     "parts": [
                         {
-                            "text": format!("{}\\n\\nAnalyze this code and provide detailed review:\\n\\n{}", prompt, code)
+                            "text": format!("{prompt}\\n\\nAnalyze this code and provide detailed review:\\n\\n{code}")
                         }
                     ]
                 }
@@ -1729,7 +1729,7 @@ impl UniversalAIClient {
                 },
                 {
                     "role": "user",
-                    "content": format!("Analyze this code and provide detailed review:\\n\\n{}", code)
+                    "content": format!("Analyze this code and provide detailed review:\\n\\n{code}")
                 }
             ],
             "response_format": {
@@ -2051,7 +2051,7 @@ impl UniversalAIClient {
             // Construct proper URL - build directly since base_url already includes /v1
             let responses_url_string = format!("{}/responses", base_url.trim_end_matches('/'));
             let responses_url = Url::parse(&responses_url_string)
-                .with_context(|| format!("Failed to parse responses URL: {}", responses_url_string))?;
+                .with_context(|| format!("Failed to parse responses URL: {responses_url_string}"))?;
 
             tracing::debug!(url=%responses_url, "GPT-5 Debug: requesting URL");
 
@@ -2332,3 +2332,5 @@ fn debug_hooks_enabled() -> bool {
         false
     }
 }
+
+

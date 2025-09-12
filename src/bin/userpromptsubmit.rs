@@ -97,7 +97,7 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
     let top_langs = langs
         .iter()
         .take(3)
-        .map(|(k, v)| format!("{}: {}", k, v))
+        .map(|(k, v)| format!("{k}: {v}"))
         .collect::<Vec<_>>()
         .join(", ");
 
@@ -139,7 +139,7 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
             out.push_str(
                 &r.top_categories
                     .iter()
-                    .map(|(k, v)| format!("{}:{}", k, v))
+                    .map(|(k, v)| format!("{k}:{v}"))
                     .collect::<Vec<_>>()
                     .join(", "),
             );
@@ -263,3 +263,4 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
 }
 
 // Removed unused project-wide AST analysis helpers
+

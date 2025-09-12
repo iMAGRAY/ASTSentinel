@@ -1152,7 +1152,7 @@ async fn main() -> Result<()> {
         if let Some(lang) = language {
             if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(&code, lang, std::time::Duration::from_millis(800)) {
                 // Treat parse/syntax errors as structural harm
-                let reason = format!("Structural integrity check failed: {}", e);
+                let reason = format!("Structural integrity check failed: {e}");
                 let output = PreToolUseOutput {
                     hook_specific_output: PreToolUseHookOutput {
                         hook_event_name: "PreToolUse".to_string(),
@@ -1482,7 +1482,7 @@ async fn main() -> Result<()> {
         // Structural sanity: fast syntax check
         if let Some(lang) = language {
             if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(&content, lang, std::time::Duration::from_millis(800)) {
-                let reason = format!("Structural integrity check failed: {}", e);
+                let reason = format!("Structural integrity check failed: {e}");
                 let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)), } };
                 println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
                 return Ok(());
@@ -1661,7 +1661,7 @@ async fn main() -> Result<()> {
                 unknown => {
                     tracing::warn!(decision=%unknown, "Unknown validation decision; defaulting to deny for safety");
                     let formatted_reason =
-                        format_quality_message(&format!("Unknown decision type: {}", unknown));
+                        format_quality_message(&format!("Unknown decision type: {unknown}"));
                     ("deny".to_string(), Some(formatted_reason))
                 }
             };
@@ -1750,7 +1750,7 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
             // For other operations, just show the content if available
             let content = extract_content_from_tool_input(&hook_input.tool_name, &hook_input.tool_input);
             if !content.is_empty() {
-                diff = format!("Content:\n{}", content);
+                diff = format!("Content:\n{content}");
             }
         }
     }
@@ -1770,7 +1770,7 @@ async fn perform_validation(
     // Load anti-patterns for comprehensive validation
     let anti_patterns = load_prompt("anti_patterns.txt").unwrap_or_else(|_| String::new());
     if !anti_patterns.is_empty() {
-        prompt = format!("{}\n\nANTI-PATTERNS REFERENCE:\n{}", prompt, anti_patterns);
+        prompt = format!("{prompt}\n\nANTI-PATTERNS REFERENCE:\n{anti_patterns}");
     }
 
     // Load language preference with fallback to RUSSIAN
@@ -1782,13 +1782,13 @@ async fn perform_validation(
     // Extract file path and add it to context
     let file_path = extract_file_path(&hook_input.tool_input);
     if !file_path.is_empty() {
-        prompt = format!("{}\n\nFILE BEING MODIFIED: {}", prompt, file_path);
+        prompt = format!("{prompt}\n\nFILE BEING MODIFIED: {file_path}");
     }
 
     // Format the code changes as diff for better AI understanding
     let diff_context = format_code_as_diff(hook_input);
     if !diff_context.is_empty() {
-        prompt = format!("{}\n\nCODE CHANGES (diff format):\n{}", prompt, diff_context);
+        prompt = format!("{prompt}\n\nCODE CHANGES (diff format):\n{diff_context}");
     }
 
     // Add heuristic assessment to guide the validator
@@ -1799,7 +1799,7 @@ async fn perform_validation(
     if let Some(transcript_path) = &hook_input.transcript_path {
         match read_transcript_summary(transcript_path, 10, 1000) {
             Ok(summary) => {
-                prompt = format!("{}\n\nCONTEXT - Recent chat history:\n{}", prompt, summary);
+                prompt = format!("{prompt}\n\nCONTEXT - Recent chat history:\n{summary}");
             }
             Err(e) => {
                 tracing::warn!(error=%e, "Could not read transcript");
@@ -1809,7 +1809,7 @@ async fn perform_validation(
 
     // Add project context from environment
     if let Ok(project_dir) = std::env::var("CLAUDE_PROJECT_DIR") {
-        prompt = format!("{}\n\nPROJECT: {}", prompt, project_dir);
+        prompt = format!("{prompt}\n\nPROJECT: {project_dir}");
     }
 
     // Add project structure context
@@ -1835,7 +1835,7 @@ async fn perform_validation(
     match scan_project_structure(&working_dir, Some(scan_config)) {
         Ok(structure) => {
             let project_context = format_project_structure_for_ai(&structure, 1500);
-            prompt = format!("{}\n\nPROJECT STRUCTURE:\n{}", prompt, project_context);
+            prompt = format!("{prompt}\n\nPROJECT STRUCTURE:\n{project_context}");
 
             // Add detailed project metrics
             let total_loc: usize = structure
@@ -1851,7 +1851,7 @@ async fn perform_validation(
                 total_loc,
                 structure.files.iter().filter(|f| f.is_code_file).count()
             );
-            prompt = format!("{}{}", prompt, metrics);
+            prompt = format!("{prompt}{metrics}");
 
             tracing::info!(files=%structure.total_files, dirs=%structure.directories.len(), est_loc=%total_loc, "Added project structure context");
         }
@@ -1870,7 +1870,7 @@ async fn perform_validation(
                 dependencies.dev_dependencies_count,
                 dependencies.total_count - dependencies.dev_dependencies_count
             );
-            prompt = format!("{}{}", prompt, deps_summary);
+            prompt = format!("{prompt}{deps_summary}");
 
             // Add details by package manager
             let mut deps_by_manager: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
@@ -1883,7 +1883,7 @@ async fn perform_validation(
 
             for (manager, deps) in deps_by_manager {
                 let manager_summary = format!("\n{}: {} dependencies", manager, deps.len());
-                prompt = format!("{}{}", prompt, manager_summary);
+                prompt = format!("{prompt}{manager_summary}");
             }
 
             tracing::info!(total=%dependencies.total_count, outdated=%dependencies.outdated_count, "Added dependencies context");
@@ -1914,7 +1914,7 @@ async fn perform_validation(
                         complexity_metrics.function_count,
                         complexity_metrics.line_count
                     );
-                    prompt = format!("{}{}", prompt, ast_summary);
+                    prompt = format!("{prompt}{ast_summary}");
 
                     tracing::info!(cyclomatic=%complexity_metrics.cyclomatic_complexity, cognitive=%complexity_metrics.cognitive_complexity, "AST analysis complete");
                 }
@@ -2016,3 +2016,5 @@ async fn perform_validation(
         .await
         .context("Security validation failed")
 }
+
+

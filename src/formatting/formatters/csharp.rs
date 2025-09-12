@@ -74,7 +74,7 @@ impl CodeFormatter for CSharpFormatter {
                 // If CSharpier fails, it might be due to syntax errors
                 // Return the original code with error message
                 let mut result = FormatResult::unchanged(code.to_string());
-                result.messages.push(format!("CSharpier failed: {}", e));
+                result.messages.push(format!("CSharpier failed: {e}"));
                 Ok(result)
             }
         }
@@ -139,7 +139,7 @@ impl CodeFormatter for CSharpFormatter {
 // - Visual Studio Code: Install CSharpier extension
 // - Visual Studio: Use dotnet format or external tool
 // - JetBrains Rider: Configure as external tool"#;
-        Ok(format!("{}{}", json_config, documentation))
+        Ok(format!("{json_config}{documentation}"))
     }
 }
 
@@ -388,3 +388,5 @@ public class User{public string Name{get;set;}public int Age{get;set;}public boo
         }
     }
 }
+
+

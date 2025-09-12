@@ -32,7 +32,7 @@ impl YamlFormatter {
             if trimmed.starts_with('#') {
                 // Preserve comments but ensure single space after #
                 let comment_text = trimmed.trim_start_matches('#').trim_start();
-                formatted_lines.push(format!("# {}", comment_text));
+                formatted_lines.push(format!("# {comment_text}"));
                 continue;
             }
 
@@ -65,10 +65,10 @@ impl YamlFormatter {
         // Handle list items (both "- item" and "-item")
         if line.starts_with("- ") {
             let content = line.trim_start_matches("- ").trim();
-            return Ok(format!("{}- {}", prefix, content));
+            return Ok(format!("{prefix}- {content}"));
         } else if line.starts_with("-") && !line.starts_with("--") {
             let content = line.trim_start_matches('-').trim();
-            return Ok(format!("{}- {}", prefix, content));
+            return Ok(format!("{prefix}- {content}"));
         }
 
         // Handle key-value pairs
@@ -89,7 +89,7 @@ impl YamlFormatter {
         }
 
         // Default: just add indentation
-        Ok(format!("{}{}", prefix, line))
+        Ok(format!("{prefix}{line}"))
     }
 
     /// Basic YAML syntax validation
@@ -340,3 +340,5 @@ mod tests {
         assert!(formatted.contains("    grandchild: value2"));
     }
 }
+
+

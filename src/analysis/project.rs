@@ -570,7 +570,7 @@ fn should_ignore(path: &Path, root: &Path, patterns: &HashSet<String>) -> bool {
             }
         } else {
             // Exact match
-            if path_str == *pattern || file_name == *pattern || path_str.ends_with(&format!("/{}", pattern)) {
+            if path_str == *pattern || file_name == *pattern || path_str.ends_with(&format!("/{pattern}")) {
                 return true;
             }
         }
@@ -1141,7 +1141,7 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
             if i > 0 {
                 output.push(',');
             }
-            output.push_str(&format!("{}:{}", ext, count));
+            output.push_str(&format!("{ext}:{count}"));
         }
         output.push('\n');
     }
@@ -1397,3 +1397,5 @@ mod tests {
         assert!(formatted.contains("bin[main.rs]")); // nested structure works
     }
 }
+
+

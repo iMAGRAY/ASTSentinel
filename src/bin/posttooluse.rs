@@ -1845,7 +1845,7 @@ async fn load_prompt_file(filename: &str) -> Result<String> {
                 Err(e)
             }
         })
-        .with_context(|| format!("Failed to load prompt file: {}", filename))
+        .with_context(|| format!("Failed to load prompt file: {filename}"))
 }
 
 // Constants for formatting instructions
@@ -2496,7 +2496,7 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
                             // Get tool name and file if available
                             if let Some(input) = c.get("input") {
                                 if let Some(file_path) = input.get("file_path").and_then(|v| v.as_str()) {
-                                    text_parts.push(format!("{} tool file: {}", tool_name, file_path));
+                                    text_parts.push(format!("{tool_name} tool file: {file_path}"));
                                 } else {
                                     text_parts.push(format!("{} tool", tool_name));
                                 }
@@ -2558,7 +2558,7 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
         String::new()
     };
 
-    let result = format!("{}conversation:\n{}", current_task, conversation);
+    let result = format!("{current_task}conversation:\n{conversation}");
 
     // Ensure we respect the max_chars limit for the entire output
     if result.len() > max_chars {
@@ -2596,7 +2596,7 @@ async fn perform_ast_analysis(content: &str, file_path: &str) -> Option<QualityS
         let t0 = std::time::Instant::now();
         let res = scorer.analyze(&code, language);
         if res.is_ok() {
-            crate::analysis::timings::record(&format!("score/{}", language), t0.elapsed().as_millis());
+            crate::analysis::timings::record(&format!("score/{language}"), t0.elapsed().as_millis());
         }
         res
     });
@@ -3408,7 +3408,7 @@ async fn main() -> Result<()> {
 
             // Add incremental update info if available
             if let Some(inc) = incremental {
-                formatted.push_str(&format!("\n{}", inc));
+                formatted.push_str(&format!("\n{inc}"));
             }
 
             // Log metrics for debugging (stderr)
@@ -4154,7 +4154,7 @@ mod tests {
             s.concrete_issues.push(ConcreteIssue {
                 severity: IssueSeverity::Major,
                 category: IssueCategory::LongMethod,
-                message: format!("issue at {}", ln),
+                message: format!("issue at {ln}"),
                 file: String::new(),
                 line: ln,
                 column: 1,
@@ -4525,4 +4525,6 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
+
+
 

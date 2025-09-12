@@ -156,7 +156,7 @@ impl DuplicateDetector {
                     .map(|p| p.to_string_lossy().to_lowercase())
                     .unwrap_or_else(|| "root".to_string());
 
-                let grouping_key = format!("{}::{}", parent_dir, clean_stem);
+                let grouping_key = format!("{parent_dir}::{clean_stem}");
 
                 name_groups.entry(grouping_key).or_default().push(file);
             }
@@ -304,7 +304,7 @@ impl DuplicateDetector {
         let mut parts = Vec::new();
         let pushp = |t: ConflictType, name: &str, v: &mut Vec<String>| {
             if let Some(c) = counts.get(&t) {
-                v.push(format!("{}:{}", name, c));
+                v.push(format!("{name}:{c}"));
             }
         };
         pushp(ConflictType::ExactDuplicate, "Exact", &mut parts);
@@ -351,7 +351,7 @@ impl DuplicateDetector {
                 if i >= top_dirs {
                     break;
                 }
-                parts.push(format!("{}: {}", d, c));
+                parts.push(format!("{d}: {c}"));
             }
             if !parts.is_empty() {
                 report.push_str("Топ директорий: ");
@@ -443,3 +443,4 @@ impl DuplicateDetector {
         report
     }
 }
+
