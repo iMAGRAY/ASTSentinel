@@ -257,7 +257,10 @@ pub fn format_edit_as_unified_diff(
             let new_start = start_line + 1;
             let new_count = end_line - start_line;
 
-            result.push_str(&format!("@@ -{v0},{v0} +{v0},{v0} @@\n", v0 = old_start, v1 = old_count, v2 = new_start, v3 = new_count));
+            result.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                old_start, old_count, new_start, new_count
+            ));
 
             // Show context before change
             for i in start_line..change_start_idx {
@@ -861,4 +864,3 @@ mod tests {
         assert_eq!(result, "абв...");
     }
 }
-

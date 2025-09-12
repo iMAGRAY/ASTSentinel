@@ -695,7 +695,10 @@ impl UniversalAIClient {
         let model_name = &self.config.pretool_model;
         let response = self
             .client
-            .post(format!("{v0}/models/{v0}:generateContent?key={v0}", v0 = base_url, v1 = model_name, v2 = api_key))
+            .post(format!(
+                "{}/models/{}:generateContent?key={}",
+                base_url, model_name, api_key
+            ))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -1697,7 +1700,10 @@ impl UniversalAIClient {
         let model_name = &self.config.posttool_model;
         let response = self
             .client
-            .post(format!("{v0}/models/{v0}:generateContent?key={v0}", v0 = base_url, v1 = model_name, v2 = api_key))
+            .post(format!(
+                "{}/models/{}:generateContent?key={}",
+                base_url, model_name, api_key
+            ))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -2024,7 +2030,8 @@ impl UniversalAIClient {
         let json_schema_str = serde_json::to_string_pretty(&self.get_memory_optimization_schema())?;
         let request_body = serde_json::json!({
             "model": model,
-            "input": format!("{v0}\n\n{v0}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{v0}", v0 = prompt, v1 = context, v2 = json_schema_str),
+            "input": format!("{}\n\n{}\n\nIMPORTANT: Return ONLY the data object that matches this schema. Do NOT include the schema itself in your response. Return a single JSON object starting with {{ and ending with }}.\n\nRequired schema for reference:\n{}",
+                prompt, context, json_schema_str),
             "max_output_tokens": 12000,
             "reasoning": {
                 "effort": "medium"
@@ -2325,7 +2332,6 @@ fn debug_hooks_enabled() -> bool {
         false
     }
 }
-
 
 
 
