@@ -139,7 +139,10 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
             );
             out.push('\n');
         }
-        out.push_str(&format!("High-complexity files: {metrics.high_complexity_files}(score>7)\n"));
+        out.push_str(&format!(
+            "High-complexity files: {} (score>7)\n",
+            metrics.high_complexity_files
+        ));
     } else {
         out.push_str("No issues detected.\n");
     }
@@ -254,6 +257,5 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
 }
 
 // Removed unused project-wide AST analysis helpers
-
 
 
