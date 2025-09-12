@@ -62,10 +62,7 @@ impl SinglePassEngine {
                     issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::HighComplexity,
-                        message: format!(
-                            "High cyclomatic complexity: {} (threshold: {})",
-                            complexity, threshold
-                        ),
+                        message: format!("High cyclomatic complexity: {complexity} (threshold: {threshold})"),
                         file: String::new(),
                         line: node.start_position().row + 1,
                         column: node.start_position().column + 1,

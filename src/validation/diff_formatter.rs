@@ -257,10 +257,7 @@ pub fn format_edit_as_unified_diff(
             let new_start = start_line + 1;
             let new_count = end_line - start_line;
 
-            result.push_str(&format!(
-                "@@ -{},{} +{},{} @@\n",
-                old_start, old_count, new_start, new_count
-            ));
+            result.push_str(&format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"));
 
             // Show context before change
             for i in start_line..change_start_idx {
