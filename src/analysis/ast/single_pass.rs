@@ -20,7 +20,7 @@ impl SinglePassEngine {
                 issues.push(ConcreteIssue {
                     severity: IssueSeverity::Minor,
                     category: IssueCategory::NamingConvention,
-                    message: format!("Line exceeds 120 characters ({})", line.len()),
+        message: format!("Line exceeds 120 characters ({len})", len = line.len()),
                     file: String::new(),
                     line: i + 1,
                     column: 121,
@@ -42,7 +42,7 @@ impl SinglePassEngine {
                     issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::TooManyParameters,
-                        message: format!("Function has too many parameters ({} > 5)", params),
+                        message: format!("Function has too many parameters ({params} > 5)", params = params),
                         file: String::new(),
                         line: node.start_position().row + 1,
                         column: node.start_position().column + 1,
@@ -77,7 +77,7 @@ impl SinglePassEngine {
                     issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::DeepNesting,
-                        message: format!("Deep nesting detected (level {})", max_depth),
+                        message: format!("Deep nesting detected (level {max_depth})", max_depth = max_depth),
                         file: String::new(),
                         line: node.start_position().row + 1,
                         column: node.start_position().column + 1,
