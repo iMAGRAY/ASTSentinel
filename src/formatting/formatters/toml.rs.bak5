@@ -401,7 +401,7 @@ impl TomlSection {
 
         // Add sorted key-value pairs
         for kv in key_values {
-            result.push(format!("{kv.key} = {kv.value}"));
+            result.push(format!("{} = {}", kv.key, kv.value));
         }
 
         Ok(result.join("\n"))
@@ -537,5 +537,4 @@ mod tests {
         assert!(beta_pos < zebra_pos);
     }
 }
-
 

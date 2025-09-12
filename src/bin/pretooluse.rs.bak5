@@ -331,7 +331,10 @@ fn find_contract_callsite_issues(
             pos = after;
         }
         if !seen_named.is_empty() {
-            issues.push(format!("Calls to `{fname}` still pass removed named params: {seen_named.join(", "}")
+            issues.push(format!(
+                "Calls to `{}` still pass removed named params: {}",
+                fname,
+                seen_named.join(", ")
             ));
         }
     }
@@ -1790,7 +1793,7 @@ async fn perform_validation(
 
     // Add heuristic assessment to guide the validator
     let assessment = assess_change(hook_input);
-    prompt = format!("{prompt}\n\nHEURISTIC SUMMARY: {assessment.summary}");
+    prompt = format!("{}\n\nHEURISTIC SUMMARY: {}", prompt, assessment.summary);
 
     // Add context from transcript if available
     if let Some(transcript_path) = &hook_input.transcript_path {
@@ -1842,8 +1845,11 @@ async fn perform_validation(
                 .map(|f| f.size_bytes as usize / 50) // Rough estimate: 50 bytes per line
                 .sum();
 
-            let metrics = format!("\n\nPROJECT METRICS:\n  Total files: {structure.total_files}\n  Estimated LOC: {}\n  Code files: {total_loc,
-                structure.files.iter(}").filter(|f| f.is_code_file).count()
+            let metrics = format!(
+                "\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
+                structure.total_files,
+                total_loc,
+                structure.files.iter().filter(|f| f.is_code_file).count()
             );
             prompt = format!("{prompt}{metrics}");
 
@@ -1900,10 +1906,14 @@ async fn perform_validation(
 
             match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {
                 Ok(complexity_metrics) => {
-                    let ast_summary = format!("\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {complexity_metrics.cyclomatic_complexity}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {complexity_metrics.cognitive_complexity,
+                    let ast_summary = format!(
+                        "\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {}",
+                        complexity_metrics.cyclomatic_complexity,
+                        complexity_metrics.cognitive_complexity,
                         complexity_metrics.nesting_depth,
                         complexity_metrics.function_count,
-                        complexity_metrics.line_count}");
+                        complexity_metrics.line_count
+                    );
                     prompt = format!("{prompt}{ast_summary}");
 
                     tracing::info!(cyclomatic=%complexity_metrics.cyclomatic_complexity, cognitive=%complexity_metrics.cognitive_complexity, "AST analysis complete");
@@ -2006,7 +2016,6 @@ async fn perform_validation(
         .await
         .context("Security validation failed")
 }
-
 
 
 

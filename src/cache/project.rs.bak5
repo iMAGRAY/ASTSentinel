@@ -192,10 +192,14 @@ impl ProjectCache {
                 _ => {
                     // For Tree-sitter supported languages, use structural analysis
                     if let Ok(metrics) = MultiLanguageAnalyzer::analyze_with_tree_sitter(&content, language) {
-                        let structure_signature = format!("{metrics.function_count}:{}:{}:{}:{metrics.cyclomatic_complexity,
+                        let structure_signature = format!(
+                            "{}:{}:{}:{}:{}",
+                            metrics.function_count,
+                            metrics.cyclomatic_complexity,
                             metrics.nesting_depth,
                             metrics.parameter_count,
-                            metrics.return_points}");
+                            metrics.return_points
+                        );
                         let mut hasher = Sha256::new();
                         hasher.update(structure_signature.as_bytes());
                         return Ok(format!("{:x}", hasher.finalize()));
@@ -555,9 +559,12 @@ pub fn compress_structure(
     .cloned()
     .collect();
 
-    let metrics_str = format!("L{metrics.total_lines_of_code},{metrics
+    let metrics_str = format!(
+        "L{},{}",
+        metrics.total_lines_of_code,
+        metrics
             .code_by_language
-            .iter(}")
+            .iter()
             .map(|(lang, stats)| {
                 let short = lang_abbrev.get(lang.as_str()).copied().unwrap_or(lang.as_str());
                 format!(
@@ -582,13 +589,17 @@ pub fn compress_structure(
     );
 
     // Complexity metrics in ultra-compressed format
-    let complexity_str = format!("C{:.1}/{:.1}/{metrics.average_cyclomatic_complexity}/{}/{}+{}+{}+{metrics.average_cognitive_complexity,
+    let complexity_str = format!(
+        "C{:.1}/{:.1}/{}/{}/{}+{}+{}+{}",
+        metrics.average_cyclomatic_complexity,
+        metrics.average_cognitive_complexity,
         metrics.max_cyclomatic_complexity,
         metrics.max_cognitive_complexity,
         metrics.complexity_distribution.low_complexity,
         metrics.complexity_distribution.medium_complexity,
         metrics.complexity_distribution.high_complexity,
-        metrics.complexity_distribution.extreme_complexity}");
+        metrics.complexity_distribution.extreme_complexity
+    );
 
     // Get top 5 important files (abbreviated)
     let mut important: Vec<_> = metrics
@@ -639,6 +650,5 @@ pub fn build_incremental_update(cache: &ProjectCache, changed_files: Vec<PathBuf
 
     Ok(format!("INCREMENTAL[{}]", updates.join(",")))
 }
-
 
 

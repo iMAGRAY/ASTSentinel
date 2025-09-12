@@ -3464,7 +3464,7 @@ async fn main() -> Result<()> {
             file_path.to_string()
         } else {
             // Relative path - combine with cwd
-            format!("{cwd.trim_end_matches(&['/'}/{'\\'][..]}"), file_path)
+            format!("{}/{}", cwd.trim_end_matches(&['/', '\\'][..]), file_path)
         }
     } else {
         file_path.to_string()
@@ -4525,7 +4525,6 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
-
 
 
 
