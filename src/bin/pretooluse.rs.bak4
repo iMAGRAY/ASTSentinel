@@ -1203,7 +1203,7 @@ async fn main() -> Result<()> {
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &code) && hook_input.tool_name != "Write")
         {
-            let reason = format!("Anti-cheating: {heur.summary}");
+            let reason = format!("Anti-cheating: {}", heur.summary);
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -1524,7 +1524,7 @@ async fn main() -> Result<()> {
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &content) && hook_input.tool_name != "Write")
         {
-            let reason = format!("Anti-cheating: {heur.summary}");
+            let reason = format!("Anti-cheating: {}", heur.summary);
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -2016,6 +2016,5 @@ async fn perform_validation(
         .await
         .context("Security validation failed")
 }
-
 
 
