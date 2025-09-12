@@ -159,7 +159,7 @@ impl AstQualityScorer {
                     result.concrete_issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::LongLine,
-                        message: format!("Line too long ({} > 120 chars)", line.chars().count()),
+                        message: format!("Line too long ({count} > 120 chars)", count = line.chars().count()),
                         file: String::new(),
                         line: idx + 1,
                         column: 1,
@@ -1284,4 +1284,5 @@ fn calculate_complexity(node: &tree_sitter::Node, source: &str) -> u32 {
 
     complexity
 }
+
 
