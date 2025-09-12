@@ -734,7 +734,7 @@ impl<'a> Visit<'a> for RustAstVisitor {
             self.push_issue(
                 IssueSeverity::Minor,
                 IssueCategory::TooManyParameters,
-                format!("Function has too many parameters ({param_count} > 5)", param_count = param_count),
+                format!("Function has too many parameters ({param_count} > 5)"),
             );
         }
         // Deep nesting (threshold: >4)
@@ -743,7 +743,7 @@ impl<'a> Visit<'a> for RustAstVisitor {
             self.push_issue(
                 IssueSeverity::Minor,
                 IssueCategory::DeepNesting,
-                format!("Deep nesting detected (level {max_depth})", max_depth = max_depth),
+                format!("Deep nesting detected (level {max_depth})"),
             );
         }
         // Long method (approx by number of statements in block)
@@ -752,7 +752,7 @@ impl<'a> Visit<'a> for RustAstVisitor {
             self.push_issue(
                 IssueSeverity::Minor,
                 IssueCategory::LongMethod,
-                format!("Long method ({stmt_count} statements > 50)", stmt_count = stmt_count),
+                format!("Long method ({stmt_count} statements > 50)"),
             );
         }
 
