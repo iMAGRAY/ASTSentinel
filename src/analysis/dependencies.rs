@@ -107,7 +107,7 @@ impl ProjectDependencies {
         ));
 
         if self.outdated_count > 0 {
-            result.push_str(&format!("⚠️  {self.outdated_count}potentially outdated dependencies detected\n\n"));
+            result.push_str(&format!("⚠️  {0} potentially outdated dependencies detected\n\n", self.outdated_count));
         } else {
             result.push_str("✅ All dependencies appear up-to-date\n\n");
         }
