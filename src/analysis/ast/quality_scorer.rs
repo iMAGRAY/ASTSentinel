@@ -1035,8 +1035,9 @@ impl AstRule for ComplexityRule {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::HighComplexity,
                         message: format!(
-                            "High cyclomatic complexity: {} (threshold: {})",
-                            complexity, complexity_threshold
+                            "High cyclomatic complexity: {complexity} (threshold: {threshold})",
+                            complexity = complexity,
+                            threshold = complexity_threshold,
                         ),
                         file: String::new(),
                         line: node.start_position().row + 1,
