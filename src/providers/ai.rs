@@ -695,10 +695,7 @@ impl UniversalAIClient {
         let model_name = &self.config.pretool_model;
         let response = self
             .client
-            .post(format!(
-                "{}/models/{}:generateContent?key={}",
-                base_url, model_name, api_key
-            ))
+            .post(format!("{base_url}/models/{model_name}:generateContent?key={api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
