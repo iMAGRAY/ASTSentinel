@@ -231,8 +231,8 @@ pub fn format_edit_as_unified_diff(
     let mut result = String::with_capacity(estimated_size);
 
     // Basic unified diff header
-    result.push_str(&format!("--- a/{}\n", file_path));
-    result.push_str(&format!("+++ b/{}\n", file_path));
+    result.push_str(&format!("--- a/{file_path}\\n"));
+    result.push_str(&format!("+++ b/{file_path}\\n"));
 
     // Try to find context in the actual file content
     if let Some(content) = file_content {
@@ -323,8 +323,8 @@ pub fn format_simple_unified_diff(file_path: &str, old_content: &str, new_conten
     use std::cmp::min;
 
     let mut result = String::new();
-    result.push_str(&format!("--- a/{}\n", file_path));
-    result.push_str(&format!("+++ b/{}\n", file_path));
+    result.push_str(&format!("--- a/{file_path}\\n"));
+    result.push_str(&format!("+++ b/{file_path}\\n"));
 
     let old_lines: Vec<&str> = old_content.lines().collect();
     let new_lines: Vec<&str> = new_content.lines().collect();
@@ -470,7 +470,7 @@ pub fn format_multi_edit_full_context(
         }
     }
 
-    result.push_str(&format!("\n=== End of {} ===\n", file_path));
+    result.push_str(&format!("\\n=== End of {file_path} ===\\n"));
     result
 }
 
@@ -658,7 +658,7 @@ pub fn format_full_file_with_changes(
         }
     }
 
-    result.push_str(&format!("\n=== End of {} ===\n", file_path));
+    result.push_str(&format!("\\n=== End of {file_path} ===\\n"));
     result
 }
 
@@ -711,7 +711,7 @@ pub fn format_edit_full_context(
         result.push_str("(File content not available)\n");
     }
 
-    result.push_str(&format!("\n=== End of {} ===\n", file_path));
+    result.push_str(&format!("\\n=== End of {file_path} ===\\n"));
     result
 }
 
@@ -746,7 +746,7 @@ pub fn format_multi_edit_diff(
             // Show the specific change
             let line_num = current_content[..pos].lines().count() + 1;
 
-            result.push_str(&format!("@@ Line {} @@\n", line_num));
+            result.push_str(&format!("@@ Line {line_num} @@\\n"));
             for line in old_str.lines() {
                 result.push_str(&format!("  - {}\n", line));
             }
