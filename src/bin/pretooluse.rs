@@ -179,7 +179,7 @@ fn contract_weakening_reasons(
                 }
             }
         } else {
-            reasons.push(format!("Function `{name}`: removed from module"));
+            reasons.push(format!("Function `{}`: removed from module", name));
         }
     }
     reasons
@@ -270,7 +270,7 @@ fn find_contract_callsite_issues(
             }
         } else {
             // Function removed entirely — flag
-            issues.push(format!("Function `{name}` removed; consider migration plan"));
+            issues.push(format!("Function `{}` removed; consider migration plan", name));
         }
     }
 
@@ -834,7 +834,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
                                 } else {
                                     c.get("name")
                                         .and_then(|v| v.as_str())
-                                        .map(|tool_name| format!("[Tool: {tool_name}]"))
+                                        .map(|tool_name| format!("[Tool: {}]", tool_name))
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -876,12 +876,12 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
     if let Some(current_task) = &last_user_message {
         let task_truncated = if current_task.chars().count() > 150 {
             let truncated_chars: String = current_task.chars().take(147).collect();
-            format!("{truncated_chars}...")
+            format!("{}...", truncated_chars)
         } else {
             current_task.clone()
         };
 
-        let task_str = format!("CURRENT USER TASK: {task_truncated}\n\nRECENT CONVERSATION:\n");
+        let task_str = format!("CURRENT USER TASK: {}\n\nRECENT CONVERSATION:\n", task_truncated);
         result.push_str(&task_str);
         char_count += task_str.len();
     }
@@ -890,7 +890,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
         // Truncate individual messages to 100 chars (UTF-8 safe)
         let truncated = if content.chars().count() > 100 {
             let truncated_chars: String = content.chars().take(97).collect();
-            format!("{truncated_chars}...")
+            format!("{}...", truncated_chars)
         } else {
             content.clone()
         };
@@ -1004,12 +1004,17 @@ fn format_quality_message(reason: &str) -> String {
     // Replace literal \n with actual newlines from AI response
     let cleaned_reason = reason.replace("\\n", "\n");
 
-    format!("РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ
+    format!(
+        "РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ
 [плохой и поддельный код всегда будет заблокирован]
 
 выявленные проблемы в ваших изменениях:
-{cleaned_reason}УЛУЧШИТЕ СВОЮ РАБОТУ — не убегайте от проблем, создавая минимальные упрощённые реализации
-[попытки сделать это также будут заблокированы]")
+{}
+
+УЛУЧШИТЕ СВОЮ РАБОТУ — не убегайте от проблем, создавая минимальные упрощённые реализации
+[попытки сделать это также будут заблокированы]",
+        cleaned_reason
+    )
 }
 
 /// Output error response with proper fallback handling
@@ -1995,7 +2000,6 @@ async fn perform_validation(
         .await
         .context("Security validation failed")
 }
-
 
 
 

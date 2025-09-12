@@ -257,7 +257,10 @@ pub fn format_edit_as_unified_diff(
             let new_start = start_line + 1;
             let new_count = end_line - start_line;
 
-            result.push_str(&format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"));
+            result.push_str(&format!(
+                "@@ -{},{} +{},{} @@\n",
+                old_start, old_count, new_start, new_count
+            ));
 
             // Show context before change
             for i in start_line..change_start_idx {
@@ -268,10 +271,10 @@ pub fn format_edit_as_unified_diff(
 
             // Show the actual change
             for line in old_lines.iter() {
-                result.push_str(&format!("-{line}\n"));
+                result.push_str(&format!("-{}\n", line));
             }
             for line in new_lines.iter() {
-                result.push_str(&format!("+{line}\n"));
+                result.push_str(&format!("+{}\n", line));
             }
 
             // Show context after change
@@ -290,10 +293,10 @@ pub fn format_edit_as_unified_diff(
             ));
 
             for line in old_string.lines() {
-                result.push_str(&format!("-{line}\n"));
+                result.push_str(&format!("-{}\n", line));
             }
             for line in new_string.lines() {
-                result.push_str(&format!("+{line}\n"));
+                result.push_str(&format!("+{}\n", line));
             }
         }
     } else {
@@ -305,10 +308,10 @@ pub fn format_edit_as_unified_diff(
         ));
 
         for line in old_string.lines() {
-            result.push_str(&format!("-{line}\n"));
+            result.push_str(&format!("-{}\n", line));
         }
         for line in new_string.lines() {
-            result.push_str(&format!("+{line}\n"));
+            result.push_str(&format!("+{}\n", line));
         }
     }
 
@@ -382,17 +385,17 @@ pub fn format_simple_unified_diff(file_path: &str, old_content: &str, new_conten
 
             match (old_line, new_line) {
                 (Some(old), Some(new)) if old == new => {
-                    result.push_str(&format!(" {old}\n"));
+                    result.push_str(&format!(" {}\n", old));
                 }
                 (Some(old), Some(new)) => {
-                    result.push_str(&format!("-{old}\n"));
-                    result.push_str(&format!("+{new}\n"));
+                    result.push_str(&format!("-{}\n", old));
+                    result.push_str(&format!("+{}\n", new));
                 }
                 (Some(old), None) => {
-                    result.push_str(&format!("-{old}\n"));
+                    result.push_str(&format!("-{}\n", old));
                 }
                 (None, Some(new)) => {
-                    result.push_str(&format!("+{new}\n"));
+                    result.push_str(&format!("+{}\n", new));
                 }
                 (None, None) => {} // Shouldn't happen in this range
             }
@@ -414,7 +417,7 @@ pub fn format_multi_edit_full_context(
 ) -> String {
     let mut result = String::with_capacity(1024);
 
-    result.push_str(&format!("=== MultiEdit on file: {file_path}===\n"));
+    result.push_str(&format!("=== MultiEdit on file: {} ===\n", file_path));
 
     if let Some(content) = file_content {
         // Apply all edits to get the final content
@@ -538,9 +541,9 @@ fn format_line(line_num: usize, marker: &str, content: &str) -> String {
     let padded_marker = if marker == " " {
         "  ".to_string()
     } else {
-        marker.to_string()
+        format!("{} ", marker)
     };
-    format!("{line_num:4} {padded_marker}{content}\n")
+    format!("{:4} {}{}\n", line_num, padded_marker, content)
 }
 
 /// Safely truncate content at line boundary to avoid splitting UTF-8 chars
@@ -587,7 +590,7 @@ pub fn format_full_file_with_changes(
     let mut result = String::with_capacity(estimated_size);
 
     // Add file header
-    result.push_str(&format!("=== Full file: {file_path}===\n"));
+    result.push_str(&format!("=== Full file: {} ===\n", file_path));
 
     // Add warning for large files
     if was_truncated {
@@ -668,7 +671,7 @@ pub fn format_edit_full_context(
 ) -> String {
     let mut result = String::new();
 
-    result.push_str(&format!("=== Full file with Edit changes: {file_path}===\n"));
+    result.push_str(&format!("=== Full file with Edit changes: {} ===\n", file_path));
 
     if let Some(content) = file_content {
         // Apply the edit to get the new content
@@ -745,10 +748,10 @@ pub fn format_multi_edit_diff(
 
             result.push_str(&format!("@@ Line {line_num} @@\\n"));
             for line in old_str.lines() {
-                result.push_str(&format!("  - {line}\n"));
+                result.push_str(&format!("  - {}\n", line));
             }
             for line in new_str.lines() {
-                result.push_str(&format!("  + {line}\n"));
+                result.push_str(&format!("  + {}\n", line));
             }
             result.push_str("  Applied successfully\n");
 
@@ -861,4 +864,3 @@ mod tests {
         assert_eq!(result, "абв...");
     }
 }
-

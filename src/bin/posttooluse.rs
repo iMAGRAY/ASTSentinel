@@ -856,7 +856,7 @@ fn extract_signatures_ast(
                         .trim_matches('\'')
                         .trim_matches('`')
                         .to_string();
-                    return format!("[computed: {inner_clean}]");
+                    return format!("[computed: {}]", inner_clean);
                 }
             }
         }
@@ -1529,7 +1529,10 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
                 }
             }
         } else {
-            s.push_str(&format!("- Function `{name}`: removed from module (possible breaking change)\n"));
+            s.push_str(&format!(
+                "- Function `{}`: removed from module (possible breaking change)\n",
+                name
+            ));
         }
     }
 
@@ -1728,7 +1731,7 @@ fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> 
 
         // Directory name match (ends with /)
         if let Some(dir_pattern) = pattern.strip_suffix('/') {
-            if path.is_dir() && (file_name == dir_pattern || path_str.contains(&format!("/{dir_pattern}/")))
+            if path.is_dir() && (file_name == dir_pattern || path_str.contains(&format!("/{}/", dir_pattern)))
             {
                 return true;
             }
@@ -1881,31 +1884,34 @@ async fn format_analysis_prompt_with_ast(
         .to_string();
 
     let context_section = if let Some(context) = project_context {
-        format!("\n\nPROJECT CONTEXT:\n{context}\n")
+        format!("\n\nPROJECT CONTEXT:\n{}\n", context)
     } else {
         String::new()
     };
 
     let diff_section = if let Some(diff) = diff_context {
-        format!("\n\nCODE CHANGES (diff format):\n{diff}\n")
+        format!("\n\nCODE CHANGES (diff format):\n{}\n", diff)
     } else {
         String::new()
     };
 
     let transcript_section = if let Some(transcript) = transcript_context {
-        format!("\n\nCONVERSATION CONTEXT:\n{transcript}\n")
+        format!("\n\nCONVERSATION CONTEXT:\n{}\n", transcript)
     } else {
         String::new()
     };
 
     let context7_section = if !context7_docs.is_empty() {
-        format!("\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{context7_docs}\n")
+        format!(
+            "\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{}\n",
+            context7_docs
+        )
     } else {
         String::new()
     };
 
     let ast_section = if let Some(ast) = ast_context {
-        format!("\n{ast}\n")
+        format!("\n{}\n", ast)
     } else {
         String::new()
     };
@@ -2176,12 +2182,12 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
                 let old_string = edit
                     .get("old_string")
                     .and_then(|v| v.as_str())
-                    .with_context(|| format!("Edit {idx}missing 'old_string'"))?;
+                    .with_context(|| format!("Edit {} missing 'old_string'", idx))?;
 
                 let new_string = edit
                     .get("new_string")
                     .and_then(|v| v.as_str())
-                    .with_context(|| format!("Edit {idx}missing 'new_string'"))?;
+                    .with_context(|| format!("Edit {} missing 'new_string'", idx))?;
 
                 // Validate strings are not empty
                 if old_string.is_empty() {
@@ -2483,7 +2489,7 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
                                 if let Some(file_path) = input.get("file_path").and_then(|v| v.as_str()) {
                                     text_parts.push(format!("{tool_name} tool file: {file_path}"));
                                 } else {
-                                    text_parts.push(format!("{tool_name}tool"));
+                                    text_parts.push(format!("{} tool", tool_name));
                                 }
                             }
                         }
@@ -3630,7 +3636,7 @@ async fn main() -> Result<()> {
             } else if !format_result.messages.is_empty() {
                 final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
                 for message in &format_result.messages {
-                    final_response.push_str(&format!("{message}"));
+                    final_response.push_str(&format!("{} ", message));
                 }
                 final_response.push_str("\n\n");
             }
@@ -3760,7 +3766,7 @@ async fn main() -> Result<()> {
                 } else if !format_result.messages.is_empty() {
                     final_response.push_str("[ФОРМАТИРОВАНИЕ] ");
                     for message in &format_result.messages {
-                        final_response.push_str(&format!("{message}"));
+                        final_response.push_str(&format!("{} ", message));
                     }
                     final_response.push_str("\n\n");
                 }
@@ -3771,7 +3777,7 @@ async fn main() -> Result<()> {
                 let content = if ai_response.trim().is_empty() {
                     if let Some(ast_score) = &ast_analysis { build_agent_json_from_score(ast_score) } else { String::from("{}") }
                 } else { ai_response };
-                format!("AGENT_JSON_START\n{content}\nAGENT_JSON_END\n")
+                format!("AGENT_JSON_START\n{}\nAGENT_JSON_END\n", content)
             } else {
                 ai_response
             };
@@ -4501,7 +4507,6 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
-
 
 
 

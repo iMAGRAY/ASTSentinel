@@ -650,4 +650,3 @@ pub fn build_incremental_update(cache: &ProjectCache, changed_files: Vec<PathBuf
 
     Ok(format!("INCREMENTAL[{}]", updates.join(",")))
 }
-

@@ -695,7 +695,10 @@ impl UniversalAIClient {
         let model_name = &self.config.pretool_model;
         let response = self
             .client
-            .post(format!("{base_url}/models/{model_name}:generateContent?key={api_key}"))
+            .post(format!(
+                "{}/models/{}:generateContent?key={}",
+                base_url, model_name, api_key
+            ))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -1048,8 +1051,11 @@ impl UniversalAIClient {
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
 
         // Enforce strict JSON using Chat Completions + json_schema
-        let system = format!("{prompt}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.");
-        let user = format!("Code to analyze:\n{code}\n\nReturn ONLY JSON.");
+        let system = format!(
+            "{}\n\nIMPORTANT: Respond ONLY a single JSON object that conforms to the provided schema. No code fences. No extra text.",
+            prompt
+        );
+        let user = format!("Code to analyze:\n{}\n\nReturn ONLY JSON.", code);
 
         let request_body = serde_json::json!({
             "model": self.config.posttool_model,
@@ -2326,8 +2332,6 @@ fn debug_hooks_enabled() -> bool {
         false
     }
 }
-
-
 
 
 
