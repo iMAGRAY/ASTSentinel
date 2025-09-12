@@ -80,10 +80,10 @@ impl YamlFormatter {
 
                 if value.is_empty() {
                     // Key without value (parent key)
-
+                    return Ok(format!("{prefix}{key}:"));
                 } else {
                     // Key with value - normalize spacing
-
+                    return Ok(format!("{prefix}{key}: {value}"));
                 }
             }
         }

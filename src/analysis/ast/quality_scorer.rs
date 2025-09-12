@@ -972,7 +972,7 @@ impl AstRule for LongLineRule {
                 issues.push(ConcreteIssue {
                     severity: IssueSeverity::Minor,
                     category: IssueCategory::LongLine,
-
+                    message: format!("Line too long ({} > {} chars)", char_count, self.max_len),
                     file: String::new(),
                     line: index + 1,
                     column: 1,
