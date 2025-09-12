@@ -225,12 +225,12 @@ impl ProjectCache {
 
         impl<'ast> Visit<'ast> for StructureVisitor {
             fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-                self.structure.push(format!("fn:{node.sig.ident}"));
+                self.structure.push(format!("fn:{}", node.sig.ident));
                 syn::visit::visit_item_fn(self, node);
             }
 
             fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
-                self.structure.push(format!("struct:{node.ident}"));
+                self.structure.push(format!("struct:{}", node.ident));
                 syn::visit::visit_item_struct(self, node);
             }
 
@@ -650,4 +650,3 @@ pub fn build_incremental_update(cache: &ProjectCache, changed_files: Vec<PathBuf
 
     Ok(format!("INCREMENTAL[{}]", updates.join(",")))
 }
-
