@@ -1,0 +1,187 @@
+use super::super::{CodeFormatter, FormatResult};
+use crate::analysis::ast::SupportedLanguage;
+use anyhow::Result;
+use serde_json;
+use std::collections::BTreeMap;
+
+/// JSON formatter implementation using serde_json
+pub struct JsonFormatter;
+
+impl JsonFormatter {
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Pretty-print JSON with proper indentation and sorting
+    fn format_json_content(&self, content: &str) -> Result<String> {
+        // First, try to parse as a generic JSON value
+        let parsed: serde_json::Value =
+            serde_json::from_str(content).map_err(|e| anyhow::anyhow!("Invalid JSON syntax: {}", e))?;
+
+        // Sort object keys for consistent formatting
+        let sorted_json = Self::sort_json_keys(&parsed);
+
+        // Pretty-print with 2-space indentation
+        let formatted = serde_json::to_string_pretty(&sorted_json)
+            .map_err(|e| anyhow::anyhow!("Failed to format JSON: {}", e))?;
+
+        Ok(formatted)
+    }
+
+    /// Recursively sort JSON object keys for consistent output
+    fn sort_json_keys(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(obj) => {
+                let mut sorted_map = BTreeMap::new();
+                for (key, val) in obj {
+                    sorted_map.insert(key.clone(), Self::sort_json_keys(val));
+                }
+                serde_json::Value::Object(sorted_map.into_iter().collect())
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(Self::sort_json_keys).collect())
+            }
+            _ => value.clone(),
+        }
+    }
+
+    /// Validate JSON and provide helpful error messages
+    fn validate_json_syntax(&self, content: &str) -> Result<()> {
+        match serde_json::from_str::<serde_json::Value>(content) {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                let error_msg = format!("JSON syntax error: {e}");
+
+                // Try to provide more helpful error context
+                if e.is_syntax() {
+                    let line = e.line();
+                    let column = e.column();
+                    return Err(anyhow::anyhow!(
+                        "JSON syntax error at line {}, column {}: {}",
+                        line,
+                        column,
+                        e
+                    ));
+                }
+
+                Err(anyhow::anyhow!(error_msg))
+            }
+        }
+    }
+}
+
+impl CodeFormatter for JsonFormatter {
+    fn format_code(&self, content: &str) -> Result<FormatResult> {
+        let mut messages = Vec::new();
+
+        // Validate syntax first
+        if let Err(e) = self.validate_json_syntax(content) {
+            messages.push(format!("JSON syntax error: {e}"));
+            return Ok(FormatResult {
+                original: content.to_string(),
+                formatted: content.to_string(),
+                changed: false,
+                messages,
+            });
+        }
+
+        // Format the JSON
+        match self.format_json_content(content) {
+            Ok(formatted) => {
+                let changed = formatted.trim() != content.trim();
+
+                Ok(FormatResult {
+                    original: content.to_string(),
+                    formatted,
+                    changed,
+                    messages,
+                })
+            }
+            Err(e) => {
+                messages.push(format!("JSON formatting error: {e}"));
+                Ok(FormatResult {
+                    original: content.to_string(),
+                    formatted: content.to_string(),
+                    changed: false,
+                    messages,
+                })
+            }
+        }
+    }
+
+    fn is_available(&self) -> bool {
+        // JSON formatter is always available since it uses built-in serde_json
+        true
+    }
+
+    fn language(&self) -> SupportedLanguage {
+        SupportedLanguage::Json
+    }
+
+    fn formatter_info(&self) -> String {
+        "Built-in JSON formatter using serde_json".to_string()
+    }
+}
+
+impl Default for JsonFormatter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_valid_json() {
+        let formatter = JsonFormatter::new();
+        let input = r#"{"name":"test","age":30,"items":["a","b","c"]}"#;
+
+        let result = formatter.format_code(input).unwrap();
+        assert!(result.changed);
+        assert!(result.messages.is_empty());
+        assert!(result.formatted.contains("  \"name\": \"test\""));
+    }
+
+    #[test]
+    fn test_format_invalid_json() {
+        let formatter = JsonFormatter::new();
+        let input = r#"{"name":"test","age":}"#;
+
+        let result = formatter.format_code(input).unwrap();
+        assert!(!result.changed);
+        assert!(!result.messages.is_empty());
+        assert!(result.messages[0].contains("JSON syntax error"));
+    }
+
+    #[test]
+    fn test_sort_json_keys() {
+        let formatter = JsonFormatter::new();
+        let input = r#"{"z": 1, "a": 2, "m": 3}"#;
+
+        let result = formatter.format_code(input).unwrap();
+        let formatted = result.formatted;
+
+        // Should be sorted alphabetically
+        let a_pos = formatted.find("\"a\"").unwrap();
+        let m_pos = formatted.find("\"m\"").unwrap();
+        let z_pos = formatted.find("\"z\"").unwrap();
+
+        assert!(a_pos < m_pos);
+        assert!(m_pos < z_pos);
+    }
+
+    #[test]
+    fn test_is_available() {
+        let formatter = JsonFormatter::new();
+        assert!(formatter.is_available());
+    }
+
+    #[test]
+    fn test_supports_language() {
+        let formatter = JsonFormatter::new();
+        assert_eq!(formatter.language(), SupportedLanguage::Json);
+    }
+}
+
