@@ -657,7 +657,7 @@ impl UniversalAIClient {
 
         let response = self
             .client
-            .post(format!("{}/v1/messages", base_url))
+            .post(format!("{base_url}/v1/messages"))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
@@ -945,7 +945,7 @@ impl UniversalAIClient {
 
         let response = self
             .client
-            .post(format!("{}/responses", base_url))
+            .post(format!("{base_url}/responses"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -1006,7 +1006,7 @@ impl UniversalAIClient {
 
         let response = self
             .client
-            .post(format!("{}/responses", base_url))
+            .post(format!("{base_url}/responses"))
             .header("Authorization", format!("Bearer {api_key}"))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -1194,7 +1194,7 @@ impl UniversalAIClient {
 
         let response = self
             .client
-            .post(format!("{}/v1/messages", base_url))
+            .post(format!("{base_url}/v1/messages"))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
@@ -1323,7 +1323,7 @@ impl UniversalAIClient {
                 "temperature": temperature
             });
             let resp = client
-                .post(format!("{}/chat/completions", base_url))
+                .post(format!("{base_url}/chat/completions"))
                 .header("Authorization", format!("Bearer {api_key}"))
                 .header("Content-Type", "application/json")
                 .json(&body)
@@ -1363,7 +1363,7 @@ impl UniversalAIClient {
                 "stream": false
             });
             let resp = client
-                .post(format!("{}/messages", base_url))
+                .post(format!("{base_url}/messages"))
                 .header("Authorization", format!("Bearer {api_key}"))
                 .header("Content-Type", "application/json")
                 .json(&body)
@@ -1660,7 +1660,7 @@ impl UniversalAIClient {
 
         let response = self
             .client
-            .post(format!("{}/v1/messages", base_url))
+            .post(format!("{base_url}/v1/messages"))
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
             .header("Content-Type", "application/json")
@@ -2332,5 +2332,6 @@ fn debug_hooks_enabled() -> bool {
         false
     }
 }
+
 
 
