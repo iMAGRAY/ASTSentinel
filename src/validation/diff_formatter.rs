@@ -12,8 +12,8 @@ pub fn format_code_diff(
     let mut result = String::new();
 
     // Add file header
-    result.push_str(&format!("--- {}\n", file_path));
-    result.push_str(&format!("+++ {} (modified)\n", file_path));
+    result.push_str(&format!("--- {file_path}\n"));
+    result.push_str(&format!("+++ {file_path} (modified)\n"));
 
     match (old_content, new_content) {
         (None, Some(new)) => {
@@ -59,8 +59,8 @@ pub fn format_edit_diff(
     let mut result = String::new();
 
     // Add file header
-    result.push_str(&format!("--- {}\n", file_path));
-    result.push_str(&format!("+++ {} (modified)\n", file_path));
+    result.push_str(&format!("--- {file_path}\n"));
+    result.push_str(&format!("+++ {file_path} (modified)\n"));
 
     if let Some(content) = file_content {
         // Find the location of old_string in the file
@@ -732,8 +732,8 @@ pub fn format_multi_edit_diff(
     // Apply edits sequentially to show cumulative changes
     let mut current_content = file_content.unwrap_or("").to_string();
 
-    result.push_str(&format!("--- {}\n", file_path));
-    result.push_str(&format!("+++ {} (modified)\n", file_path));
+    result.push_str(&format!("--- {file_path}\n"));
+    result.push_str(&format!("+++ {file_path} (modified)\n"));
     result.push_str(&format!("@@ {} edit operations @@\n", edits.len()));
 
     for (i, (old_str, new_str)) in edits.iter().enumerate() {
