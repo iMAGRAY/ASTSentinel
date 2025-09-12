@@ -323,10 +323,7 @@ impl DuplicateDetector {
             total_bytes += g.files.iter().map(|f| f.size).sum::<u64>();
         }
         let kb = (total_bytes as f64 / 1024.0).round() as u64;
-        report.push_str(&format!(
-            "Итого: групп {} , файлов {} (~{} KB)\n",
-            total_groups, total_files, kb
-        ));
+        report.push_str(&format!("Итого: групп {total_groups} , файлов {total_files} (~{kb} KB)\n"));
 
         // Optional per-directory summary (top-K)
         let top_dirs: usize = std::env::var("DUP_REPORT_TOP_DIRS")
@@ -410,18 +407,11 @@ impl DuplicateDetector {
                     "  "
                 };
 
-                report.push_str(&format!(
-                    "  {} {} | {}B | {}L | {}\n",
-                    marker,
-                    relative_path,
-                    file.size,
-                    file.lines,
-                    &file.hash[..8]
-                ));
+                report.push_str(&format!("  {marker} {relative_path} | {size}B | {lines}L | {hash}\n", marker=marker, relative_path=relative_path, size=file.size, lines=file.lines, hash=&file.hash[..8]));
             }
 
             if hidden_files > 0 {
-                report.push_str(&format!("  ... и ещё {} файлов скрыто по лимиту\n", hidden_files));
+                report.push_str(&format!("  ... и ещё {hidden_files} файлов скрыто по лимиту\n"));
             }
 
             // Add recommendation
@@ -437,7 +427,7 @@ impl DuplicateDetector {
         }
 
         if hidden_groups > 0 {
-            report.push_str(&format!("\n... и ещё {} групп скрыто по лимиту\n", hidden_groups));
+            report.push_str(&format!("\n... и ещё {hidden_groups} групп скрыто по лимиту\n"));
         }
 
         report
