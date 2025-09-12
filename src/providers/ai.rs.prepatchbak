@@ -351,7 +351,7 @@ impl std::fmt::Display for AIProvider {
             AIProvider::Google => "google",
             AIProvider::XAI => "xai",
         };
-        write!(f, "{name}")
+        write!(f, "{}", name)
     }
 }
 
@@ -2332,7 +2332,6 @@ fn debug_hooks_enabled() -> bool {
         false
     }
 }
-
 
 
 
