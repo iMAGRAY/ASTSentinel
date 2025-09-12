@@ -288,9 +288,8 @@ impl SecureCommandExecutor {
 
                 #[cfg(windows)]
                 {
-                    let _ = Command::new("taskkill")
-                        .args(&["/PID", &child_id.to_string(), "/F"])
-                        .output();
+                    let kill_args = vec!["/PID".to_string(), child_id.to_string(), "/F".to_string()];
+                    let _ = Command::new("taskkill").args(&kill_args).output();
                 }
 
                 anyhow::bail!("Command timeout after {:?}", timeout)
@@ -301,7 +300,7 @@ impl SecureCommandExecutor {
     /// Get version info for a formatter (safe, limited execution)
     pub fn get_formatter_version(&self, command: &str) -> String {
         if !self.command_exists(command) {
-            return format!("{} (not available)", command);
+            return format!("{command} (not available)");
         }
 
         let version_args = self.get_version_args(command);
@@ -318,9 +317,9 @@ impl SecureCommandExecutor {
                     .take(200) // Limit length
                     .collect();
 
-                format!("{} {}", command, clean_output)
+                format!("{command} {clean_output}")
             }
-            Err(_) => format!("{} (version check failed)", command),
+            Err(_) => format!("{command} (version check failed)"),
         }
     }
 
