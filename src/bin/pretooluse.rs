@@ -192,7 +192,8 @@ fn contract_weakening_reasons(
     reasons
 }
 
-// Heuristic: find call sites that still pass removed parameters or exceed new arity
+// Heuristic: find call sites that still pass removed parameters or exceed new
+// arity
 fn find_contract_callsite_issues(
     language: Option<SupportedLanguage>,
     old_code: &str,
@@ -453,7 +454,9 @@ fn extract_old_new_contents(hook_input: &HookInput) -> (String, Option<String>, 
 // -----------------
 #[cfg(test)]
 mod tests {
-    use super::{contract_weakening_reasons, extract_signatures_regex, detect_function_stub, detect_return_constant};
+    use super::{
+        contract_weakening_reasons, detect_function_stub, detect_return_constant, extract_signatures_regex,
+    };
     use rust_validation_hooks::analysis::ast::SupportedLanguage;
 
     #[test]
@@ -480,7 +483,10 @@ mod tests {
     #[test]
     fn unit_detects_return_constant_python() {
         let code = "def f(x):\n    return 1\n";
-        assert!(detect_return_constant(code), "should detect return literal in python");
+        assert!(
+            detect_return_constant(code),
+            "should detect return literal in python"
+        );
     }
 
     #[test]
@@ -543,7 +549,8 @@ fn normalize_code_for_signal(code: &str) -> String {
 
 fn detect_return_constant(code: &str) -> bool {
     use once_cell::sync::Lazy;
-    // Match: return <literal>  where literal is number/bool/null/none or quoted string.
+    // Match: return <literal>  where literal is number/bool/null/none or quoted
+    // string.
     static RET_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
         // Match return literal anywhere on the line (not only at start)
         regex::Regex::new(r#"(?i)\breturn\s+(?:\d+|true|false|null|none|\"[^\"]*\"|'[^']*')\s*(?:;|[,})]|$)"#)
@@ -567,25 +574,45 @@ fn detect_return_constant(code: &str) -> bool {
 
 fn detect_js_ts_function_stub(code: &str) -> bool {
     use regex::Regex;
-    if let Ok(re) = Regex::new(r#"(?i)\bthrow\s+new\s+Error\s*\(\s*['\"][^'\"]*(not\s+implemented|todo)[^'\"]*['\"]\s*\)"#) {
-        if re.is_match(code) { return true; }
+    if let Ok(re) = Regex::new(
+        r#"(?i)\bthrow\s+new\s+Error\s*\(\s*['\"][^'\"]*(not\s+implemented|todo)[^'\"]*['\"]\s*\)"#,
+    ) {
+        if re.is_match(code) {
+            return true;
+        }
     }
-    if let Ok(re) = Regex::new(r#"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{\s*(/\*.*?\*/|//.*?\n|\s)*\}"#) {
-        if re.is_match(code) { return true; }
+    if let Ok(re) =
+        Regex::new(r#"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{\s*(/\*.*?\*/|//.*?\n|\s)*\}"#)
+    {
+        if re.is_match(code) {
+            return true;
+        }
     }
-    if let Ok(re) = Regex::new(r#"(?s)^[ \t]*[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{\s*(/\*.*?\*/|//.*?\n|\s)*\}$"#) {
-        if re.is_match(code) { return true; }
+    if let Ok(re) =
+        Regex::new(r#"(?s)^[ \t]*[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\)\s*\{\s*(/\*.*?\*/|//.*?\n|\s)*\}$"#)
+    {
+        if re.is_match(code) {
+            return true;
+        }
     }
     false
 }
 
 fn detect_python_function_stub(code: &str) -> bool {
     use regex::Regex;
-    if let Ok(re) = Regex::new(r#"(?sm)^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\):\s*(?:#.*\n|\s)*pass\s*$"#) {
-        if re.is_match(code) { return true; }
+    if let Ok(re) =
+        Regex::new(r#"(?sm)^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\):\s*(?:#.*\n|\s)*pass\s*$"#)
+    {
+        if re.is_match(code) {
+            return true;
+        }
     }
-    if let Ok(re) = Regex::new(r#"(?sm)^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\):\s*(?:#.*\n|\s)*raise\s+NotImplementedError\b[^\n]*$"#) {
-        if re.is_match(code) { return true; }
+    if let Ok(re) = Regex::new(
+        r#"(?sm)^\s*def\s+[A-Za-z_][A-Za-z0-9_]*\s*\([^)]*\):\s*(?:#.*\n|\s)*raise\s+NotImplementedError\b[^\n]*$"#,
+    ) {
+        if re.is_match(code) {
+            return true;
+        }
     }
     false
 }
@@ -593,7 +620,9 @@ fn detect_python_function_stub(code: &str) -> bool {
 fn detect_function_stub(language: Option<SupportedLanguage>, code: &str) -> bool {
     match language {
         Some(SupportedLanguage::Python) => detect_python_function_stub(code),
-        Some(SupportedLanguage::JavaScript) | Some(SupportedLanguage::TypeScript) => detect_js_ts_function_stub(code),
+        Some(SupportedLanguage::JavaScript) | Some(SupportedLanguage::TypeScript) => {
+            detect_js_ts_function_stub(code)
+        }
         _ => false,
     }
 }
@@ -650,20 +679,13 @@ fn detect_empty_catch_except(code: &str) -> bool {
         && low.contains("{")
         && low.contains("}")
         && low.contains("catch(")
-        && (low.contains("catch(e){}")
-            || low.contains(
-                "catch(e){\n}",
-            ))
+        && (low.contains("catch(e){}") || low.contains("catch(e){\n}"))
     {
         return true;
     }
     if low.contains("except")
         && low.contains(":")
-        && (low.contains(
-            "except:\n    pass",
-        ) || low.contains(
-            "except:\n    pass",
-        ))
+        && (low.contains("except:\n    pass") || low.contains("except:\n    pass"))
     {
         return true;
     }
@@ -693,7 +715,8 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     }
     // Allowed minimal context: version/health/ping endpoints or files
     let file_path = extract_file_path(&hook_input.tool_input).to_ascii_lowercase();
-    let fname_ok = file_path.contains("version") || file_path.contains("health") || file_path.contains("ping");
+    let fname_ok =
+        file_path.contains("version") || file_path.contains("health") || file_path.contains("ping");
     assess.is_allowed_minimal_context = fname_ok;
 
     // Stronger signals
@@ -740,42 +763,60 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
 fn detect_const_return_ignores_params(code: &str) -> bool {
     use regex::Regex;
     // Python: def f(a,b): ... return <lit>
-    if let Ok(re) = Regex::new(r"(?s)def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*:\s*(?:#.*\n|\s)*return\s+(?:\d+|True|False|None|\"[^\"]*\"|'[^']*')\b") {
+    if let Ok(re) = Regex::new(
+        r#"(?s)def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*:\s*(?:#.*\n|\s)*return\s+(?:\d+|True|False|None|"[^"]*"|'[^']*')\b"#,
+    ) {
         if let Some(cap) = re.captures(code) {
             let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let body_start = cap.get(0).map(|m| m.end()).unwrap_or(0);
             let body = &code[body_start.saturating_sub(80)..body_start]; // small window is enough
-            let names: Vec<&str> = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+            let names: Vec<&str> = params
+                .split(',')
+                .map(|p| p.trim())
+                .filter(|p| !p.is_empty())
+                .collect();
             if !names.is_empty() && !names.iter().any(|n| body.contains(n)) {
                 return true;
             }
         }
     }
     // JS/TS: function f(a,b){ return <lit>; } or (a,b)=> <lit>
-    if let Ok(re) = Regex::new(r"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*\{\s*return\s+(?:\d+|true|false|null|\"[^\"]*\"|'[^']*')\s*;?\s*\}") {
+    if let Ok(re) = Regex::new(
+        r#"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*\{\s*return\s+(?:\d+|true|false|null|"[^"]*"|'[^']*')\s*;?\s*\}"#,
+    ) {
         if let Some(cap) = re.captures(code) {
             let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
             let body_start = cap.get(0).map(|m| m.end()).unwrap_or(0);
             let body = &code[body_start.saturating_sub(80)..body_start];
-            let names: Vec<&str> = params.split(',').map(|p| p.trim().trim_start_matches("...")).filter(|p| !p.is_empty()).collect();
+            let names: Vec<&str> = params
+                .split(',')
+                .map(|p| p.trim().trim_start_matches("..."))
+                .filter(|p| !p.is_empty())
+                .collect();
             if !names.is_empty() && !names.iter().any(|n| body.contains(n)) {
                 return true;
             }
         }
     }
-    if let Ok(re) = Regex::new(r"(?s)\(([^)]*[^\s)])\)\s*=>\s*(?:\d+|true|false|null|\"[^\"]*\"|'[^']*')\b") {
+    if let Ok(re) = Regex::new(r#"(?s)\(([^)]*[^\s)])\)\s*=>\s*(?:\d+|true|false|null|"[^"]*"|'[^']*')\b"#) {
         if let Some(cap) = re.captures(code) {
             let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let names: Vec<&str> = params.split(',').map(|p| p.trim().trim_start_matches("...")).filter(|p| !p.is_empty()).collect();
+            let names: Vec<&str> = params
+                .split(',')
+                .map(|p| p.trim().trim_start_matches("..."))
+                .filter(|p| !p.is_empty())
+                .collect();
             if !names.is_empty() {
-                return true; // arrow literal return can’t reference params inline before =>
+                return true; // arrow literal return can’t reference params
+                             // inline before =>
             }
         }
     }
     false
 }
 
-// Heuristic: approximate number of call-like tokens (identifier followed by '(')
+// Heuristic: approximate number of call-like tokens (identifier followed by
+// '(')
 fn count_call_like_tokens(s: &str) -> usize {
     let mut c = 0usize;
     let bytes = s.as_bytes();
@@ -786,13 +827,24 @@ fn count_call_like_tokens(s: &str) -> usize {
             let mut j = i + 1;
             while j < bytes.len() {
                 let cj = bytes[j] as char;
-                if cj.is_ascii_alphanumeric() || cj == '_' { j += 1; continue; }
+                if cj.is_ascii_alphanumeric() || cj == '_' {
+                    j += 1;
+                    continue;
+                }
                 break;
             }
             if j < bytes.len() && bytes[j] == b'(' {
                 // Cheap filters to avoid keywords/defs
                 let ident = &s[i..j].to_ascii_lowercase();
-                if ident != "if" && ident != "for" && ident != "while" && ident != "switch" && ident != "return" && ident != "function" && ident != "def" && ident != "class" {
+                if ident != "if"
+                    && ident != "for"
+                    && ident != "while"
+                    && ident != "switch"
+                    && ident != "return"
+                    && ident != "function"
+                    && ident != "def"
+                    && ident != "class"
+                {
                     c += 1;
                 }
             }
@@ -804,7 +856,8 @@ fn count_call_like_tokens(s: &str) -> usize {
     c
 }
 
-// Removed GrokSecurityClient - now using UniversalAIClient from ai_providers module
+// Removed GrokSecurityClient - now using UniversalAIClient from ai_providers
+// module
 
 use std::path::PathBuf;
 
@@ -896,7 +949,8 @@ fn load_prompt(prompt_file: &str) -> Result<String> {
         .with_context(|| format!("Failed to read prompt file: {:?}", prompt_path))
 }
 
-/// Read and summarize transcript from JSONL file with current task identification
+/// Read and summarize transcript from JSONL file with current task
+/// identification
 fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -> Result<String> {
     use std::io::BufRead;
     use std::io::BufReader;
@@ -1157,7 +1211,8 @@ async fn main() -> Result<()> {
     }));
     // Initialize structured logging (stderr). Safe to call multiple times.
     rust_validation_hooks::telemetry::init();
-    // Optional offline AST-only mode (no network): decide allow/deny from local AST/security heuristics
+    // Optional offline AST-only mode (no network): decide allow/deny from local
+    // AST/security heuristics
     if dev_flag_enabled("PRETOOL_AST_ONLY") {
         // Read input from stdin
         let mut input = String::new();
@@ -1228,7 +1283,11 @@ async fn main() -> Result<()> {
 
         // Structural sanity: fast syntax check where available
         if let Some(lang) = language {
-            if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(&code, lang, std::time::Duration::from_millis(800)) {
+            if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(
+                &code,
+                lang,
+                std::time::Duration::from_millis(800),
+            ) {
                 // Treat parse/syntax errors as structural harm
                 let reason = format!("Structural integrity check failed: {e}");
                 let output = PreToolUseOutput {
@@ -1238,7 +1297,10 @@ async fn main() -> Result<()> {
                         permission_decision_reason: Some(format_quality_message(&reason)),
                     },
                 };
-                println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                println!(
+                    "{}",
+                    serde_json::to_string(&output).context("Failed to serialize output")?
+                );
                 return Ok(());
             }
         }
@@ -1276,8 +1338,9 @@ async fn main() -> Result<()> {
             }
         }
 
-        if /* do not block TODO/FIXME */
-            heur.has_empty_catch_or_except
+        if
+        /* do not block TODO/FIXME */
+        heur.has_empty_catch_or_except
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &code) && hook_input.tool_name != "Write")
         {
@@ -1296,7 +1359,8 @@ async fn main() -> Result<()> {
             return Ok(());
         }
 
-        // If EDIT is a no-op (old == new ignoring whitespace/comments), soft-deny (converted to deny)
+        // If EDIT is a no-op (old == new ignoring whitespace/comments), soft-deny
+        // (converted to deny)
         if hook_input.tool_name == "Edit" {
             let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
             if let (Some(o), Some(n)) = (old_opt, new_opt) {
@@ -1412,8 +1476,12 @@ async fn main() -> Result<()> {
                 // Severity ordering via discriminant: Critical(0) < Major(1) < Minor(2)
                 triggers = true;
             }
-            // Always treat certain categories as critical triggers regardless of sensitivity
-            if matches!(i.category, IssueCategory::CommandInjection | IssueCategory::PathTraversal) {
+            // Always treat certain categories as critical triggers regardless of
+            // sensitivity
+            if matches!(
+                i.category,
+                IssueCategory::CommandInjection | IssueCategory::PathTraversal
+            ) {
                 triggers = true;
             }
 
@@ -1527,9 +1595,11 @@ async fn main() -> Result<()> {
 
     // All operations now go through AI validation - no automatic allows
 
-    // All file validation now handled by AI - no automatic skipping based on file extensions
+    // All file validation now handled by AI - no automatic skipping based on file
+    // extensions
 
-    // If no API key for selected provider, fall back to offline AST-based decision path
+    // If no API key for selected provider, fall back to offline AST-based decision
+    // path
     if config
         .get_api_key_for_provider(&config.pretool_provider)
         .is_empty()
@@ -1550,7 +1620,10 @@ async fn main() -> Result<()> {
                     permission_decision_reason: None,
                 },
             };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            println!(
+                "{}",
+                serde_json::to_string(&output).context("Failed to serialize output")?
+            );
             return Ok(());
         }
 
@@ -1559,15 +1632,29 @@ async fn main() -> Result<()> {
 
         // Structural sanity: fast syntax check
         if let Some(lang) = language {
-            if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(&content, lang, std::time::Duration::from_millis(800)) {
+            if let Err(e) = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(
+                &content,
+                lang,
+                std::time::Duration::from_millis(800),
+            ) {
                 let reason = format!("Structural integrity check failed: {e}");
-                let output = PreToolUseOutput { hook_specific_output: PreToolUseHookOutput { hook_event_name: "PreToolUse".to_string(), permission_decision: "deny".to_string(), permission_decision_reason: Some(format_quality_message(&reason)), } };
-                println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                let output = PreToolUseOutput {
+                    hook_specific_output: PreToolUseHookOutput {
+                        hook_event_name: "PreToolUse".to_string(),
+                        permission_decision: "deny".to_string(),
+                        permission_decision_reason: Some(format_quality_message(&reason)),
+                    },
+                };
+                println!(
+                    "{}",
+                    serde_json::to_string(&output).context("Failed to serialize output")?
+                );
                 return Ok(());
             }
         }
 
-        // If WRITE is a no-op (old == new ignoring whitespace/comments), allow unless dangerous patterns
+        // If WRITE is a no-op (old == new ignoring whitespace/comments), allow unless
+        // dangerous patterns
         if hook_input.tool_name == "Write" {
             let (_p, old_opt, new_opt) = extract_old_new_contents(&hook_input);
             if let (Some(o), Some(n)) = (old_opt, new_opt) {
@@ -1589,7 +1676,10 @@ async fn main() -> Result<()> {
                                 permission_decision_reason: None,
                             },
                         };
-                        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                        println!(
+                            "{}",
+                            serde_json::to_string(&output).context("Failed to serialize output")?
+                        );
                         return Ok(());
                     }
                 }
@@ -1597,8 +1687,9 @@ async fn main() -> Result<()> {
         }
 
         // Block fake implementations
-        if /* do not block TODO/FIXME */
-            heur.has_empty_catch_or_except
+        if
+        /* do not block TODO/FIXME */
+        heur.has_empty_catch_or_except
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &content) && hook_input.tool_name != "Write")
         {
@@ -1610,7 +1701,10 @@ async fn main() -> Result<()> {
                     permission_decision_reason: Some(format_quality_message(&reason)),
                 },
             };
-            println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+            println!(
+                "{}",
+                serde_json::to_string(&output).context("Failed to serialize output")?
+            );
             return Ok(());
         }
 
@@ -1627,7 +1721,10 @@ async fn main() -> Result<()> {
                             permission_decision_reason: Some(format_quality_message(reason)),
                         },
                     };
-                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    println!(
+                        "{}",
+                        serde_json::to_string(&output).context("Failed to serialize output")?
+                    );
                     return Ok(());
                 }
             }
@@ -1637,7 +1734,10 @@ async fn main() -> Result<()> {
         if hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit" {
             let (path, old_opt, new_opt) = extract_old_new_contents(&hook_input);
             if let (Some(old), Some(new)) = (old_opt, new_opt) {
-                let lang = path.split('.').next_back().and_then(SupportedLanguage::from_extension);
+                let lang = path
+                    .split('.')
+                    .next_back()
+                    .and_then(SupportedLanguage::from_extension);
                 let reasons = contract_weakening_reasons(lang, &old, &new);
                 if !reasons.is_empty() {
                     let reason = format!("API contract weakening detected:\n{}", reasons.join("\n"));
@@ -1648,7 +1748,10 @@ async fn main() -> Result<()> {
                             permission_decision_reason: Some(format_quality_message(&reason)),
                         },
                     };
-                    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                    println!(
+                        "{}",
+                        serde_json::to_string(&output).context("Failed to serialize output")?
+                    );
                     return Ok(());
                 }
             }
@@ -1666,19 +1769,24 @@ async fn main() -> Result<()> {
                         permission_decision_reason: None,
                     },
                 };
-                println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                println!(
+                    "{}",
+                    serde_json::to_string(&output).context("Failed to serialize output")?
+                );
                 return Ok(());
             }
         };
-        let score = scorer.analyze(&content, language).unwrap_or_else(|_| analysis::ast::quality_scorer::QualityScore {
-            total_score: 1000,
-            functionality_score: 300,
-            reliability_score: 200,
-            maintainability_score: 200,
-            performance_score: 150,
-            security_score: 100,
-            standards_score: 50,
-            concrete_issues: vec![],
+        let score = scorer.analyze(&content, language).unwrap_or_else(|_| {
+            analysis::ast::quality_scorer::QualityScore {
+                total_score: 1000,
+                functionality_score: 300,
+                reliability_score: 200,
+                maintainability_score: 200,
+                performance_score: 150,
+                security_score: 100,
+                standards_score: 50,
+                concrete_issues: vec![],
+            }
         });
 
         // Policy evaluation
@@ -1686,8 +1794,12 @@ async fn main() -> Result<()> {
         use analysis::ast::quality_scorer::{IssueCategory, IssueSeverity};
         let mut deny_reasons: Vec<String> = Vec::new();
         for i in &score.concrete_issues {
-            if matches!(i.category, IssueCategory::UnfinishedWork) { continue; }
-            if config::should_ignore_path(&cfg, &file_path) { continue; }
+            if matches!(i.category, IssueCategory::UnfinishedWork) {
+                continue;
+            }
+            if config::should_ignore_path(&cfg, &file_path) {
+                continue;
+            }
             let min_sev = match cfg.sensitivity {
                 config::Sensitivity::Low => IssueSeverity::Critical,
                 config::Sensitivity::Medium => IssueSeverity::Major,
@@ -1696,18 +1808,26 @@ async fn main() -> Result<()> {
             let is_test_ctx = config::is_test_context(&cfg, &file_path);
             let allowlisted = config::code_contains_allowlisted_vars(&cfg, &content);
             let mut triggers = i.severity as u8 <= min_sev as u8;
-            if matches!(i.category, IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal) {
+            if matches!(
+                i.category,
+                IssueCategory::SqlInjection | IssueCategory::CommandInjection | IssueCategory::PathTraversal
+            ) {
                 triggers = true;
             }
             if is_test_ctx && allowlisted && matches!(i.category, IssueCategory::HardcodedCredentials) {
                 triggers = false;
             }
-            if triggers { deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id)); }
+            if triggers {
+                deny_reasons.push(format!("Line {}: {} [{}]", i.line, i.message, i.rule_id));
+            }
         }
         let (decision, reason) = if deny_reasons.is_empty() {
             ("allow".to_string(), None)
         } else {
-            ("deny".to_string(), Some(format_quality_message(&deny_reasons.join("\n"))))
+            (
+                "deny".to_string(),
+                Some(format_quality_message(&deny_reasons.join("\n"))),
+            )
         };
         let output = PreToolUseOutput {
             hook_specific_output: PreToolUseHookOutput {
@@ -1716,7 +1836,10 @@ async fn main() -> Result<()> {
                 permission_decision_reason: reason,
             },
         };
-        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+        println!(
+            "{}",
+            serde_json::to_string(&output).context("Failed to serialize output")?
+        );
         return Ok(());
     }
 
@@ -1922,7 +2045,8 @@ async fn perform_validation(
                 .map(|f| f.size_bytes as usize / 50) // Rough estimate: 50 bytes per line
                 .sum();
 
-            let metrics = format!("\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
+            let metrics = format!(
+                "\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
                 structure.total_files,
                 total_loc,
                 structure.files.iter().filter(|f| f.is_code_file).count()
