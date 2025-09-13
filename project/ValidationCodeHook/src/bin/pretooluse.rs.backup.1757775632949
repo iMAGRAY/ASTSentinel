@@ -55,11 +55,6 @@ struct HeuristicAssessment {
     has_todo_or_placeholder: bool,
     has_empty_catch_or_except: bool,
     is_new_file_minimal: bool,
-    // Stronger signals to reduce ложные срабатывания
-    const_return_ignores_params: bool,
-    logic_calls_removed: bool,
-    // Контекст, где минимальная реализация допустима (версия/здоровье/ping)
-    is_allowed_minimal_context: bool,
     summary: String,
 }
 
@@ -691,18 +686,6 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
         let norm = normalize_code_for_signal(&combined_new);
         assess.is_new_file_minimal = combined_new.trim().len() <= 64 || norm.len() <= 32;
     }
-    // Allowed minimal context: version/health/ping endpoints or files
-    let file_path = extract_file_path(&hook_input.tool_input).to_ascii_lowercase();
-    let fname_ok = file_path.contains("version") || file_path.contains("health") || file_path.contains("ping");
-    assess.is_allowed_minimal_context = fname_ok;
-
-    // Stronger signals
-    assess.const_return_ignores_params = detect_const_return_ignores_params(&combined_new);
-    assess.logic_calls_removed = {
-        let old_calls = old_opt.as_ref().map(|s| count_call_like_tokens(s)).unwrap_or(0);
-        let new_calls = count_call_like_tokens(&combined_new);
-        old_calls >= 3 && new_calls == 0 && (assess.is_return_constant_only || assess.is_print_or_log_only)
-    };
     let mut parts = Vec::new();
     if assess.is_whitespace_or_comments_only {
         parts.push("no-op change (whitespace/comments only)".to_string());
@@ -712,12 +695,6 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     }
     if assess.is_print_or_log_only {
         parts.push("print/log only".to_string());
-    }
-    if assess.const_return_ignores_params {
-        parts.push("constant return ignores params".to_string());
-    }
-    if assess.logic_calls_removed {
-        parts.push("logic/calls removed".to_string());
     }
     if assess.has_todo_or_placeholder {
         parts.push("TODO present".to_string());
@@ -734,74 +711,6 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
         parts.join(", ")
     };
     assess
-}
-
-// Heuristic: constant return while parameters exist and are unused
-fn detect_const_return_ignores_params(code: &str) -> bool {
-    use regex::Regex;
-    // Python: def f(a,b): ... return <lit>
-    if let Ok(re) = Regex::new(r"(?s)def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*:\s*(?:#.*\n|\s)*return\s+(?:\d+|True|False|None|\"[^\"]*\"|'[^']*')\b") {
-        if let Some(cap) = re.captures(code) {
-            let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let body_start = cap.get(0).map(|m| m.end()).unwrap_or(0);
-            let body = &code[body_start.saturating_sub(80)..body_start]; // small window is enough
-            let names: Vec<&str> = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
-            if !names.is_empty() && !names.iter().any(|n| body.contains(n)) {
-                return true;
-            }
-        }
-    }
-    // JS/TS: function f(a,b){ return <lit>; } or (a,b)=> <lit>
-    if let Ok(re) = Regex::new(r"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*\{\s*return\s+(?:\d+|true|false|null|\"[^\"]*\"|'[^']*')\s*;?\s*\}") {
-        if let Some(cap) = re.captures(code) {
-            let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let body_start = cap.get(0).map(|m| m.end()).unwrap_or(0);
-            let body = &code[body_start.saturating_sub(80)..body_start];
-            let names: Vec<&str> = params.split(',').map(|p| p.trim().trim_start_matches("...")).filter(|p| !p.is_empty()).collect();
-            if !names.is_empty() && !names.iter().any(|n| body.contains(n)) {
-                return true;
-            }
-        }
-    }
-    if let Ok(re) = Regex::new(r"(?s)\(([^)]*[^\s)])\)\s*=>\s*(?:\d+|true|false|null|\"[^\"]*\"|'[^']*')\b") {
-        if let Some(cap) = re.captures(code) {
-            let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let names: Vec<&str> = params.split(',').map(|p| p.trim().trim_start_matches("...")).filter(|p| !p.is_empty()).collect();
-            if !names.is_empty() {
-                return true; // arrow literal return can’t reference params inline before =>
-            }
-        }
-    }
-    false
-}
-
-// Heuristic: approximate number of call-like tokens (identifier followed by '(')
-fn count_call_like_tokens(s: &str) -> usize {
-    let mut c = 0usize;
-    let bytes = s.as_bytes();
-    let mut i = 0usize;
-    while i + 1 < bytes.len() {
-        let ch = bytes[i] as char;
-        if (ch.is_ascii_alphabetic() || ch == '_') {
-            let mut j = i + 1;
-            while j < bytes.len() {
-                let cj = bytes[j] as char;
-                if cj.is_ascii_alphanumeric() || cj == '_' { j += 1; continue; }
-                break;
-            }
-            if j < bytes.len() && bytes[j] == b'(' {
-                // Cheap filters to avoid keywords/defs
-                let ident = &s[i..j].to_ascii_lowercase();
-                if ident != "if" && ident != "for" && ident != "while" && ident != "switch" && ident != "return" && ident != "function" && ident != "def" && ident != "class" {
-                    c += 1;
-                }
-            }
-            i = j;
-            continue;
-        }
-        i += 1;
-    }
-    c
 }
 
 // Removed GrokSecurityClient - now using UniversalAIClient from ai_providers module

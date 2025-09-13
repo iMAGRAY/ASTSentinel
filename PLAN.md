@@ -1,15 +1,16 @@
 # AST Quality & Performance Plan (v1.0)
 
-Date: 2025-09-09
+Date: 2025-09-13
 Owner: AST Sentinel Team
 
-Goal: Make AST analysis maximally efficient, deterministic, and accurate across all supported languages, and deliver high‑quality, compact context to AI (PostToolUse) for downstream validation.
+Goal: Make AST analysis maximally efficient, deterministic, and accurate across all supported languages, and deliver high‑quality, compact context to AI (PostToolUse) for downstream validation (without exposing raw diffs to the UI/agent; AI prompt still includes diff for validation quality). PreToolUse operates in deterministic (no‑AI) mode.
 
 Key Outcomes (Success Criteria)
 - Performance: ≥30% speedup vs baseline on AST scoring across Python/JS/TS/Java/Go/C/C++/C#/PHP/Ruby; small files (<1k LOC) ≤2ms median, medium files (~5k LOC) ≤50ms median on reference HW. No single file exceeds 8s (configurable) without graceful skip.
 - Determinism: Bit‑for‑bit identical AST issue output (ordering and formatting) given the same input and config. Critical issues always included; results stable across runs/threads.
 - Accuracy: Rule parity across languages (function detection, params, nesting, complexity, long lines, security patterns). For test suites: ≥95% of expected issues detected; 0 false positives in provided “good code” samples.
 - Integration: PostToolUse receives normalized AST context (grouped, sorted, top‑K with criticals) for every supported language; payload size bounded and configurable.
+ - Privacy: additionalContext must not include raw diffs/patches by default; only metadata and AST‑based sections are shown. AI prompt MAY include diff to boost validation.
 
 Non‑Goals
 - Adding new languages beyond current set (Zig/V/Gleam only if feature enabled).
@@ -71,7 +72,8 @@ M2 (Next)
 - [x] A3 kind_id caches for Python, JS/TS
 - [x] B1/B2 single‑pass engine for Python, JS/TS (fastpath enabled by default; parity work ongoing)
 - [x] E2 perf gate doc and script (scripts/perf_gate.py, perf_gate_save.py); CI workflow added (.github/workflows/perf-gate.yml)
-  - Baseline saved; local perf gate run: No regressions above threshold (20%).
+ - Baseline saved; local perf gate run: No regressions above threshold (20%).
+  - PreToolUse deterministic: removed AI validation path; decisions are regex/AST/policy only.
 
 M3
 - [x] A3 + B1/B2 for Java, C#, Go
@@ -90,6 +92,7 @@ M6
 - [x] H2 update README_HOOKS with AST context section and env knobs
 - [x] H3 add offline e2e test for PostToolUse (AST-only mode)
 - [x] I2 soft-budget note unified across modes; clamp lowered to 1 to allow tiny test budgets; added DRY_RUN e2e
+ - [x] D4 Hide diffs in PostToolUse additionalContext; keep diff in AI prompts for higher‑quality validation (AST sections/snippets remain)
 - [ ] Expand cross-language fixtures to cover all rules and "good" samples (partial: C/C++/PHP/Ruby covered for core checks; add JS/TS/Java/C#/Go and per-language "good" samples)
 - [x] Expand cross-language fixtures: added complex signatures + try/catch/switch/async cases
   - TS: async + try/catch + switch (good), complex optional params (bad: TooManyParameters)
@@ -133,7 +136,15 @@ M9 (Docs & Finalization)
 Updates (QA hardening)
 - [x] Legacy (no-default-features) parity: added LongLineRule to multi-pass to honor AST_MAX_ISSUES cap in AST-only mode.
 - [x] Gated integration tests that rely on fastpath-only coverage (C/C++/PHP/Ruby unreachable) with `cfg(feature=ast_fastpath)`.
- - [x] PreToolUse Contract-check: added unit + e2e tests (deny on signature reduction; allow on preserved signatures) under PRETOOL_AST_ONLY flow.
+- [x] PreToolUse Contract-check: added unit + e2e tests (deny on signature reduction; allow on preserved signatures) under PRETOOL_AST_ONLY flow.
+
+2025-09-13: PostToolUse NEXT STEPS tuned to include deterministic, test-asserted keywords (dead/unreachable, Wrap lines >120, unused imports, Add/Update unit tests). Security redaction regexes made panic-free (no unwrap/expect) while preserving behavior. Clippy strict: PASS across all targets with `-D warnings` (features `ast_fastpath`). Removed `#![allow(clippy::uninlined_format_args)]` from all binaries after verifying no violations.
+
+2025-09-13: UserPromptSubmit noise hardening — switched Risk/Health snapshot to conservative static mode:
+- Only security (SQL/Command injection, path traversal, hardcoded creds) and correctness (unhandled errors, infinite loops, resource leaks, race conditions, unreachable/null risk) are counted.
+- Maintainability/style (complexity, long lines, naming, unused imports/vars, docs, unfinished work) are de-emphasized (Minor) and excluded from “critical/correctness” counts.
+- Ignored paths: tests/fixtures/snapshots/examples/benches and infra folders (target, node_modules, vendor, dist, build, .git, assets, logs, reports, tmp, .cache, venv, etc.).
+- Deterministic caps and ordering: `USERPROMPT_SCAN_LIMIT` (default 400), stable sorts, bounded output size.
 
 
 

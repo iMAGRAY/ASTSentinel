@@ -1,3 +1,4 @@
+#![allow(clippy::uninlined_format_args)]
 #![cfg_attr(
     not(test),
     deny(
@@ -10,6 +11,7 @@
     )
 )]
 
+#![allow(clippy::uninlined_format_args)]
 #![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::io::{self};
@@ -329,7 +331,7 @@ fn build_next_steps(score: &QualityScore) -> String {
     let mut out = String::new();
     out.push_str("=== NEXT STEPS ===\n");
     let mut n = 0usize;
-    let push = |s: &str, out: &mut String, n: &mut usize| {
+    let mut push = |s: &str, out: &mut String, n: &mut usize| {
         if *n < 6 { out.push_str("- "); out.push_str(s); out.push('\n'); *n += 1; }
     };
     // Security: keep concise Russian guidance (no test expectations here)

@@ -1,4 +1,3 @@
-#![allow(clippy::uninlined_format_args)]
 #![cfg_attr(
     not(test),
     deny(
@@ -11,7 +10,6 @@
     )
 )]
 
-#![allow(clippy::uninlined_format_args)]
 #![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::io::{self, Read};
@@ -22,6 +20,7 @@ use rust_validation_hooks::*;
 use rust_validation_hooks::analysis::project::scan_project_with_cache;
 // Use AST analysis for comprehensive error detection
 use rust_validation_hooks::analysis::ast::{AstQualityScorer, SupportedLanguage};
+use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
 // Use duplicate detector for conflict awareness
 // Use dependency analysis
 use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
@@ -109,7 +108,7 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
         .await
         .unwrap_or_default();
 
-    // 3) Risk/Health snapshot across project files
+    // 3) Risk/Health snapshot across project files (security/correctness only, noise suppressed)
     let rh = compute_risk_health_snapshot(working_dir).await;
 
     // === Sections ===
@@ -148,12 +147,23 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
             );
             out.push('\n');
         }
+        if !r.top_files.is_empty() {
+            out.push_str("Risk heatmap (files): ");
+            out.push_str(
+                &r.top_files
+                    .iter()
+                    .map(|(p, c)| format!("{}:{}", truncate_utf8_safe(p, 48), c))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            out.push('\n');
+        }
         out.push_str(&format!(
             "High-complexity files: {} (score>7)\n",
             metrics.high_complexity_files
         ));
     } else {
-        out.push_str("No issues detected.\n");
+        out.push_str("No critical/correctness issues detected.\n");
     }
 
     // Truncate deterministically (no code fences), default 4000 chars
@@ -171,21 +181,117 @@ struct RiskHealth {
     major: usize,
     minor: usize,
     top_categories: Vec<(String, usize)>,
+    top_files: Vec<(String, usize)>,
 }
 
 async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
-    use rust_validation_hooks::analysis::ast::quality_scorer::IssueSeverity;
     use std::collections::HashMap;
 
+    // Conservative mapping: only real problems are counted.
+    #[derive(Clone, Copy)]
+    enum StrictSeverity { Critical, Major, Minor }
+
+    fn strict_classify(cat: IssueCategory) -> Option<(StrictSeverity, &'static str)> {
+        use IssueCategory as C;
+        match cat {
+            // Security → Critical
+            C::SqlInjection | C::CommandInjection | C::PathTraversal | C::HardcodedCredentials => {
+                Some((StrictSeverity::Critical, "Security"))
+            }
+            // Correctness/Safety → Major
+            C::UnhandledError
+            | C::MissingReturnValue
+            | C::InfiniteLoop
+            | C::ResourceLeak
+            | C::RaceCondition
+            | C::UnreachableCode
+            | C::NullPointerRisk
+            | C::InsecureRandom => Some((StrictSeverity::Major, "Correctness")),
+            // Everything else (complexity/style/maintainability) → Minor (can be suppressed)
+            C::DeadCode
+            | C::HighComplexity
+            | C::DuplicateCode
+            | C::LongMethod
+            | C::TooManyParameters
+            | C::DeepNesting
+            | C::InefficientAlgorithm
+            | C::UnboundedRecursion
+            | C::ExcessiveMemoryUse
+            | C::SynchronousBlocking
+            | C::NamingConvention
+            | C::MissingDocumentation
+            | C::UnusedImports
+            | C::UnusedVariables
+            | C::LongLine
+            | C::UnfinishedWork
+            | C::MissingErrorHandling => Some((StrictSeverity::Minor, "Maintainability")),
+        }
+    }
+
+    fn is_ignored_dir_name(name: &str) -> bool {
+        matches!(
+            name,
+            "target"
+                | "node_modules"
+                | "vendor"
+                | ".git"
+                | ".github"
+                | "dist"
+                | "build"
+                | "out"
+                | "coverage"
+                | "reports"
+                | "logs"
+                | "assets"
+                | "tmp"
+                | "temp"
+                | ".cache"
+                | "__pycache__"
+                | ".venv"
+                | "venv"
+                | ".idea"
+        )
+    }
+
+    fn is_test_like_dir(name: &str) -> bool {
+        matches!(
+            name,
+            "tests" | "__tests__" | "__snapshots__" | "snapshots" | "fixtures" | "fixture" | "mocks" | "mock" | "examples" | "bench" | "benches" | "spec"
+        )
+    }
+
+    fn should_ignore_path(path: &std::path::Path) -> bool {
+        for comp in path.components() {
+            if let std::path::Component::Normal(os) = comp {
+                if let Some(s) = os.to_str() {
+                    if is_ignored_dir_name(s) || is_test_like_dir(s) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    let scan_limit: usize = std::env::var("USERPROMPT_SCAN_LIMIT")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .map(|n: usize| n.clamp(50, 2000))
+        .unwrap_or(400);
+
+    let mut scanned = 0usize;
     let mut total = 0usize;
     let mut crit = 0usize;
     let mut maj = 0usize;
     let mut min = 0usize;
     let mut by_cat: HashMap<String, usize> = HashMap::new();
+    let mut by_file: HashMap<String, usize> = HashMap::new();
 
     if let Ok(entries) = std::fs::read_dir(working_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
+            if scanned >= scan_limit { break; }
+            if should_ignore_path(&path) { continue; }
             if path.is_file() {
                 if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
                     if let Some(lang) = SupportedLanguage::from_extension(ext) {
@@ -196,14 +302,20 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
                             }
                             let scorer = AstQualityScorer::new();
                             if let Ok(q) = scorer.analyze(&content, lang) {
-                                total += q.concrete_issues.len();
+                                let mut file_count = 0usize;
                                 for i in q.concrete_issues {
-                                    match i.severity {
-                                        IssueSeverity::Critical => crit += 1,
-                                        IssueSeverity::Major => maj += 1,
-                                        IssueSeverity::Minor => min += 1,
+                                    if let Some((sev, _bucket)) = strict_classify(i.category) {
+                                        match sev {
+                                            StrictSeverity::Critical => { crit += 1; file_count += 1; }
+                                            StrictSeverity::Major => { maj += 1; file_count += 1; }
+                                            StrictSeverity::Minor => { min += 1; /* count, but de-emphasize */ file_count += 1; }
+                                        }
+                                        *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
                                     }
-                                    *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
+                                }
+                                if file_count > 0 {
+                                    total += file_count;
+                                    by_file.insert(path.display().to_string(), file_count);
                                 }
                             }
                         }
@@ -211,9 +323,14 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
                 }
             } else if path.is_dir() {
                 // Shallow: only top-level dirs; recursion omitted for speed
+                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                    if is_ignored_dir_name(name) || is_test_like_dir(name) { continue; }
+                }
                 if let Ok(files) = std::fs::read_dir(&path) {
                     for f in files.flatten() {
+                        if scanned >= scan_limit { break; }
                         let fp = f.path();
+                        if should_ignore_path(&fp) { continue; }
                         if !fp.is_file() {
                             continue;
                         }
@@ -225,44 +342,44 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
                                     }
                                     let scorer = AstQualityScorer::new();
                                     if let Ok(q) = scorer.analyze(&content, lang) {
-                                        total += q.concrete_issues.len();
+                                        let mut file_count = 0usize;
                                         for i in q.concrete_issues {
-                                            match i.severity {
-                                                IssueSeverity::Critical => crit += 1,
-                                                IssueSeverity::Major => maj += 1,
-                                                IssueSeverity::Minor => min += 1,
+                                            if let Some((sev, _bucket)) = strict_classify(i.category) {
+                                                match sev {
+                                                    StrictSeverity::Critical => { crit += 1; file_count += 1; }
+                                                    StrictSeverity::Major => { maj += 1; file_count += 1; }
+                                                    StrictSeverity::Minor => { min += 1; file_count += 1; }
+                                                }
+                                                *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
                                             }
-                                            *by_cat.entry(format!("{:?}", i.category)).or_insert(0) += 1;
+                                        }
+                                        if file_count > 0 {
+                                            total += file_count;
+                                            by_file.insert(fp.display().to_string(), file_count);
                                         }
                                     }
                                 }
                             }
                         }
+                        scanned += 1;
                     }
                 }
             }
+            scanned += 1;
         }
     }
 
+    // Deterministic snapshot, even when empty
     if total == 0 {
-        return Some(RiskHealth {
-            total,
-            critical: 0,
-            major: 0,
-            minor: 0,
-            top_categories: Vec::new(),
-        });
+        return Some(RiskHealth { total, critical: 0, major: 0, minor: 0, top_categories: Vec::new(), top_files: Vec::new() });
     }
     let mut cats: Vec<(String, usize)> = by_cat.into_iter().collect();
     cats.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     cats.truncate(5);
-    Some(RiskHealth {
-        total,
-        critical: crit,
-        major: maj,
-        minor: min,
-        top_categories: cats,
-    })
+    let mut files: Vec<(String, usize)> = by_file.into_iter().collect();
+    files.sort_by(|a,b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    files.truncate(5);
+    Some(RiskHealth { total, critical: crit, major: maj, minor: min, top_categories: cats, top_files: files })
 }
 
 // Removed unused project-wide AST analysis helpers

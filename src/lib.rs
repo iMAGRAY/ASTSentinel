@@ -78,6 +78,9 @@ pub mod messages;
 /// Telemetry: structured logging initialization (tracing)
 pub mod telemetry;
 
+/// Security helpers (redaction, sanitization)
+pub mod security;
+
 // Re-export commonly used types for convenience
 pub use analysis::ast::{ComplexityVisitor, MultiLanguageAnalyzer, SupportedLanguage};
 pub use analysis::{

@@ -9,25 +9,18 @@
         clippy::dbg_macro
     )
 )]
+
+#![allow(clippy::uninlined_format_args)]
 #![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{self, Read};
 
 use rust_validation_hooks::analysis::ast::{MultiLanguageAnalyzer, SupportedLanguage};
-use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
-use rust_validation_hooks::analysis::project::{
-    format_project_structure_for_ai, scan_project_structure, ScanConfig,
-};
+
+
 use rust_validation_hooks::*;
-// Use universal AI client
-use rust_validation_hooks::providers::ai::UniversalAIClient;
-// Test file validator removed - AI handles validation
-// Use diff formatter for better AI context
 use rust_validation_hooks::config;
-use rust_validation_hooks::validation::diff_formatter::{
-    format_code_diff, format_edit_diff, format_multi_edit_diff,
-};
 
 #[inline]
 fn dev_flag_enabled(name: &str) -> bool {
@@ -54,12 +47,16 @@ struct HeuristicAssessment {
     is_print_or_log_only: bool,
     has_todo_or_placeholder: bool,
     has_empty_catch_or_except: bool,
+    has_empty_finally: bool,
+    has_always_true_false_guard: bool,
+    has_empty_class: bool,
+    has_empty_impl: bool,
+    has_rust_empty_trait: bool,
+    has_rust_stub_macros: bool,
+    has_rust_trivial_match: bool,
+    is_module_minimal: bool,
     is_new_file_minimal: bool,
-    // Stronger signals to reduce ложные срабатывания
-    const_return_ignores_params: bool,
-    logic_calls_removed: bool,
-    // Контекст, где минимальная реализация допустима (версия/здоровье/ping)
-    is_allowed_minimal_context: bool,
+    has_dangerous_calls: bool,
     summary: String,
 }
 
@@ -141,6 +138,7 @@ fn extract_signatures_regex(
                                 .split(':')
                                 .next()
                                 .unwrap_or("")
+                                .trim_end_matches('?')
                                 .to_string()
                         })
                         .collect::<Vec<_>>();
@@ -178,15 +176,13 @@ fn contract_weakening_reasons(
             } else {
                 for bp in bparams {
                     if !bp.is_empty() && !aparams.iter().any(|x| x == bp) {
-                        reasons.push(format!(
-                            "Function `{}`: parameter `{}` removed or renamed",
-                            name, bp
+                        reasons.push(format!("Function `{name}`: parameter `{bp}` removed or renamed"
                         ));
                     }
                 }
             }
         } else {
-            reasons.push(format!("Function `{}`: removed from module", name));
+            reasons.push(format!("Function `{name}`: removed from module"));
         }
     }
     reasons
@@ -277,7 +273,7 @@ fn find_contract_callsite_issues(
             }
         } else {
             // Function removed entirely — flag
-            issues.push(format!("Function `{}` removed; consider migration plan", name));
+            issues.push(format!("Function `{name}` removed; consider migration plan"));
         }
     }
 
@@ -323,7 +319,7 @@ fn find_contract_callsite_issues(
                     let args_slice = &code[j..end];
                     let (_argc, named) = analyze_args_slice(args_slice);
                     for r in removed {
-                        let needle = format!("{}=", r);
+                        let needle = format!("{r}=");
                         if args_slice.contains(&needle) || named.iter().any(|n| n == r) {
                             seen_named.push(r.clone());
                         }
@@ -336,7 +332,8 @@ fn find_contract_callsite_issues(
         }
         if !seen_named.is_empty() {
             issues.push(format!(
-                "Calls to `{fname}` still pass removed named params: {}",
+                "Calls to `{}` still pass removed named params: {}",
+                fname,
                 seen_named.join(", ")
             ));
         }
@@ -385,9 +382,7 @@ fn find_contract_callsite_issues(
             pos = after;
         }
         if offending > 0 {
-            issues.push(format!(
-                "Calls to `{}` exceed new arity ({} -> {}): {} occurrences",
-                fname, old_n, new_n, offending
+            issues.push(format!("Calls to `{fname}` exceed new arity ({old_n} -> {new_n}): {offending} occurrences"
             ));
         }
     }
@@ -546,11 +541,11 @@ fn detect_return_constant(code: &str) -> bool {
     // Match: return <literal>  where literal is number/bool/null/none or quoted string.
     static RET_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
         // Match return literal anywhere on the line (not only at start)
-        regex::Regex::new(r#"(?i)\breturn\s+(?:\d+|true|false|null|none|\"[^\"]*\"|'[^']*')\s*(?:;|[,})]|$)"#)
+        regex::Regex::new(r#"(?i)\breturn\s+(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:;|[,})]|$)"#)
     });
     // Match arrow functions that immediately return a literal:  => <literal>
     static ARROW_RE: Lazy<Result<regex::Regex, regex::Error>> = Lazy::new(|| {
-        regex::Regex::new(r#"=>\s*(?:\d+|true|false|null|none|\"[^\"]*\"|'[^']*')\s*(?:[,)};]|$)"#)
+        regex::Regex::new(r#"=>\s*(?:\d+|true|false|null|none|"[^"]*"|'[^']*')\s*(?:[,)};]|$)"#)
     });
     if let Ok(re) = RET_RE.as_ref() {
         if re.is_match(code) {
@@ -591,23 +586,49 @@ fn detect_python_function_stub(code: &str) -> bool {
 }
 
 fn detect_function_stub(language: Option<SupportedLanguage>, code: &str) -> bool {
+    use regex::Regex;
     match language {
         Some(SupportedLanguage::Python) => detect_python_function_stub(code),
         Some(SupportedLanguage::JavaScript) | Some(SupportedLanguage::TypeScript) => detect_js_ts_function_stub(code),
+        Some(SupportedLanguage::Java) | Some(SupportedLanguage::CSharp) => {
+            if let Ok(re) = Regex::new(r"(?is)throw\s+new\s+(UnsupportedOperationException|NotImplementedException|Exception)\s*\(.*?(not\s+implemented|todo).*[\)\;]") {
+                if re.is_match(code) { return true; }
+            }
+            false
+        }
+        Some(SupportedLanguage::Php) => {
+            if let Ok(re) = Regex::new(r"(?is)throw\s+new\s+\\?[A-Za-z_][A-Za-z0-9_]*\s*\(.*?(not\s+implemented|todo).*[\)\;]") { if re.is_match(code) { return true; } }
+            false
+        }
+        Some(SupportedLanguage::Ruby) => {
+            if let Ok(re) = Regex::new(r"(?i)\braise\s+NotImplementedError\b") { if re.is_match(code) { return true; } }
+            false
+        }
+        Some(SupportedLanguage::C) | Some(SupportedLanguage::Cpp) => {
+            if let Ok(re) = Regex::new(r"(?is)throw\s+std::(logic_error|runtime_error)\s*\(.*?(not\s+implemented|todo).*[\)\;]") { if re.is_match(code) { return true; } }
+            false
+        }
+        Some(SupportedLanguage::Go) => {
+            if let Ok(re) = Regex::new(r#"(?i)\bpanic\s*\(\s*"(todo|not implemented)"\s*\)\s*"#) { if re.is_match(code) { return true; } }
+            false
+        }
         _ => false,
     }
 }
+
 
 #[inline]
 fn detect_print_only(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
     // Fast precheck: any known print/log patterns?
-    const TOKENS: [&str; 5] = [
+    const TOKENS: [&str; 7] = [
         "console.log(",
         "print(",
         "logger.",
         "system.out.println(",
         "debug(",
+        "println!(",
+        "eprintln!(",
     ];
     if !TOKENS.iter().any(|t| low.contains(t)) {
         return false;
@@ -652,7 +673,9 @@ fn detect_empty_catch_except(code: &str) -> bool {
         && low.contains("catch(")
         && (low.contains("catch(e){}")
             || low.contains(
-                "catch(e){\n}",
+                "catch(e){
+}
+",
             ))
     {
         return true;
@@ -660,15 +683,136 @@ fn detect_empty_catch_except(code: &str) -> bool {
     if low.contains("except")
         && low.contains(":")
         && (low.contains(
-            "except:\n    pass",
+            "except:
+    pass",
         ) || low.contains(
-            "except:\n    pass",
+            "except:
+    pass",
         ))
     {
         return true;
     }
     false
 }
+
+fn detect_empty_finally_block(code: &str) -> bool {
+    use regex::Regex;
+    // JS/TS empty finally
+    if let Ok(re) = Regex::new(r"(?s)try\s*\{.*?\}\s*finally\s*\{\s*\}") {
+        if re.is_match(code) { return true; }
+    }
+    // Python finally: pass
+    if let Ok(re) = Regex::new(r"(?sm)^\s*finally\s*:\s*(?:#.*\n|\s)*pass\s*$") {
+        if re.is_match(code) { return true; }
+    }
+    // Python finally: only whitespace/comments
+    if let Ok(re) = Regex::new(r"(?sm)^\s*finally\s*:\s*(?:#.*\n|\s)*$") {
+        if re.is_match(code) { return true; }
+    }
+    false
+}
+
+fn detect_always_true_false_if(code: &str) -> bool {
+    use regex::RegexSet;
+    let patterns = &[
+        r"(?mi)\bif\s*\(\s*(true|false)\s*\)",      // JS/C style
+        r"(?mi)^\s*if\s+(true|false)\s*:",              // Python
+        r"(?m)\bif\s*\(\s*(?:1|0)\s*\)",             // Numeric bools
+        r"(?mi)^\s*if\s+(true|false)\s*(\{|$)",        // JS no-parens
+    ];
+    if let Ok(set) = RegexSet::new(patterns) {
+        set.is_match(code)
+    } else {
+        false
+    }
+}
+
+fn detect_empty_class_any(code: &str) -> bool {
+    use regex::Regex;
+    // Python: class Name: pass
+    if let Ok(re) = Regex::new(r"(?sm)^\s*class\s+[A-Za-z_][A-Za-z0-9_]*[^\n]*:\s*(?:#.*\n|\s)*pass\s*$") { if re.is_match(code) { return true; } }
+    // JS/TS: class Name { }
+    if let Ok(re) = regex::Regex::new(r"(?s)\bclass\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*\\{\\s*\\}") { if re.is_match(code) { return true; } }
+    // Java/C#: class Name { }
+    if let Ok(re) = regex::Regex::new(r"(?s)\bclass\\s+[A-Za-z_$][A-Za-z0-9_$]*\\b[^\\{]*\\{\\s*\\}") { if re.is_match(code) { return true; } }
+    // C++: class/struct Name { }; 
+    if let Ok(re) = Regex::new(r"(?s)\\b(class|struct)\\s+[A-Za-z_][A-Za-z0-9_]*\\b[^\\{]*\\{\\s*\\}\\s*;") { if re.is_match(code) { return true; } }
+    // PHP: class Name { }
+    if let Ok(re) = regex::Regex::new(r"(?s)\bclass\\s+[A-Za-z_][A-Za-z0-9_]*\\b[^\\{]*\\{\\s*\\}") { if re.is_match(code) { return true; } }
+    // Ruby: class ... end with only whitespace/comments
+    if let Ok(re) = Regex::new(r"(?sm)^\\s*class\\s+[A-Za-z_][A-Za-z0-9_:]*[^\\n]*\\n(?:\\s*#.*\\n|\\s*)*end\\s*$") { if re.is_match(code) { return true; } }
+    false
+}
+
+
+fn detect_module_minimal_any(code: &str) -> bool {
+    let mut meaningful = String::with_capacity(code.len());
+    for line in code.lines() {
+        let t = line.trim();
+        if t.is_empty() { continue; }
+        if t.starts_with('#') { continue; }
+        if t.starts_with("//") { continue; }
+        if t.starts_with("/*") && t.ends_with("*/") { continue; }
+        if t.starts_with("import ") || t.starts_with("from ") { continue; }
+        if t.starts_with("export ") { continue; }
+        if t.starts_with("package ") { continue; }
+        if t.starts_with("using ") { continue; }
+        if t.starts_with("namespace ") { continue; }
+        if t.starts_with("require ") || t.starts_with("include ") || t.starts_with("#include") { continue; }
+        if t.starts_with("module ") { continue; }
+        meaningful.push_str(t);
+        meaningful.push('\n');
+    }
+    let low = meaningful.to_ascii_lowercase();
+    let has_code_sig = low.contains("def ") || low.contains("function ") || low.contains("=>") || low.contains("class ")
+        || low.contains("fn ") || low.contains("impl ") || low.contains("pub fn ") || low.contains("pub struct ") || low.contains("pub enum ")
+        || low.contains("public ") || low.contains("private ") || low.contains("protected ");
+    let only_trivial = meaningful.trim().is_empty();
+    !has_code_sig && only_trivial
+}
+
+fn detect_empty_rust_impl(code: &str) -> bool {
+    use regex::Regex;
+    if let Ok(re) = Regex::new(r"(?s)\bimpl\b[^\{]*\{\s*\}") { if re.is_match(code) { return true; } }
+    if let Ok(re) = Regex::new(r"(?s)\bmod\s+[A-Za-z_][A-Za-z0-9_]*\s*\{\s*\}") { if re.is_match(code) { return true; } }
+    false
+}
+
+// Alias wrapper used elsewhere in this file
+fn detect_empty_rust_impl_or_mod(code: &str) -> bool { detect_empty_rust_impl(code) }
+
+fn detect_rust_empty_trait(code: &str) -> bool {
+    use regex::Regex;
+    // trait Name { } (optionally with whitespace/comments only)
+    if let Ok(re) = Regex::new(r"(?s)\btrait\s+[A-Za-z_][A-Za-z0-9_]*[^\{]*\{\s*\}") { return re.is_match(code); }
+    false
+}
+
+fn detect_rust_stub_macros(code: &str) -> bool {
+    let low = code.to_ascii_lowercase();
+    low.contains("todo!()")
+        || low.contains("unimplemented!()")
+        || low.contains("panic!(\"todo\"")
+        || low.contains("panic!(\"not implemented\"")
+}
+
+fn detect_rust_trivial_match(code: &str) -> bool {
+    use regex::Regex;
+    if let Ok(re) = Regex::new(r"(?s)match\s+[^\{]+\{\s*_\s*=>\s*(\(\)|\{\s*\})\s*,?\s*\}") { if re.is_match(code) { return true; } }
+    false
+}
+
+fn detect_dangerous_calls(code: &str) -> bool {
+    let low = code.to_ascii_lowercase();
+    low.contains("child_process.exec")
+        || low.contains("child_process.execsync")
+        || low.contains("subprocess.")
+        || low.contains("os.system(")
+        || low.contains("popen(")
+        || low.contains("command::new(")
+        || low.contains("std::process::command::new(")
+}
+
 
 fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     let (_path, old_opt, new_opt) = extract_old_new_contents(hook_input);
@@ -686,23 +830,22 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     // NOTE: we no дольше блокируем TODO/FIXME как таковые; оставляем для сводки
     assess.has_todo_or_placeholder = detect_todo_placeholder(&combined_new);
     assess.has_empty_catch_or_except = detect_empty_catch_except(&combined_new);
+    assess.has_empty_finally = detect_empty_finally_block(&combined_new);
+    assess.has_always_true_false_guard = detect_always_true_false_if(&combined_new);
+    assess.has_empty_class = detect_empty_class_any(&combined_new);
+    assess.has_empty_impl = detect_empty_rust_impl_or_mod(&combined_new);
+    assess.has_rust_empty_trait = detect_rust_empty_trait(&combined_new);
+    assess.has_rust_stub_macros = detect_rust_stub_macros(&combined_new);
+    assess.has_rust_trivial_match = detect_rust_trivial_match(&combined_new);
+    assess.has_rust_stub_macros = detect_rust_stub_macros(&combined_new);
+    assess.has_rust_trivial_match = detect_rust_trivial_match(&combined_new);
+    assess.has_dangerous_calls = detect_dangerous_calls(&combined_new);
+    assess.is_module_minimal = detect_module_minimal_any(&combined_new);
     // New, minimal file creation (do not block for simple stubs like print("ok"))
     if old_opt.is_none() && new_opt.is_some() {
         let norm = normalize_code_for_signal(&combined_new);
         assess.is_new_file_minimal = combined_new.trim().len() <= 64 || norm.len() <= 32;
     }
-    // Allowed minimal context: version/health/ping endpoints or files
-    let file_path = extract_file_path(&hook_input.tool_input).to_ascii_lowercase();
-    let fname_ok = file_path.contains("version") || file_path.contains("health") || file_path.contains("ping");
-    assess.is_allowed_minimal_context = fname_ok;
-
-    // Stronger signals
-    assess.const_return_ignores_params = detect_const_return_ignores_params(&combined_new);
-    assess.logic_calls_removed = {
-        let old_calls = old_opt.as_ref().map(|s| count_call_like_tokens(s)).unwrap_or(0);
-        let new_calls = count_call_like_tokens(&combined_new);
-        old_calls >= 3 && new_calls == 0 && (assess.is_return_constant_only || assess.is_print_or_log_only)
-    };
     let mut parts = Vec::new();
     if assess.is_whitespace_or_comments_only {
         parts.push("no-op change (whitespace/comments only)".to_string());
@@ -713,18 +856,19 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     if assess.is_print_or_log_only {
         parts.push("print/log only".to_string());
     }
-    if assess.const_return_ignores_params {
-        parts.push("constant return ignores params".to_string());
-    }
-    if assess.logic_calls_removed {
-        parts.push("logic/calls removed".to_string());
-    }
     if assess.has_todo_or_placeholder {
         parts.push("TODO present".to_string());
     }
-    if assess.has_empty_catch_or_except {
-        parts.push("empty catch/except".to_string());
-    }
+    if assess.has_empty_catch_or_except { parts.push("empty catch/except".to_string()); }
+    if assess.has_empty_finally { parts.push("empty finally".to_string()); }
+    if assess.has_always_true_false_guard { parts.push("always-true/false guard".to_string()); }
+    if assess.has_empty_class { parts.push("empty class".to_string()); }
+    if assess.has_empty_impl { parts.push("empty impl/mod".to_string()); }
+    if assess.has_rust_empty_trait { parts.push("empty trait".to_string()); }
+    if assess.has_rust_stub_macros { parts.push("rust stub macro".to_string()); }
+    if assess.has_rust_trivial_match { parts.push("rust trivial match".to_string()); }
+    if assess.has_dangerous_calls { parts.push("dangerous calls".to_string()); }
+    if assess.is_module_minimal { parts.push("module minimal".to_string()); }
     if assess.is_new_file_minimal {
         parts.push("new minimal file".to_string());
     }
@@ -736,75 +880,7 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     assess
 }
 
-// Heuristic: constant return while parameters exist and are unused
-fn detect_const_return_ignores_params(code: &str) -> bool {
-    use regex::Regex;
-    // Python: def f(a,b): ... return <lit>
-    if let Ok(re) = Regex::new(r"(?s)def\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*:\s*(?:#.*\n|\s)*return\s+(?:\d+|True|False|None|\"[^\"]*\"|'[^']*')\b") {
-        if let Some(cap) = re.captures(code) {
-            let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let body_start = cap.get(0).map(|m| m.end()).unwrap_or(0);
-            let body = &code[body_start.saturating_sub(80)..body_start]; // small window is enough
-            let names: Vec<&str> = params.split(',').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
-            if !names.is_empty() && !names.iter().any(|n| body.contains(n)) {
-                return true;
-            }
-        }
-    }
-    // JS/TS: function f(a,b){ return <lit>; } or (a,b)=> <lit>
-    if let Ok(re) = Regex::new(r"(?s)function\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*[^\s)])\)\s*\{\s*return\s+(?:\d+|true|false|null|\"[^\"]*\"|'[^']*')\s*;?\s*\}") {
-        if let Some(cap) = re.captures(code) {
-            let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let body_start = cap.get(0).map(|m| m.end()).unwrap_or(0);
-            let body = &code[body_start.saturating_sub(80)..body_start];
-            let names: Vec<&str> = params.split(',').map(|p| p.trim().trim_start_matches("...")).filter(|p| !p.is_empty()).collect();
-            if !names.is_empty() && !names.iter().any(|n| body.contains(n)) {
-                return true;
-            }
-        }
-    }
-    if let Ok(re) = Regex::new(r"(?s)\(([^)]*[^\s)])\)\s*=>\s*(?:\d+|true|false|null|\"[^\"]*\"|'[^']*')\b") {
-        if let Some(cap) = re.captures(code) {
-            let params = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let names: Vec<&str> = params.split(',').map(|p| p.trim().trim_start_matches("...")).filter(|p| !p.is_empty()).collect();
-            if !names.is_empty() {
-                return true; // arrow literal return can’t reference params inline before =>
-            }
-        }
-    }
-    false
-}
-
-// Heuristic: approximate number of call-like tokens (identifier followed by '(')
-fn count_call_like_tokens(s: &str) -> usize {
-    let mut c = 0usize;
-    let bytes = s.as_bytes();
-    let mut i = 0usize;
-    while i + 1 < bytes.len() {
-        let ch = bytes[i] as char;
-        if (ch.is_ascii_alphabetic() || ch == '_') {
-            let mut j = i + 1;
-            while j < bytes.len() {
-                let cj = bytes[j] as char;
-                if cj.is_ascii_alphanumeric() || cj == '_' { j += 1; continue; }
-                break;
-            }
-            if j < bytes.len() && bytes[j] == b'(' {
-                // Cheap filters to avoid keywords/defs
-                let ident = &s[i..j].to_ascii_lowercase();
-                if ident != "if" && ident != "for" && ident != "while" && ident != "switch" && ident != "return" && ident != "function" && ident != "def" && ident != "class" {
-                    c += 1;
-                }
-            }
-            i = j;
-            continue;
-        }
-        i += 1;
-    }
-    c
-}
-
-// Removed GrokSecurityClient - now using UniversalAIClient from ai_providers module
+// Removed GrokSecurityClient/UniversalAIClient – PreToolUse is AI‑free
 
 use std::path::PathBuf;
 
@@ -893,7 +969,7 @@ fn load_prompt(prompt_file: &str) -> Result<String> {
     }
 
     std::fs::read_to_string(&prompt_path)
-        .with_context(|| format!("Failed to read prompt file: {:?}", prompt_path))
+        .with_context(|| format!("Failed to read prompt file: {prompt_path:?}"))
 }
 
 /// Read and summarize transcript from JSONL file with current task identification
@@ -928,7 +1004,7 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
                                 } else {
                                     c.get("name")
                                         .and_then(|v| v.as_str())
-                                        .map(|tool_name| format!("[Tool: {}]", tool_name))
+                                        .map(|tool_name| format!("[Tool: {tool_name}]"))
                                 }
                             })
                             .collect::<Vec<_>>()
@@ -970,12 +1046,12 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
     if let Some(current_task) = &last_user_message {
         let task_truncated = if current_task.chars().count() > 150 {
             let truncated_chars: String = current_task.chars().take(147).collect();
-            format!("{}...", truncated_chars)
+            format!("{truncated_chars}...")
         } else {
             current_task.clone()
         };
 
-        let task_str = format!("CURRENT USER TASK: {}\n\nRECENT CONVERSATION:\n", task_truncated);
+        let task_str = format!("CURRENT USER TASK: {task_truncated}\n\nRECENT CONVERSATION:\n");
         result.push_str(&task_str);
         char_count += task_str.len();
     }
@@ -984,16 +1060,16 @@ fn read_transcript_summary(path: &str, max_messages: usize, _max_chars: usize) -
         // Truncate individual messages to 100 chars (UTF-8 safe)
         let truncated = if content.chars().count() > 100 {
             let truncated_chars: String = content.chars().take(97).collect();
-            format!("{}...", truncated_chars)
+            format!("{truncated_chars}...")
         } else {
             content.clone()
         };
 
         // Mark the last user message as current task
         let msg_str = if role == "user" && Some(content) == last_user_message.as_ref() {
-            format!("[{}] (CURRENT TASK): {}\n", role, truncated)
+            format!("[{role}] (CURRENT TASK): {truncated}\n")
         } else {
-            format!("[{}]: {}\n", role, truncated)
+            format!("[{role}]: {truncated}\n")
         };
 
         // Stop if we exceed 2000 chars
@@ -1098,9 +1174,14 @@ fn format_quality_message(reason: &str) -> String {
     // Replace literal \n with actual newlines from AI response
     let cleaned_reason = reason.replace("\\n", "\n");
 
-    format!(
-        "РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ\n[плохой и поддельный код всегда будет заблокирован]\n\nвыявленные проблемы в ваших изменениях:\n{}\n\nУЛУЧШИТЕ СВОЮ РАБОТУ — не убегайте от проблем, создавая минимальные упрощённые реализации\n[попытки сделать это также будут заблокированы]",
-        cleaned_reason
+    format!("РЕАЛИЗУЙТЕ КОД С КАЧЕСТВОМ, А НЕ ПРОСТО ЧТОБЫ ЗАВЕРШИТЬ ЗАДАЧУ
+[плохой и поддельный код всегда будет заблокирован]
+
+выявленные проблемы в ваших изменениях:
+{cleaned_reason}
+
+УЛУЧШИТЕ СВОЮ РАБОТУ — не убегайте от проблем, создавая минимальные упрощённые реализации
+[попытки сделать это также будут заблокированы]"
     )
 }
 
@@ -1281,7 +1362,7 @@ async fn main() -> Result<()> {
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &code) && hook_input.tool_name != "Write")
         {
-            let reason = format!("Anti-cheating: {0}", heur.summary);
+            let reason = format!("Anti-cheating: {}", heur.summary);
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -1450,8 +1531,7 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Load configuration (env/.env next to executable has priority)
-    let config = Config::from_env_graceful().context("Failed to load configuration")?;
+    // Deterministic mode: provider config not required (no AI calls)
 
     // Read input from stdin
     let mut input = String::new();
@@ -1529,12 +1609,9 @@ async fn main() -> Result<()> {
 
     // All file validation now handled by AI - no automatic skipping based on file extensions
 
-    // If no API key for selected provider, fall back to offline AST-based decision path
-    if config
-        .get_api_key_for_provider(&config.pretool_provider)
-        .is_empty()
+    // Deterministic offline AST/regex validation (AI disabled)
     {
-        tracing::warn!(provider=%config.pretool_provider, "No API key; falling back to AST-only validation");
+        tracing::info!("PreToolUse: deterministic offline validation active");
         // Determine language from file extension
         let language = file_path
             .split('.')
@@ -1596,13 +1673,24 @@ async fn main() -> Result<()> {
             }
         }
 
-        // Block fake implementations
-        if /* do not block TODO/FIXME */
+        // Block fake implementations (deterministic)
+        let policy_cfg = config::load_config();
+        let high = matches!(policy_cfg.sensitivity, config::Sensitivity::High);
+        if /* allow TODO/FIXME presence but block structural fakes */
             heur.has_empty_catch_or_except
-            || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
+            || heur.has_empty_finally
+            || heur.has_always_true_false_guard
+            || heur.has_empty_class
+            || heur.has_empty_impl
+            || heur.has_rust_empty_trait
+            || heur.has_rust_stub_macros
+            || heur.has_rust_trivial_match
+            || (heur.is_module_minimal && (high || hook_input.tool_name != "Write"))
             || (detect_function_stub(language, &content) && hook_input.tool_name != "Write")
+            || (heur.is_return_constant_only || heur.is_print_or_log_only)
+                && (high || !heur.is_new_file_minimal)
         {
-            let reason = format!("Anti-cheating: {0}", heur.summary);
+            let reason = format!("Anti-cheating: {}", heur.summary);
             let output = PreToolUseOutput {
                 hook_specific_output: PreToolUseHookOutput {
                     hook_event_name: "PreToolUse".to_string(),
@@ -1720,50 +1808,12 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Perform security validation with context
-    match perform_validation(&config, &content, &hook_input).await {
-        Ok(validation) => {
-            let (decision, reason) = match validation.decision.as_str() {
-                "allow" => ("allow".to_string(), None),
-                "deny" | "ask" => {
-                    // Note: Claude Code hooks only support "allow" and "deny" decisions
-                    // "ask" must be converted to "deny" with an informative message
-                    if validation.decision == "ask" {
-                        tracing::info!(
-                            "'ask' decision converted to 'deny' (Claude Code only supports allow/deny)"
-                        );
-                    }
-                    let formatted_reason = format_quality_message(&validation.reason);
-                    ("deny".to_string(), Some(formatted_reason))
-                }
-                unknown => {
-                    tracing::warn!(decision=%unknown, "Unknown validation decision; defaulting to deny for safety");
-                    let formatted_reason =
-                        format_quality_message(&format!("Unknown decision type: {unknown}"));
-                    ("deny".to_string(), Some(formatted_reason))
-                }
-            };
-
-            let output = PreToolUseOutput {
-                hook_specific_output: PreToolUseHookOutput {
-                    hook_event_name: "PreToolUse".to_string(),
-                    permission_decision: decision,
-                    permission_decision_reason: reason,
-                },
-            };
-            println!(
-                "{}",
-                serde_json::to_string(&output).context("Failed to serialize output")?
-            );
-        }
-        Err(e) => {
-            output_error_response(&e);
-        }
-    }
-
-    Ok(())
+    // Deterministic mode: AI validation disabled
+    return Ok(());
 }
 
+#[cfg(any())]
+#[cfg(any())]
 /// Format code changes as diff for better AI understanding
 fn format_code_as_diff(hook_input: &HookInput) -> String {
     let mut diff = String::new();
@@ -1778,6 +1828,7 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
                 if let Some(new_string) = hook_input.tool_input.get("new_string").and_then(|v| v.as_str()) {
                     // Try to read the current file content for context
                     let file_content = std::fs::read_to_string(&file_path).ok();
+
                     diff = format_edit_diff(
                         &file_path,
                         file_content.as_deref(),
@@ -1835,6 +1886,8 @@ fn format_code_as_diff(hook_input: &HookInput) -> String {
     diff
 }
 
+#[cfg(any())]
+#[cfg(any())]
 /// Perform security validation using Grok with context
 async fn perform_validation(
     config: &Config,
@@ -1870,7 +1923,7 @@ async fn perform_validation(
 
     // Add heuristic assessment to guide the validator
     let assessment = assess_change(hook_input);
-    prompt = format!("{prompt}\n\nHEURISTIC SUMMARY: {0}", assessment.summary);
+    prompt = format!("{}\n\nHEURISTIC SUMMARY: {}", prompt, assessment.summary);
 
     // Add context from transcript if available
     if let Some(transcript_path) = &hook_input.transcript_path {
@@ -1922,7 +1975,8 @@ async fn perform_validation(
                 .map(|f| f.size_bytes as usize / 50) // Rough estimate: 50 bytes per line
                 .sum();
 
-            let metrics = format!("\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
+            let metrics = format!(
+                "\n\nPROJECT METRICS:\n  Total files: {}\n  Estimated LOC: {}\n  Code files: {}",
                 structure.total_files,
                 total_loc,
                 structure.files.iter().filter(|f| f.is_code_file).count()
@@ -1979,14 +2033,17 @@ async fn perform_validation(
 
         if let Some(language) = SupportedLanguage::from_extension(extension) {
             tracing::info!(%language, "Performing AST analysis");
+
             match MultiLanguageAnalyzer::analyze_with_tree_sitter(content, language) {
                 Ok(complexity_metrics) => {
-                    let ast_summary = format!("\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {}",
+                    let ast_summary = format!(
+                        "\n\nAST ANALYSIS:\n  Cyclomatic Complexity: {}\n  Cognitive Complexity: {}\n  Nesting Depth: {}\n  Functions: {}\n  Lines: {}",
                         complexity_metrics.cyclomatic_complexity,
                         complexity_metrics.cognitive_complexity,
                         complexity_metrics.nesting_depth,
                         complexity_metrics.function_count,
-                        complexity_metrics.line_count);
+                        complexity_metrics.line_count
+                    );
                     prompt = format!("{prompt}{ast_summary}");
 
                     tracing::info!(cyclomatic=%complexity_metrics.cyclomatic_complexity, cognitive=%complexity_metrics.cognitive_complexity, "AST analysis complete");
@@ -1999,7 +2056,7 @@ async fn perform_validation(
     }
 
     // Add language instruction at the end
-    prompt = format!("{}\n\nIMPORTANT: Respond in {} language.", prompt, language);
+    prompt = format!("{prompt}\n\nIMPORTANT: Respond in {language} language.");
 
     // Heuristic summary: API contract weakening (adds bias for safer decision)
     if !file_path.is_empty() && (hook_input.tool_name == "Edit" || hook_input.tool_name == "MultiEdit") {
@@ -2045,7 +2102,8 @@ async fn perform_validation(
                         || (low.contains("delete") && low.contains("from"));
                     let has_cmd = low.contains("child_process.exec")
                         || low.contains("subprocess.")
-                        || low.contains("os.system(");
+                        || low.contains("os.system(")
+                        || low.contains("command::new(");
                     let sec_risk = has_creds || has_sql || has_cmd;
                     use rust_validation_hooks::config::Sensitivity;
                     let call_issues = find_contract_callsite_issues(lang, &old, code_new);
@@ -2064,28 +2122,29 @@ async fn perform_validation(
                             msg.push_str("\n- ");
                             msg.push_str(&call_issues.join("\n- "));
                         }
-                        return Ok(SecurityValidation {
-                            decision: "deny".to_string(),
-                            reason: msg,
-                            security_concerns: Some(vec!["api_contract".to_string()]),
-                            risk_level: if sec_risk {
-                                "high".to_string()
-                            } else {
-                                "medium".to_string()
+                        let output = PreToolUseOutput {
+                            hook_specific_output: PreToolUseHookOutput {
+                                hook_event_name: "PreToolUse".to_string(),
+                                permission_decision: "deny".to_string(),
+                                permission_decision_reason: Some(format_quality_message(&msg)),
                             },
-                        });
+                        };
+                        println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+                        return Ok(());
                     }
                 }
             }
         }
     }
 
-    // Initialize universal AI client with configured provider
-    let client = UniversalAIClient::new(config.clone()).context("Failed to create AI client")?;
-
-    // Validate security using configured pretool provider
-    client
-        .validate_security_pretool(content, &prompt)
-        .await
-        .context("Security validation failed")
+    // AI-free: if we reached here, allow
+    let output = PreToolUseOutput {
+        hook_specific_output: PreToolUseHookOutput {
+            hook_event_name: "PreToolUse".to_string(),
+            permission_decision: "allow".to_string(),
+            permission_decision_reason: None,
+        },
+    };
+    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+    Ok(())
 }
