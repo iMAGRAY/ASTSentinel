@@ -38,3 +38,23 @@ temp/
 *.swp
 *.swo
 *~
+
+# Backup files (comprehensive list)
+*.bak
+*.autobak
+*.autobak2
+*.safebak
+*.finalbak
+*.megabak
+*.massbak
+*.prepatchbak
+*backup*
+*.bak_*
+*.bak[0-9]
+*.orig
+*.rs.bk
+
+# OS specific files
+.DS_Store
+Thumbs.db
+desktop.ini
