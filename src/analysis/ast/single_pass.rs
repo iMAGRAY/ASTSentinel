@@ -1,5 +1,6 @@
 #![allow(clippy::items_after_test_module)]
-//! Single-pass, fast AST analysis for selected languages (Python/JS/TS/Java/C#/Go)
+//! Single-pass, fast AST analysis for selected languages
+//! (Python/JS/TS/Java/C#/Go)
 use crate::analysis::ast::kind_ids;
 use crate::analysis::ast::languages::SupportedLanguage;
 use crate::analysis::ast::quality_scorer::{ConcreteIssue, IssueCategory, IssueSeverity};
@@ -20,7 +21,7 @@ impl SinglePassEngine {
                 issues.push(ConcreteIssue {
                     severity: IssueSeverity::Minor,
                     category: IssueCategory::NamingConvention,
-        message: format!("Line exceeds 120 characters ({len})", len = line.len()),
+                    message: format!("Line exceeds 120 characters ({len})", len = line.len()),
                     file: String::new(),
                     line: i + 1,
                     column: 121,
@@ -62,8 +63,7 @@ impl SinglePassEngine {
                     issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::HighComplexity,
-                        message: format!("High cyclomatic complexity: {complexity} (threshold: {threshold})"
-                        ),
+                        message: format!("High cyclomatic complexity: {complexity} (threshold: {threshold})"),
                         file: String::new(),
                         line: node.start_position().row + 1,
                         column: node.start_position().column + 1,
@@ -110,13 +110,15 @@ impl SinglePassEngine {
             let is_py_loop_term = language == SupportedLanguage::Python
                 && (node.kind() == "break_statement" || node.kind() == "continue_statement");
             if is_return || is_py_raise || is_py_loop_term {
-                // Conservative unreachable detection: skip label/switch-case/catch/else tokens and empty statements
+                // Conservative unreachable detection: skip label/switch-case/catch/else tokens
+                // and empty statements
                 if let Some(next) = node.next_sibling() {
                     let k = next.kind();
                     let skip = match language {
                         SupportedLanguage::Go => {
-                            // In Go, after a return inside a case, the next sibling at this level might be a case clause
-                            // or an empty statement; do not flag these as unreachable.
+                            // In Go, after a return inside a case, the next sibling at this level might be
+                            // a case clause or an empty statement; do not flag
+                            // these as unreachable.
                             k == "}"
                                 || k == "comment"
                                 || k == "empty_statement"
@@ -186,15 +188,22 @@ impl SinglePassEngine {
                     if kind == "assignment" {
                         if let Ok(text) = node.utf8_text(src_bytes) {
                             let text_lower = text.to_lowercase();
-                            if text_lower.contains("password")
+                            if (text_lower.contains("password")
                                 || text_lower.contains("api_key")
                                 || text_lower.contains("secret")
-                                || text_lower.contains("token")
+                                || text_lower.contains("token"))
                                     && text.contains("=")
                                     && !text_lower.contains("getenv")
                                     && !text_lower.contains("env")
                                     && !text_lower.contains("config")
                                     && !text_lower.contains("input")
+                                    && !text.contains("(") // Not a function call
+                                    && !text_lower.contains("generate") // Not generation function
+                                    && !text_lower.contains("random") // Not random generation
+                                    && !text_lower.contains("uuid") // Not UUID generation
+                                    && !text_lower.contains("hash") // Not hash function
+                                    && !text_lower.contains("hex")
+                            // Not hex generation
                             {
                                 issues.push(ConcreteIssue {
                                     severity: IssueSeverity::Critical,

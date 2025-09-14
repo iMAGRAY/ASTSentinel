@@ -2,11 +2,15 @@
 pub mod ast;
 pub mod dependencies;
 pub mod duplicate_detector;
+pub mod file_classifier;
 pub mod metrics;
 pub mod project;
+pub mod semantic_analyzer;
 pub mod timings;
 
 // Re-export commonly used types
 pub use dependencies::{analyze_project_dependencies, DependencyInfo, PackageManager, ProjectDependencies};
+pub use file_classifier::{FileCategory, FileClassifier};
 pub use metrics::ComplexityMetrics;
 pub use project::{format_project_structure_for_ai, scan_project_structure, ProjectStructure, ScanConfig};
+pub use semantic_analyzer::{AssignmentType, SemanticAnalyzer, SemanticContext};

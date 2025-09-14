@@ -216,7 +216,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("prettier formatting failed: {}", e);
-                    // This is acceptable if prettier has issues with the test environment
+                    // This is acceptable if prettier has issues with the test
+                    // environment
                 }
             }
         }
@@ -307,4 +308,3 @@ console.log(processUsers(users));"#
         }
     }
 }
-

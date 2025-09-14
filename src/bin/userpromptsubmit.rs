@@ -23,6 +23,8 @@ use rust_validation_hooks::analysis::ast::{AstQualityScorer, SupportedLanguage};
 // Use duplicate detector for conflict awareness
 // Use dependency analysis
 use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
+use rust_validation_hooks::config;
+use rust_validation_hooks::ignore::CombinedIgnore;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -45,7 +47,7 @@ async fn main() -> Result<()> {
             // Silent fallback - no debug output
             HookInput {
                 tool_name: "UserPromptSubmit".to_string(),
-                tool_input: std::collections::HashMap::new(),
+                tool_input: std::collections::BTreeMap::new(),
                 tool_response: None,
                 session_id: Some("default".to_string()),
                 transcript_path: None,
@@ -69,7 +71,7 @@ async fn main() -> Result<()> {
     match build_compact_userprompt_context(&hook_input).await {
         Ok(analysis_context) => {
             // Output directly as text for UserPromptSubmit hook
-            println!("{}", analysis_context);
+            println!("{analysis_context}");
         }
         Err(_e) => {
             // Silent failure for UserPromptSubmit
@@ -120,10 +122,10 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
         structure.total_files / 3, // Rough estimate: ~1/3 are backups
     );
 
-    out.push_str("# PROJECT CONTEXT\n");
-    out.push_str("\n=== CODEBASE ===\n");
+    out.push_str("# COMPREHENSIVE PROJECT CONTEXT\n");
+    out.push_str("\n=== PROJECT SUMMARY ===\n");
     out.push_str(&format!(
-        "Source files: {} | LOC: {}\nLanguages: {}\nTests: {:.0}% | Docs: {:.0}%\nComplexity: {:.1}/{:.1} (cyclo/cognitive)\n",
+        "Files: {} | LOC: {}\nLanguages: {}\nTests: {:.0}% | Docs: {:.0}%\nComplexity: {:.1}/{:.1} (cyclo/cognitive)\n",
         source_files,
         metrics.total_lines_of_code,
         if top_langs.is_empty() { "n/a".to_string() } else { top_langs },
@@ -137,7 +139,7 @@ async fn build_compact_userprompt_context(hook_input: &HookInput) -> Result<Stri
         deps.total_count, deps.outdated_count
     ));
 
-    out.push_str("\n=== QUALITY ===\n");
+    out.push_str("\n=== RISK/HEALTH SNAPSHOT ===\n");
     if let Some(r) = rh {
         // Only show real issues, not test data
         let real_critical = r.critical.saturating_sub(r.critical / 2); // Estimate ~50% are from tests
@@ -268,85 +270,36 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
             | C::LongLine
             | C::UnfinishedWork
             | C::MissingErrorHandling => Some((StrictSeverity::Minor, "Maintainability")),
+            C::RobustnessAntipattern => Some((StrictSeverity::Minor, "Maintainability")),
         }
     }
 
-    fn is_ignored_dir_name(name: &str) -> bool {
-        matches!(
-            name,
-            "target"
-                | "node_modules"
-                | "vendor"
-                | ".git"
-                | ".github"
-                | "dist"
-                | "build"
-                | "out"
-                | "coverage"
-                | "reports"
-                | "logs"
-                | "assets"
-                | "tmp"
-                | "temp"
-                | ".cache"
-                | "__pycache__"
-                | ".venv"
-                | "venv"
-                | ".idea"
-                | "scripts"  // Ignore scripts directory with test data
-                | "test_data" // Ignore test data directory
-        )
-    }
-
-    fn is_test_like_dir(name: &str) -> bool {
-        matches!(
-            name,
-            "tests"
-                | "__tests__"
-                | "__snapshots__"
-                | "snapshots"
-                | "fixtures"
-                | "fixture"
-                | "mocks"
-                | "mock"
-                | "examples"
-                | "bench"
-                | "benches"
-                | "spec"
-                | "test_data"
-                | "scripts"
-        )
-    }
-
-    fn is_test_or_backup_file(name: &str) -> bool {
-        name.contains(".bak")
-            || name.contains(".autobak")
-            || name.contains("backup")
-            || name.contains("_test.")
-            || name.contains("test_")
-            || name.contains("/tests/")
-            || name.contains("bench_")
-    }
-
-    fn should_ignore_path(path: &std::path::Path) -> bool {
-        // Check directory components
-        for comp in path.components() {
-            if let std::path::Component::Normal(os) = comp {
-                if let Some(s) = os.to_str() {
-                    if is_ignored_dir_name(s) || is_test_like_dir(s) {
-                        return true;
-                    }
-                }
-            }
-        }
-        // Check filename
-        if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-            if is_test_or_backup_file(file_name) {
-                return true;
-            }
-        }
-        false
-    }
+    // Centralized ignore: project .gitignore + built-ins + optional config globs
+    let cfg = config::load_config();
+    let mut combined = match CombinedIgnore::new(std::path::Path::new(working_dir), cfg.ignore_globs.as_ref()) {
+        Ok(ci) => ci,
+        Err(_) => CombinedIgnore::new(std::path::Path::new(working_dir), None).ok().unwrap_or_else(|| {
+            // Fallback to empty ignore that never matches
+            let empty = rust_validation_hooks::ignore::build_globset(&[]);
+            rust_validation_hooks::ignore::CombinedIgnore::new(std::path::Path::new(working_dir), empty.as_ref())
+                .ok()
+                .unwrap_or_else(|| {
+                    // Worst-case: create minimal object with project root and no patterns
+            rust_validation_hooks::ignore::CombinedIgnore::new(std::path::Path::new("."), None)
+                .ok()
+                .or_else(|| {
+                    let empty = rust_validation_hooks::ignore::build_globset(&[]);
+                    rust_validation_hooks::ignore::CombinedIgnore::new(std::path::Path::new("."), empty.as_ref()).ok()
+                })
+                .unwrap_or_else(|| {
+                    // As last resort, construct minimal combined ignore rooted at '.' with no patterns
+            rust_validation_hooks::ignore::CombinedIgnore::empty_for(std::path::Path::new("."))
+                })
+                })
+        }),
+    };
+    // Overlay noise directories specific for this hook to keep output focused
+    combined = combined.with_overlay(&["scripts/", "test_data/"]);
 
     let scan_limit: usize = std::env::var("USERPROMPT_SCAN_LIMIT")
         .ok()
@@ -368,7 +321,7 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
             if scanned >= scan_limit {
                 break;
             }
-            if should_ignore_path(&path) {
+            if combined.is_ignored(&path) {
                 continue;
             }
             if path.is_file() {
@@ -411,18 +364,15 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
                 }
             } else if path.is_dir() {
                 // Shallow: only top-level dirs; recursion omitted for speed
-                if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                    if is_ignored_dir_name(name) || is_test_like_dir(name) {
-                        continue;
-                    }
-                }
+                // Skip ignored directories
+                if combined.is_ignored(&path) { continue; }
                 if let Ok(files) = std::fs::read_dir(&path) {
                     for f in files.flatten() {
                         if scanned >= scan_limit {
                             break;
                         }
                         let fp = f.path();
-                        if should_ignore_path(&fp) {
+                        if combined.is_ignored(&fp) {
                             continue;
                         }
                         if !fp.is_file() {
@@ -502,7 +452,6 @@ async fn compute_risk_health_snapshot(working_dir: &str) -> Option<RiskHealth> {
 /// Get recently modified files for context
 fn get_recent_files(working_dir: &str, limit: usize) -> Result<Vec<String>> {
     use std::fs;
-    use std::time::SystemTime;
 
     let mut files_with_time = Vec::new();
 

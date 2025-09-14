@@ -363,7 +363,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("php-cs-fixer formatting failed: {}", e);
-                    // This is acceptable if php-cs-fixer has issues with the test environment
+                    // This is acceptable if php-cs-fixer has issues with the
+                    // test environment
                 }
             }
         }
@@ -520,4 +521,3 @@ return $this->users->filter(function($user){return $user->age>=18;});
         }
     }
 }
-

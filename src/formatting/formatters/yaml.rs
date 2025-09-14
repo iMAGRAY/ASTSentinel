@@ -125,8 +125,9 @@ impl YamlFormatter {
                 ));
             }
 
-            // Note: We don't validate list syntax here since the formatter can fix it
-            // The formatter will convert "-item" to "- item" automatically
+            // Note: We don't validate list syntax here since the formatter can
+            // fix it The formatter will convert "-item" to "- item"
+            // automatically
         }
 
         if brace_count != 0 {
@@ -287,7 +288,8 @@ mod tests {
         let result = formatter.format_code(input_bad_list).unwrap();
         assert!(result.changed); // Formatter should fix this
         assert!(result.messages.is_empty()); // No errors, just fixed
-        assert!(result.formatted.contains("- item without space")); // Should be fixed
+        assert!(result.formatted.contains("- item without space")); // Should be
+                                                                    // fixed
     }
 
     #[test]
@@ -340,5 +342,3 @@ mod tests {
         assert!(formatted.contains("    grandchild: value2"));
     }
 }
-
-

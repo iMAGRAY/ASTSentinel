@@ -1,5 +1,6 @@
 /// Centralized validation constants for memory optimization
-/// These constants define the boundaries and limits for various fields in the memory structure
+/// These constants define the boundaries and limits for various fields in the
+/// memory structure
 // Active context validation
 pub const MAX_CURRENT_TASK_LENGTH: usize = 1000;
 pub const MAX_LAST_ACTION_LENGTH: usize = 1000;

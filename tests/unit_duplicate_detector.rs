@@ -47,8 +47,9 @@ fn unit_duplicate_detector_finds_duplicates_and_conflicts() {
     // Grand totals present
     assert!(report.contains("Итого: групп"));
 
-    // If multiple ExactDuplicate groups exist, the largest (by total size) should appear first among that type
-    // Create two more exact duplicate groups with different sizes
+    // If multiple ExactDuplicate groups exist, the largest (by total size) should
+    // appear first among that type Create two more exact duplicate groups with
+    // different sizes
     std::fs::write(root.join("big1.bin"), vec![1u8; 2048]).unwrap();
     std::fs::write(root.join("big2.bin"), vec![1u8; 2048]).unwrap();
     std::fs::write(root.join("small1.bin"), vec![2u8; 16]).unwrap();

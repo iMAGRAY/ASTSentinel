@@ -4,7 +4,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -41,7 +41,7 @@ pub struct LanguageMetrics {
     pub files_analyzed: AtomicU64,
     pub total_lines: AtomicU64,
     pub average_complexity: f32,
-    pub common_issues: HashMap<String, u64>,
+    pub common_issues: BTreeMap<String, u64>,
     pub performance_avg_ms: f32,
 }
 
@@ -101,9 +101,9 @@ pub struct OperationTiming {
 pub struct UsageMetrics {
     pub active_sessions: usize,
     pub total_sessions: u64,
-    pub provider_breakdown: HashMap<String, u64>,
-    pub language_breakdown: HashMap<String, LanguageUsage>,
-    pub feature_usage: HashMap<String, u64>,
+    pub provider_breakdown: BTreeMap<String, u64>,
+    pub language_breakdown: BTreeMap<String, LanguageUsage>,
+    pub feature_usage: BTreeMap<String, u64>,
     pub peak_concurrent_requests: usize,
 }
 
@@ -125,7 +125,7 @@ pub struct IssueFrequency {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct QualityMetrics {
     pub validation_summary: ValidationSummary,
-    pub issue_distribution: HashMap<String, u64>,
+    pub issue_distribution: BTreeMap<String, u64>,
     pub security_findings: SecurityMetrics,
     pub code_quality_trends: QualityTrends,
 }
@@ -152,7 +152,7 @@ pub struct SecurityMetrics {
 pub struct VulnerabilityStats {
     pub vulnerability_type: String,
     pub count: u64,
-    pub severity_distribution: HashMap<String, u64>,
+    pub severity_distribution: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -252,13 +252,7 @@ impl MetricsCollector {
     }
 
     /// Record language analysis
-    pub fn record_language_analysis(
-        &self,
-        language: &str,
-        lines: u64,
-        complexity: f32,
-        issues: &[String],
-    ) {
+    pub fn record_language_analysis(&self, language: &str, lines: u64, complexity: f32, issues: &[String]) {
         let mut lang_metrics = self
             .language_stats
             .entry(language.to_string())
@@ -286,13 +280,7 @@ impl MetricsCollector {
     }
 
     /// Record validation result
-    pub fn record_validation(
-        &self,
-        category: &str,
-        decision: &str,
-        confidence: f32,
-        security_issues: u64,
-    ) {
+    pub fn record_validation(&self, category: &str, decision: &str, confidence: f32, security_issues: u64) {
         let mut stats = self
             .validation_results
             .entry(category.to_string())
@@ -398,12 +386,8 @@ impl MetricsCollector {
             if !times.is_empty() {
                 all_times.extend(times.iter().copied());
 
-                let avg_ms =
-                    times.iter().map(|d| d.as_millis() as f32).sum::<f32>() / times.len() as f32;
-                let max_ms = times
-                    .iter()
-                    .map(|d| d.as_millis() as f32)
-                    .fold(0.0, f32::max);
+                let avg_ms = times.iter().map(|d| d.as_millis() as f32).sum::<f32>() / times.len() as f32;
+                let max_ms = times.iter().map(|d| d.as_millis() as f32).fold(0.0, f32::max);
 
                 operation_timings.push(OperationTiming {
                     operation: operation.clone(),
@@ -423,18 +407,11 @@ impl MetricsCollector {
 
         let (avg_ms, p95_ms, p99_ms) = if !all_times.is_empty() {
             all_times.sort();
-            let avg = all_times.iter().map(|d| d.as_millis() as f32).sum::<f32>()
-                / all_times.len() as f32;
+            let avg = all_times.iter().map(|d| d.as_millis() as f32).sum::<f32>() / all_times.len() as f32;
             let p95_idx = (all_times.len() as f32 * 0.95) as usize;
             let p99_idx = (all_times.len() as f32 * 0.99) as usize;
-            let p95 = all_times
-                .get(p95_idx)
-                .unwrap_or(&Duration::ZERO)
-                .as_millis() as f32;
-            let p99 = all_times
-                .get(p99_idx)
-                .unwrap_or(&Duration::ZERO)
-                .as_millis() as f32;
+            let p95 = all_times.get(p95_idx).unwrap_or(&Duration::ZERO).as_millis() as f32;
+            let p99 = all_times.get(p99_idx).unwrap_or(&Duration::ZERO).as_millis() as f32;
             (avg, p95, p99)
         } else {
             (0.0, 0.0, 0.0)
@@ -607,18 +584,17 @@ impl MetricsCollector {
         let uptime_hours = self.session_start.elapsed().as_secs_f32() / 3600.0;
 
         // Calculate memory statistics
-        let (memory_avg, memory_peak) =
-            if let Some(mem_samples) = self.memory_usage_samples.get("system") {
-                let avg = if !mem_samples.is_empty() {
-                    mem_samples.iter().sum::<usize>() as f32 / mem_samples.len() as f32
-                } else {
-                    0.0
-                };
-                let peak = mem_samples.iter().max().copied().unwrap_or(0) as f32;
-                (avg, peak)
+        let (memory_avg, memory_peak) = if let Some(mem_samples) = self.memory_usage_samples.get("system") {
+            let avg = if !mem_samples.is_empty() {
+                mem_samples.iter().sum::<usize>() as f32 / mem_samples.len() as f32
             } else {
-                (0.0, 0.0)
+                0.0
             };
+            let peak = mem_samples.iter().max().copied().unwrap_or(0) as f32;
+            (avg, peak)
+        } else {
+            (0.0, 0.0)
+        };
 
         // Calculate CPU statistics
         let (cpu_avg, cpu_peak) = if let Some(cpu_samples) = self.cpu_usage_samples.get("system") {
@@ -664,8 +640,7 @@ impl MetricsCollector {
         if total_requests == 0 {
             recommendations.push("System has not processed any requests yet".to_string());
         } else if failed_requests * 100 / total_requests > 5 {
-            recommendations
-                .push("High error rate detected - investigate failed requests".to_string());
+            recommendations.push("High error rate detected - investigate failed requests".to_string());
         }
 
         if self.active_sessions.load(Ordering::Relaxed) > 100 {
@@ -676,9 +651,8 @@ impl MetricsCollector {
         if let Some(execution_times) = self.execution_times.get("validation") {
             if let Some(max_time) = execution_times.iter().max() {
                 if max_time.as_millis() > 5000 {
-                    recommendations.push(
-                        "Slow validation detected - optimize AI provider response time".to_string(),
-                    );
+                    recommendations
+                        .push("Slow validation detected - optimize AI provider response time".to_string());
                 }
             }
         }
@@ -944,4 +918,3 @@ mod tests {
         assert_eq!(metrics.active_sessions.load(Ordering::Relaxed), 0);
     }
 }
-

@@ -60,6 +60,7 @@ struct HeuristicAssessment {
     logic_calls_removed: bool,
     // Контекст, где минимальная реализация допустима (версия/здоровье/ping)
     is_allowed_minimal_context: bool,
+    has_silent_result_discard: bool,
     summary: String,
 }
 
@@ -675,20 +676,62 @@ fn detect_todo_placeholder(code: &str) -> bool {
 
 fn detect_empty_catch_except(code: &str) -> bool {
     let low = code.to_ascii_lowercase();
-    if low.contains("catch")
-        && low.contains("{")
-        && low.contains("}")
-        && low.contains("catch(")
-        && (low.contains("catch(e){}") || low.contains("catch(e){\n}"))
-    {
+
+    // Удаляем все пробельные символы для точной проверки
+    let compact: String = low.chars().filter(|c| !c.is_whitespace()).collect();
+
+    // Java/C#/JS: catch(любое_исключение){} или catch(любое_исключение){}
+    // Проверяем есть ли catch блок с пустым телом
+    if compact.contains("catch(") {
+        // Ищем паттерн catch(...){} где внутри {} нет кода
+        if let Some(catch_pos) = compact.find("catch(") {
+            if let Some(open_brace) = compact[catch_pos..].find("){") {
+                let after_brace = catch_pos + open_brace + 2;
+                if after_brace < compact.len() && compact.chars().nth(after_brace) == Some('}') {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // Python: except: pass
+    if low.contains("except") && low.contains(":") {
+        let except_pass = low.replace('\n', " ").replace('\t', " ");
+        if except_pass.contains("except:") && except_pass.contains("pass") {
+            // Проверяем что pass идёт сразу после except:
+            if let Some(except_pos) = except_pass.find("except:") {
+                let after_except = &except_pass[except_pos + 7..].trim();
+                if after_except.starts_with("pass") {
+                    return true;
+                }
+            }
+        }
+    }
+
+    // JS/TS: Promise .catch(() => {}) or .catch(function(){})
+    if compact.contains(".catch(()=>{})") || compact.contains(".catch(function(){})") {
         return true;
     }
-    if low.contains("except")
-        && low.contains(":")
-        && (low.contains("except:\n    pass") || low.contains("except:\n    pass"))
-    {
-        return true;
+
+    false
+}
+
+fn detect_silent_result_discard(old: &str, new: &str) -> bool {
+    // Go: проверяем изменение с обработки ошибки на _ = func()
+    let old_low = old.to_ascii_lowercase();
+    let new_low = new.to_ascii_lowercase();
+
+    // Удаляем пробелы для точного сравнения
+    let old_compact: String = old_low.chars().filter(|c| !c.is_whitespace()).collect();
+    let new_compact: String = new_low.chars().filter(|c| !c.is_whitespace()).collect();
+
+    // Go: было if err := func(); err != nil { ... }, стало _ = func()
+    if old_compact.contains("iferr:=") && old_compact.contains("err!=nil") {
+        if new_compact.contains("_=") && !new_compact.contains("iferr:=") {
+            return true;
+        }
     }
+
     false
 }
 
@@ -702,12 +745,17 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
             assess.is_whitespace_or_comments_only = true;
         }
     }
+    let combined_old = old_opt.clone().unwrap_or_default();
     let combined_new = new_opt.clone().unwrap_or_default();
     assess.is_return_constant_only = detect_return_constant(&combined_new);
     assess.is_print_or_log_only = detect_print_only(&combined_new);
     // NOTE: we no дольше блокируем TODO/FIXME как таковые; оставляем для сводки
     assess.has_todo_or_placeholder = detect_todo_placeholder(&combined_new);
     assess.has_empty_catch_or_except = detect_empty_catch_except(&combined_new);
+    // Проверяем молчаливый discard результатов (сравнение старого и нового кода)
+    if old_opt.is_some() && new_opt.is_some() {
+        assess.has_silent_result_discard = detect_silent_result_discard(&combined_old, &combined_new);
+    }
     // New, minimal file creation (do not block for simple stubs like print("ok"))
     if old_opt.is_none() && new_opt.is_some() {
         let norm = normalize_code_for_signal(&combined_new);
@@ -747,6 +795,9 @@ fn assess_change(hook_input: &HookInput) -> HeuristicAssessment {
     }
     if assess.has_empty_catch_or_except {
         parts.push("empty catch/except".to_string());
+    }
+    if assess.has_silent_result_discard {
+        parts.push("silent result discard".to_string());
     }
     if assess.is_new_file_minimal {
         parts.push("new minimal file".to_string());
@@ -1341,6 +1392,7 @@ async fn main() -> Result<()> {
         if
         /* do not block TODO/FIXME */
         heur.has_empty_catch_or_except
+            || heur.has_silent_result_discard
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &code) && hook_input.tool_name != "Write")
         {
@@ -1690,6 +1742,7 @@ async fn main() -> Result<()> {
         if
         /* do not block TODO/FIXME */
         heur.has_empty_catch_or_except
+            || heur.has_silent_result_discard
             || ((heur.is_return_constant_only || heur.is_print_or_log_only) && !heur.is_new_file_minimal)
             || (detect_function_stub(language, &content) && hook_input.tool_name != "Write")
         {

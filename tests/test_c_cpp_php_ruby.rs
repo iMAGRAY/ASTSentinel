@@ -1,5 +1,6 @@
 #![cfg(feature = "ast_fastpath")] // These assertions rely on fastpath single-pass engine parity
-                                  // NOTE: Multi-pass legacy path does not guarantee identical rule coverage for these languages.
+                                  // NOTE: Multi-pass legacy path does not guarantee identical rule coverage for
+                                  // these languages.
 use rust_validation_hooks::analysis::ast::quality_scorer::IssueCategory;
 use rust_validation_hooks::analysis::ast::{AstQualityScorer, IssueSeverity, SupportedLanguage};
 
@@ -49,7 +50,8 @@ fn cpp_switch_good_code_has_no_issues() {
 
 #[test]
 fn cpp_try_catch_good_code_has_no_issues() {
-    // Tree-sitter C++ may not count try/catch towards complexity; ensure it parses cleanly
+    // Tree-sitter C++ may not count try/catch towards complexity; ensure it parses
+    // cleanly
     let code = r#"#include <stdexcept>
 int f(int x){
   try {

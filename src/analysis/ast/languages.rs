@@ -1029,4 +1029,3 @@ mod tests {
         assert_eq!(metrics1.function_count, metrics2.function_count);
     }
 }
-

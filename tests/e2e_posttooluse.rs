@@ -2,10 +2,12 @@ use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::tempdir;
 
-// E2E: run compiled posttooluse binary, feed HookInput JSON via stdin, assert additionalContext contains AST insights
+// E2E: run compiled posttooluse binary, feed HookInput JSON via stdin, assert
+// additionalContext contains AST insights
 #[test]
 fn e2e_posttooluse_ast_only_mode() {
-    // Create temp project dir and a Python file with a critical issue (hardcoded credential)
+    // Create temp project dir and a Python file with a critical issue (hardcoded
+    // credential)
     let temp = tempdir().expect("tempdir");
     let dir = temp.path();
     let file_path = dir.join("bad.py");
@@ -561,7 +563,8 @@ fn e2e_posttooluse_pass_through_non_code_file() {
 
 #[test]
 fn e2e_posttooluse_path_validation_fallback_to_tool_input() {
-    // Invalid path (traversal) should fail file read, then fallback to tool_input content
+    // Invalid path (traversal) should fail file read, then fallback to tool_input
+    // content
     let temp = tempdir().expect("tempdir");
     let dir = temp.path();
     // Construct a traversal-like path (works as a string trigger for validator)
@@ -925,7 +928,8 @@ fn e2e_posttooluse_pass_through_json_toml() {
 
 #[test]
 fn e2e_posttooluse_ast_only_windows_backslashes_path_fallback() {
-    // Backslash-heavy path should be accepted, but if invalid (UNC style in non-Windows) fallback to tool_input works
+    // Backslash-heavy path should be accepted, but if invalid (UNC style in
+    // non-Windows) fallback to tool_input works
     let temp = tempdir().expect("tempdir");
     let dir = temp.path();
     // Simulate UNC path

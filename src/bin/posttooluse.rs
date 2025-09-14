@@ -9,7 +9,6 @@
         clippy::dbg_macro
     )
 )]
-
 #![allow(clippy::items_after_test_module)]
 use anyhow::{Context, Result};
 use std::io::{self};
@@ -25,7 +24,8 @@ use rust_validation_hooks::analysis::project::{
 // Use dependency analysis for better project understanding
 use rust_validation_hooks::analysis::dependencies::analyze_project_dependencies;
 use std::path::PathBuf;
-// Use diff formatter for better AI context - unified diff for clear change visibility
+// Use diff formatter for better AI context - unified diff for clear change
+// visibility
 use rust_validation_hooks::validation::diff_formatter::{format_code_diff, format_multi_edit_full_context};
 // Use AST-based quality scorer for deterministic code analysis
 use rust_validation_hooks::analysis::ast::languages::LanguageCache;
@@ -107,33 +107,74 @@ async fn render_offline_posttooluse(
         final_response.push('\n');
     }
     if let Some(ast_score) = ast_score {
-        let (filtered, change_snippets) = if let Ok(diff) = generate_diff_context(hook_input, display_path).await {
-            let ctxn = if cfg!(debug_assertions) { std::env::var("AST_DIFF_CONTEXT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(3) } else { 3 };
+        let (filtered, change_snippets) = if let Ok(diff) =
+            generate_diff_context(hook_input, display_path).await
+        {
+            let ctxn = if cfg!(debug_assertions) {
+                std::env::var("AST_DIFF_CONTEXT")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(3)
+            } else {
+                3
+            };
             let changed = extract_changed_lines(&diff, ctxn);
             let filtered = if dev_flag_enabled("AST_DIFF_ONLY") {
                 filter_issues_to_diff(ast_score, &diff, ctxn)
             } else {
                 ast_score.clone()
             };
-            let snips_enabled = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
+            let snips_enabled = if cfg!(debug_assertions) {
+                std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true)
+            } else {
+                true
+            };
             let snips = if snips_enabled {
-                let max_snips = if cfg!(debug_assertions) { std::env::var("AST_MAX_SNIPPETS").ok().and_then(|v| v.parse().ok()).unwrap_or(3) } else { 3 }.clamp(1, 50);
-                let max_chars = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS_MAX_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(1500) } else { 1500 }.clamp(200, 20_000);
-                let lang = SupportedLanguage::from_extension(display_path.split('.').next_back().unwrap_or(""))
-                    .unwrap_or(SupportedLanguage::Python);
-                let use_entity = if cfg!(debug_assertions) { std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
+                let max_snips = if cfg!(debug_assertions) {
+                    std::env::var("AST_MAX_SNIPPETS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(3)
+                } else {
+                    3
+                }
+                .clamp(1, 50);
+                let max_chars = if cfg!(debug_assertions) {
+                    std::env::var("AST_SNIPPETS_MAX_CHARS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(1500)
+                } else {
+                    1500
+                }
+                .clamp(200, 20_000);
+                let lang =
+                    SupportedLanguage::from_extension(display_path.split('.').next_back().unwrap_or(""))
+                        .unwrap_or(SupportedLanguage::Python);
+                let use_entity = if cfg!(debug_assertions) {
+                    std::env::var("AST_ENTITY_SNIPPETS")
+                        .map(|v| v != "0")
+                        .unwrap_or(true)
+                } else {
+                    true
+                };
                 if use_entity {
                     let ent = build_entity_context_snippets(
                         lang, content, &filtered, &changed, ctxn, max_snips, max_chars,
                     );
-                    if !ent.is_empty() { ent } else { build_change_context_snippets(content, &filtered, &changed, ctxn, max_snips, max_chars) }
+                    if !ent.is_empty() {
+                        ent
+                    } else {
+                        build_change_context_snippets(
+                            content, &filtered, &changed, ctxn, max_snips, max_chars,
+                        )
+                    }
                 } else {
                     build_change_context_snippets(content, &filtered, &changed, ctxn, max_snips, max_chars)
                 }
-            } else { String::new() };
+            } else {
+                String::new()
+            };
             (filtered, snips)
         } else {
             (ast_score.clone(), String::new())
@@ -187,12 +228,23 @@ async fn render_offline_posttooluse(
         hook_specific_output: PostToolUseHookOutput {
             hook_event_name: "PostToolUse".to_string(),
             additional_context: {
-                let lim = if cfg!(debug_assertions) { std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS").ok().and_then(|v| v.parse().ok()).unwrap_or(100_000) } else { 100_000 }.clamp(10_000, 1_000_000);
+                let lim = if cfg!(debug_assertions) {
+                    std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(100_000)
+                } else {
+                    100_000
+                }
+                .clamp(10_000, 1_000_000);
                 truncate_utf8_safe(&final_response, lim)
             },
         },
     };
-    println!("{}", serde_json::to_string(&output).context("Failed to serialize output")?);
+    println!(
+        "{}",
+        serde_json::to_string(&output).context("Failed to serialize output")?
+    );
     Ok(())
 }
 fn build_risk_report(score: &QualityScore) -> String {
@@ -205,21 +257,33 @@ fn build_risk_report(score: &QualityScore) -> String {
     };
 
     // Read caps
-    let global_cap: usize = if cfg!(debug_assertions) { std::env::var("AST_MAX_ISSUES")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(100) } else { 100 }
-        .clamp(10, 500);
-    let cap_major: usize = if cfg!(debug_assertions) { std::env::var("AST_MAX_MAJOR")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(global_cap) } else { global_cap }
-        .clamp(5, 500);
-    let cap_minor: usize = if cfg!(debug_assertions) { std::env::var("AST_MAX_MINOR")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(global_cap) } else { global_cap }
-        .clamp(5, 500);
+    let global_cap: usize = if cfg!(debug_assertions) {
+        std::env::var("AST_MAX_ISSUES")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(100)
+    } else {
+        100
+    }
+    .clamp(10, 500);
+    let cap_major: usize = if cfg!(debug_assertions) {
+        std::env::var("AST_MAX_MAJOR")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(global_cap)
+    } else {
+        global_cap
+    }
+    .clamp(5, 500);
+    let cap_minor: usize = if cfg!(debug_assertions) {
+        std::env::var("AST_MAX_MINOR")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(global_cap)
+    } else {
+        global_cap
+    }
+    .clamp(5, 500);
 
     // Group by severity
     let mut crit: Vec<_> = score
@@ -312,9 +376,9 @@ fn build_next_steps(score: &QualityScore) -> String {
 
             IssueCategory::UnreachableCode => corr = true,
 
-            IssueCategory::LongMethod
-            | IssueCategory::TooManyParameters
-            | IssueCategory::DeepNesting => maint = true,
+            IssueCategory::LongMethod | IssueCategory::TooManyParameters | IssueCategory::DeepNesting => {
+                maint = true
+            }
 
             IssueCategory::HighComplexity => perf = true,
 
@@ -330,22 +394,63 @@ fn build_next_steps(score: &QualityScore) -> String {
     out.push_str("=== NEXT STEPS ===\n");
     let mut n = 0usize;
     let push = |s: &str, out: &mut String, n: &mut usize| {
-        if *n < 6 { out.push_str("- "); out.push_str(s); out.push('\n'); *n += 1; }
+        if *n < 6 {
+            out.push_str("- ");
+            out.push_str(s);
+            out.push('\n');
+            *n += 1;
+        }
     };
     // Security: keep concise Russian guidance (no test expectations here)
-    if sec { push("Security: убрать секреты; параметризовать SQL; не вызывать shell; валидировать/экранировать ввод.", &mut out, &mut n); }
+    if sec {
+        push("Security: убрать секреты; параметризовать SQL; не вызывать shell; валидировать/экранировать ввод.", &mut out, &mut n);
+    }
     // Correctness: include explicit keyword expected by tests (dead/unreachable)
-    if corr { push("Correctness: удалить dead/unreachable ветки; упорядочить контроль потока.", &mut out, &mut n); }
+    if corr {
+        push(
+            "Correctness: удалить dead/unreachable ветки; упорядочить контроль потока.",
+            &mut out,
+            &mut n,
+        );
+    }
     // Maintainability: generic guidance
-    if maint { push("Maintainability: разбить длинные функции; снизить вложенность; сократить параметры.", &mut out, &mut n); }
+    if maint {
+        push(
+            "Maintainability: разбить длинные функции; снизить вложенность; сократить параметры.",
+            &mut out,
+            &mut n,
+        );
+    }
     // Performance: generic guidance
-    if perf { push("Performance: упростить горячие участки; снизить алгоритмическую/когнитивную сложность.", &mut out, &mut n); }
-    // Style: include exact substrings expected by tests: "Wrap lines" or ">120" and "unused imports"
-    if style { push("Style: Wrap lines >120; удалить unused imports; привести формат к правилам проекта.", &mut out, &mut n); }
-    // Docs/Tests: include both 'docstrings' and explicit phrase 'Add/Update unit tests'
-    if docs { push("Docs/Tests: добавить краткие docstrings/комментарии; Add/Update unit tests на ключевые пути.", &mut out, &mut n); }
+    if perf {
+        push(
+            "Performance: упростить горячие участки; снизить алгоритмическую/когнитивную сложность.",
+            &mut out,
+            &mut n,
+        );
+    }
+    // Style: include exact substrings expected by tests: "Wrap lines" or ">120" and
+    // "unused imports"
+    if style {
+        push(
+            "Style: Wrap lines >120; удалить unused imports; привести формат к правилам проекта.",
+            &mut out,
+            &mut n,
+        );
+    }
+    // Docs/Tests: include both 'docstrings' and explicit phrase 'Add/Update unit
+    // tests'
+    if docs {
+        push(
+            "Docs/Tests: добавить краткие docstrings/комментарии; Add/Update unit tests на ключевые пути.",
+            &mut out,
+            &mut n,
+        );
+    }
 
-    if n == 0 { out.push_str("- No immediate actions.\n"); }
+    if n == 0 {
+        out.push_str("- No immediate actions.\n");
+    }
     out
 }
 fn build_unfinished_work_section(score: &QualityScore, max_items: usize, max_chars: usize) -> String {
@@ -374,20 +479,32 @@ fn build_unfinished_work_section(score: &QualityScore, max_items: usize, max_cha
 }
 
 fn build_quick_tips_section(score: &QualityScore) -> String {
-    let enabled = if cfg!(debug_assertions) { std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true) } else { true };
+    let enabled = if cfg!(debug_assertions) {
+        std::env::var("QUICK_TIPS").map(|v| v != "0").unwrap_or(true)
+    } else {
+        true
+    };
     if !enabled {
         return String::new();
     }
-    let max_tips = if cfg!(debug_assertions) { std::env::var("QUICK_TIPS_MAX")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(6) } else { 6 }
-        .clamp(1, 20);
-    let max_line = if cfg!(debug_assertions) { std::env::var("QUICK_TIPS_MAX_CHARS")
-        .ok()
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(120) } else { 120 }
-        .clamp(60, 180);
+    let max_tips = if cfg!(debug_assertions) {
+        std::env::var("QUICK_TIPS_MAX")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(6)
+    } else {
+        6
+    }
+    .clamp(1, 20);
+    let max_line = if cfg!(debug_assertions) {
+        std::env::var("QUICK_TIPS_MAX_CHARS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(120)
+    } else {
+        120
+    }
+    .clamp(60, 180);
     let tips = build_quick_tips(score, max_tips, max_line);
     if tips.is_empty() {
         return String::new();
@@ -404,10 +521,14 @@ fn build_quick_tips_section(score: &QualityScore) -> String {
 
 fn build_agent_json_from_score(score: &QualityScore) -> String {
     // Map severities
-    let sev = |s: IssueSeverity| match s { IssueSeverity::Critical => "critical", IssueSeverity::Major => "major", IssueSeverity::Minor => "minor" };
+    let sev = |s: IssueSeverity| match s {
+        IssueSeverity::Critical => "critical",
+        IssueSeverity::Major => "major",
+        IssueSeverity::Minor => "minor",
+    };
     // risk_summary top 10
     let mut issues = score.concrete_issues.clone();
-    issues.sort_by(|a,b| a.line.cmp(&b.line));
+    issues.sort_by(|a, b| a.line.cmp(&b.line));
     issues.truncate(10);
     let mut items = Vec::new();
     for i in issues {
@@ -821,7 +942,8 @@ fn extract_signatures_ast(
     let root = tree.root_node();
     let bytes = content.as_bytes();
 
-    // Extract param names from a Python parameters node (simple: collect identifiers)
+    // Extract param names from a Python parameters node (simple: collect
+    // identifiers)
     let collect_params_py = |node: tree_sitter::Node| -> Vec<String> {
         let mut out = Vec::new();
         let mut st = vec![node];
@@ -844,7 +966,8 @@ fn extract_signatures_ast(
     // Extract param names from JS/TS formal_parameters with careful filtering:
     // - skip type_annotation/type parameters/arguments and decorators/modifiers
     // - support optional/rest/assignment/object/array patterns
-    // - collect only binding identifiers (ignore property identifiers and type names)
+    // - collect only binding identifiers (ignore property identifiers and type
+    //   names)
     let collect_params_js_ts = |node: tree_sitter::Node| -> Vec<String> {
         let mut out = Vec::new();
         let mut st = vec![node];
@@ -1131,7 +1254,8 @@ fn extract_signatures_ast(
                         );
                     }
                 } else if k == "pair" || k == "property_assignment" {
-                    // Object literal method/property with function value: { foo(){} } or { foo: function(){} } or { foo: ()=>{} }
+                    // Object literal method/property with function value: { foo(){} } or { foo:
+                    // function(){} } or { foo: ()=>{} }
                     if let Some(key) = n.child(0) {
                         let key_k = key.kind();
                         if key_k == "property_identifier"
@@ -1372,7 +1496,13 @@ async fn build_change_summary(hook_input: &HookInput, display_path: &str) -> Str
 
     let (kind, is_append) = normalize_tool_name(&hook_input.tool_name);
     let op = match kind {
-        ToolKind::Write => if is_append { "append" } else { "write" },
+        ToolKind::Write => {
+            if is_append {
+                "append"
+            } else {
+                "write"
+            }
+        }
         ToolKind::Edit => "edit",
         ToolKind::MultiEdit => "multiedit",
         ToolKind::Other => "other",
@@ -1386,11 +1516,7 @@ async fn build_change_summary(hook_input: &HookInput, display_path: &str) -> Str
 
     // If MultiEdit, include number of edits when available (metadata only)
     if kind == ToolKind::MultiEdit {
-        if let Some(edits) = hook_input
-            .tool_input
-            .get("edits")
-            .and_then(|v| v.as_array())
-        {
+        if let Some(edits) = hook_input.tool_input.get("edits").and_then(|v| v.as_array()) {
             s.push_str(&format!("Edits: {}\n", edits.len()));
         }
     }
@@ -1602,18 +1728,21 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
                         continue;
                     }
                     if !bp.is_empty() && !asig.params.iter().any(|x| x == bp) {
-                        s.push_str(&format!("- Function `{name}`: parameter `{bp}` removed or renamed\n"
+                        s.push_str(&format!(
+                            "- Function `{name}`: parameter `{bp}` removed or renamed\n"
                         ));
                     }
                 }
             }
         } else {
-            s.push_str(&format!("- Function `{name}`: removed from module (possible breaking change)\n"
+            s.push_str(&format!(
+                "- Function `{name}`: removed from module (possible breaking change)\n"
             ));
         }
     }
 
-    // Unused parameters: prefer AST usage check; fallback to regex on the function slice
+    // Unused parameters: prefer AST usage check; fallback to regex on the function
+    // slice
     use regex::Regex;
     let word = |p: &str| Regex::new(&format!(r"(?m)\b{}\b", regex::escape(p))).ok();
     let is_simple_ident = |v: &str| -> bool {
@@ -1637,7 +1766,8 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
             if matches!(language, SupportedLanguage::Python) && (p == "self" || p == "cls") {
                 continue;
             }
-            // Only check simple identifiers for JS/TS; complex patterns are skipped to avoid false positives
+            // Only check simple identifiers for JS/TS; complex patterns are skipped to
+            // avoid false positives
             if matches!(
                 language,
                 SupportedLanguage::JavaScript | SupportedLanguage::TypeScript
@@ -1658,8 +1788,7 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
                 };
                 let used_re = word(p).map(|re| re.is_match(hay)).unwrap_or(false);
                 if !used_re {
-                    s.push_str(&format!("- Function `{name}`: parameter `{p}` appears unused\n"
-                    ));
+                    s.push_str(&format!("- Function `{name}`: parameter `{p}` appears unused\n"));
                 }
             }
         }
@@ -1672,11 +1801,12 @@ fn build_api_contract_report(language: SupportedLanguage, hook_input: &HookInput
     }
 }
 
-
-// Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers module
+// Removed GrokAnalysisClient - now using UniversalAIClient from ai_providers
+// module
 
 /// Check if a path should be ignored based on gitignore patterns
-/// Implements proper glob-style pattern matching instead of simple string contains
+/// Implements proper glob-style pattern matching instead of simple string
+/// contains
 fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> bool {
     // Normalize separators for cross-platform matching (Windows \\ -> /)
     let raw = path.to_string_lossy();
@@ -1699,8 +1829,7 @@ fn should_ignore_path(path: &std::path::Path, gitignore_patterns: &[String]) -> 
 
         // Directory name match (ends with /)
         if let Some(dir_pattern) = pattern.strip_suffix('/') {
-            if path.is_dir() && (file_name == dir_pattern || path_str.contains(&format!("/{dir_pattern}/")))
-            {
+            if path.is_dir() && (file_name == dir_pattern || path_str.contains(&format!("/{dir_pattern}/"))) {
                 return true;
             }
         }
@@ -1819,11 +1948,13 @@ const TEMPLATE_FOOTER: &str = "\n=== END FORMAT ===\n";
 const FINAL_INSTRUCTION_PREFIX: &str =
     "\n\nOUTPUT EXACTLY AS TEMPLATE. ANY FORMAT ALLOWED IF TEMPLATE SHOWS IT.\nRESPOND IN ";
 
-// Removed legacy wrapper `format_analysis_prompt` (use `format_analysis_prompt_with_ast` directly)
+// Removed legacy wrapper `format_analysis_prompt` (use
+// `format_analysis_prompt_with_ast` directly)
 
 // Tests live in the larger tests module further below
 
-/// Format the analysis prompt with instructions, project context, conversation, and AST analysis
+/// Format the analysis prompt with instructions, project context, conversation,
+/// and AST analysis
 async fn format_analysis_prompt_with_ast(
     prompt: &str,
     project_context: Option<&str>,
@@ -1870,8 +2001,7 @@ async fn format_analysis_prompt_with_ast(
     };
 
     let context7_section = if !context7_docs.is_empty() {
-        format!("\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{context7_docs}\n"
-        )
+        format!("\n\nDOCUMENTATION RECOMMENDATION GUIDELINES:\n{context7_docs}\n")
     } else {
         String::new()
     };
@@ -1986,8 +2116,9 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
         }
     }
 
-    // Do not pre-reject ".."/"~"/"$" substrings blindly — rely on canonicalization and scope checks below.
-    // Special-case only unsafe home-expansion prefix on non-Windows.
+    // Do not pre-reject ".."/"~"/"$" substrings blindly — rely on canonicalization
+    // and scope checks below. Special-case only unsafe home-expansion prefix on
+    // non-Windows.
     if !cfg!(windows) && (path.starts_with("~/") || path.starts_with("~\\")) {
         anyhow::bail!("Invalid file path: leading ~ home shortcut not allowed");
     }
@@ -2000,7 +2131,8 @@ fn validate_file_path(path: &str) -> Result<PathBuf> {
         let cwd =
             std::env::current_dir().map_err(|e| anyhow::anyhow!("Failed to get current directory: {}", e))?;
 
-        // Canonicalize both cwd and the target path to resolve symlinks, relative parts and Windows UNC/\\?\ prefixes
+        // Canonicalize both cwd and the target path to resolve symlinks, relative parts
+        // and Windows UNC/\\?\ prefixes
         let cwd_canon = cwd.canonicalize().unwrap_or(cwd.clone());
 
         // Canonicalize to resolve symlinks and relative paths
@@ -2041,7 +2173,9 @@ async fn read_file_content_safe(path: &str) -> Result<Option<String>> {
             .unwrap_or_else(|_| "10".to_string())
             .parse::<u64>()
             .unwrap_or(10)
-    } else { 10 };
+    } else {
+        10
+    };
 
     // Use streaming read to prevent TOCTOU race condition
     match timeout(Duration::from_secs(timeout_secs), async {
@@ -2179,7 +2313,8 @@ async fn generate_diff_context(hook_input: &HookInput, display_path: &str) -> Re
                 .and_then(|v| v.as_str())
                 .context("Write operation missing required 'content' field")?;
 
-            // If this is an append-like tool and we have current file content, build full new content
+            // If this is an append-like tool and we have current file content, build full
+            // new content
             let combined_new = if normalize_tool_name(&hook_input.tool_name).1 {
                 if let Some(existing) = file_content.as_deref() {
                     let mut s = String::with_capacity(existing.len() + new_content.len() + 1);
@@ -2245,8 +2380,8 @@ fn validate_transcript_path(path: &str) -> Result<()> {
         "$",  // variable expansion
         "./", ".\\", // current directory traversal
         "../",
-        "..\\", // parent directory traversal
-                // UNC handled below conditionally by OS
+        "..\\", /* parent directory traversal
+                 * UNC handled below conditionally by OS */
     ];
 
     for pattern in TRAVERSAL_PATTERNS {
@@ -2302,8 +2437,8 @@ fn validate_transcript_path(path: &str) -> Result<()> {
             anyhow::bail!("Path contains UNC pattern on non-Windows system");
         }
     } else {
-        // For non-existent paths (like in tests), ensure they would be within allowed directories
-        // Check if the parent directory exists and is allowed
+        // For non-existent paths (like in tests), ensure they would be within allowed
+        // directories Check if the parent directory exists and is allowed
         if let Some(parent) = path_obj.parent() {
             if parent.exists() {
                 let parent_canonical = parent
@@ -2476,7 +2611,8 @@ async fn read_transcript_summary(path: &str, max_messages: usize, max_chars: usi
                 if let Some(content) = content {
                     // Format message
                     let formatted_msg = if role == "user" {
-                        // Save the FIRST user message we encounter (which is the most recent due to reverse iteration)
+                        // Save the FIRST user message we encounter (which is the most recent due to
+                        // reverse iteration)
                         if !found_first_user_message {
                             most_recent_user_message = content.clone();
                             found_first_user_message = true;
@@ -2581,21 +2717,26 @@ fn soft_budget_note(content: &str, file_path: &str) -> Option<String> {
     let bytes = content.len();
     let lines = content.lines().count();
     // Allow very small budgets for tests; keep a sane upper bound for safety.
-    // Previously we clamped to 50_000 bytes/1_000 lines which broke e2e expectations.
-    // New policy: lower bound = 1 (caller decides), upper bound remains protective.
+    // Previously we clamped to 50_000 bytes/1_000 lines which broke e2e
+    // expectations. New policy: lower bound = 1 (caller decides), upper bound
+    // remains protective.
     let max_bytes: usize = if cfg!(debug_assertions) {
         std::env::var("AST_SOFT_BUDGET_BYTES")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(500_000)
-    } else { 500_000 }
+    } else {
+        500_000
+    }
     .clamp(1, 5_000_000);
     let max_lines: usize = if cfg!(debug_assertions) {
         std::env::var("AST_SOFT_BUDGET_LINES")
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(10_000)
-    } else { 10_000 }
+    } else {
+        10_000
+    }
     .clamp(1, 200_000);
     if bytes > max_bytes || lines > max_lines {
         return Some(format!("[ANALYSIS] Skipped AST analysis due to soft budget ({bytes} bytes, {lines} lines) for {file_path} (limits: {max_bytes} bytes, {max_lines} lines)"
@@ -2604,7 +2745,8 @@ fn soft_budget_note(content: &str, file_path: &str) -> Option<String> {
     None
 }
 
-/// Format AST analysis results for AI context (without scores to avoid duplication)
+/// Format AST analysis results for AI context (without scores to avoid
+/// duplication)
 fn format_ast_results(score: &QualityScore) -> String {
     let mut result = String::with_capacity(2000);
 
@@ -2672,7 +2814,8 @@ fn format_ast_results(score: &QualityScore) -> String {
     result
 }
 
-/// Perform project-wide AST analysis excluding non-code files and .gitignore entries
+/// Perform project-wide AST analysis excluding non-code files and .gitignore
+/// entries
 async fn perform_project_ast_analysis(working_dir: &str) -> String {
     let mut results = Vec::new();
     let mut total_issues = 0;
@@ -2869,11 +3012,15 @@ async fn analyze_directory_recursive(
                     }
 
                     // Enforce per-file AST analysis timeout
-                    let timeout_secs: u64 = if cfg!(debug_assertions) { std::env::var("AST_ANALYSIS_TIMEOUT_SECS")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(8) } else { 8 }
-                        .clamp(1, 30);
+                    let timeout_secs: u64 = if cfg!(debug_assertions) {
+                        std::env::var("AST_ANALYSIS_TIMEOUT_SECS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(8)
+                    } else {
+                        8
+                    }
+                    .clamp(1, 30);
 
                     let start = std::time::Instant::now();
                     let analysis = tokio::time::timeout(
@@ -3065,15 +3212,15 @@ async fn main() -> Result<()> {
     // Since PostToolUse runs AFTER the operation, read the actual file from disk
     let content = match read_file_content_safe(file_path).await? {
         Some(file_content) => {
-        if dev_flag_enabled("DEBUG_HOOKS") {
-            tracing::debug!(bytes=%file_content.len(), file=%file_path, "Read file");
-        }
+            if dev_flag_enabled("DEBUG_HOOKS") {
+                tracing::debug!(bytes=%file_content.len(), file=%file_path, "Read file");
+            }
             file_content
         }
         None => {
-        if dev_flag_enabled("DEBUG_HOOKS") {
-            tracing::debug!(%file_path, "Could not read file content");
-        }
+            if dev_flag_enabled("DEBUG_HOOKS") {
+                tracing::debug!(%file_path, "Could not read file content");
+            }
             // Fallback to extracting partial content from tool_input if file read fails
             match normalize_tool_name(&hook_input.tool_name).0 {
                 ToolKind::Write => hook_input
@@ -3118,9 +3265,9 @@ async fn main() -> Result<()> {
                             }
                         }
 
-                if dev_flag_enabled("DEBUG_HOOKS") {
-                    tracing::debug!(bytes=%aggregated.len(), valid_edits=%valid_edits, total_edits=%edits.len(), "MultiEdit fallback aggregation");
-                }
+                        if dev_flag_enabled("DEBUG_HOOKS") {
+                            tracing::debug!(bytes=%aggregated.len(), valid_edits=%valid_edits, total_edits=%edits.len(), "MultiEdit fallback aggregation");
+                        }
                         aggregated
                     } else {
                         String::new()
@@ -3211,32 +3358,54 @@ async fn main() -> Result<()> {
         if let Some(ast_score) = &ast_analysis {
             let (filtered, change_snippets) =
                 if let Ok(diff) = generate_diff_context(&hook_input, display_path).await {
-                    let ctxn = if cfg!(debug_assertions) { std::env::var("AST_DIFF_CONTEXT")
-                        .ok()
-                        .and_then(|v| v.parse().ok())
-                        .unwrap_or(3) } else { 3 };
+                    let ctxn = if cfg!(debug_assertions) {
+                        std::env::var("AST_DIFF_CONTEXT")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(3)
+                    } else {
+                        3
+                    };
                     let changed = extract_changed_lines(&diff, ctxn);
                     let filtered = if dev_flag_enabled("AST_DIFF_ONLY") {
                         filter_issues_to_diff(ast_score, &diff, ctxn)
                     } else {
                         ast_score.clone()
                     };
-                    let snips_enabled = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
+                    let snips_enabled = if cfg!(debug_assertions) {
+                        std::env::var("AST_SNIPPETS").map(|v| v != "0").unwrap_or(true)
+                    } else {
+                        true
+                    };
                     let snips = if snips_enabled {
-                        let max_snips = if cfg!(debug_assertions) { std::env::var("AST_MAX_SNIPPETS")
-                            .ok()
-                            .and_then(|v| v.parse().ok())
-                            .unwrap_or(3) } else { 3 }
-                            .clamp(1, 50);
-                        let max_chars = if cfg!(debug_assertions) { std::env::var("AST_SNIPPETS_MAX_CHARS")
-                            .ok()
-                            .and_then(|v| v.parse().ok())
-                            .unwrap_or(1500) } else { 1500 }
-                            .clamp(200, 20_000);
+                        let max_snips = if cfg!(debug_assertions) {
+                            std::env::var("AST_MAX_SNIPPETS")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(3)
+                        } else {
+                            3
+                        }
+                        .clamp(1, 50);
+                        let max_chars = if cfg!(debug_assertions) {
+                            std::env::var("AST_SNIPPETS_MAX_CHARS")
+                                .ok()
+                                .and_then(|v| v.parse().ok())
+                                .unwrap_or(1500)
+                        } else {
+                            1500
+                        }
+                        .clamp(200, 20_000);
                         let lang =
                             SupportedLanguage::from_extension(file_path.split('.').next_back().unwrap_or(""))
                                 .unwrap_or(SupportedLanguage::Python);
-                        let use_entity = if cfg!(debug_assertions) { std::env::var("AST_ENTITY_SNIPPETS").map(|v| v != "0").unwrap_or(true) } else { true };
+                        let use_entity = if cfg!(debug_assertions) {
+                            std::env::var("AST_ENTITY_SNIPPETS")
+                                .map(|v| v != "0")
+                                .unwrap_or(true)
+                        } else {
+                            true
+                        };
                         if use_entity {
                             let ent = build_entity_context_snippets(
                                 lang, &content, &filtered, &changed, ctxn, max_snips, max_chars,
@@ -3306,11 +3475,15 @@ async fn main() -> Result<()> {
             hook_specific_output: PostToolUseHookOutput {
                 hook_event_name: "PostToolUse".to_string(),
                 additional_context: {
-            let lim = if cfg!(debug_assertions) { std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(100_000) } else { 100_000 }
-                .clamp(10_000, 1_000_000);
+                    let lim = if cfg!(debug_assertions) {
+                        std::env::var("ADDITIONAL_CONTEXT_LIMIT_CHARS")
+                            .ok()
+                            .and_then(|v| v.parse().ok())
+                            .unwrap_or(100_000)
+                    } else {
+                        100_000
+                    }
+                    .clamp(10_000, 1_000_000);
                     truncate_utf8_safe(&final_response, lim)
                 },
             },
@@ -3322,10 +3495,12 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Load configuration from environment with graceful degradation (.env next to executable)
+    // Load configuration from environment with graceful degradation (.env next to
+    // executable)
     let config = Config::from_env_graceful().context("Failed to load configuration")?;
 
-    // If missing API key for selected provider, fall back to offline rendering (symmetry with PreToolUse)
+    // If missing API key for selected provider, fall back to offline rendering
+    // (symmetry with PreToolUse)
     if config
         .get_api_key_for_provider(&config.posttool_provider)
         .is_empty()
@@ -3343,7 +3518,8 @@ async fn main() -> Result<()> {
             display_path,
             &ast_analysis,
             formatting_result.as_ref().map(|f| f.changed).unwrap_or(false),
-        ).await;
+        )
+        .await;
     }
 
     // Load the analysis prompt
@@ -3418,7 +3594,8 @@ async fn main() -> Result<()> {
             // Already an absolute path
             file_path.to_string()
         } else {
-            // Relative path - combine with cwd using Path join to handle separators cross-platform
+            // Relative path - combine with cwd using Path join to handle separators
+            // cross-platform
             std::path::Path::new(cwd)
                 .join(file_path)
                 .to_string_lossy()
@@ -3517,7 +3694,8 @@ async fn main() -> Result<()> {
         }
     }
 
-    // Dry-run mode: build prompt and contexts, skip network call; return structured AST details in additionalContext
+    // Dry-run mode: build prompt and contexts, skip network call; return structured
+    // AST details in additionalContext
     if dev_flag_enabled("POSTTOOL_DRY_RUN") {
         let mut final_response = String::new();
         // Include change summary
@@ -3751,8 +3929,14 @@ async fn main() -> Result<()> {
             // Add AI response (with OpenAI JSON wrapper or fallback JSON from AST)
             let wrapped = if config.posttool_provider == AIProvider::OpenAI {
                 let content = if ai_response.trim().is_empty() {
-                    if let Some(ast_score) = &ast_analysis { build_agent_json_from_score(ast_score) } else { String::from("{}") }
-                } else { ai_response };
+                    if let Some(ast_score) = &ast_analysis {
+                        build_agent_json_from_score(ast_score)
+                    } else {
+                        String::from("{}")
+                    }
+                } else {
+                    ai_response
+                };
                 format!("AGENT_JSON_START\n{content}\nAGENT_JSON_END\n")
             } else {
                 ai_response
@@ -3936,7 +4120,8 @@ mod tests {
         // Should identify the most recent user message
         assert!(summary.contains("Current user task: Most recent message"));
         // Messages should appear in order in conversation
-        // Note: "Most recent message" appears in header, so we check just First and Second in conversation
+        // Note: "Most recent message" appears in header, so we check just First and
+        // Second in conversation
         if let (Some(first_pos), Some(second_pos)) = (
             summary.find("user: First message"),
             summary.find("user: Second message"),
@@ -4453,7 +4638,8 @@ def f3():\n  return 3\n";
         // Test with surrogate pairs edge case
         let text = "𝄞𝄞𝄞𝄞𝄞"; // Musical symbols (4 bytes each)
         let result = truncate_for_display(text, 10);
-        // 𝄞 is 4 bytes, so with 10 byte limit: 4 bytes (𝄞) + 3 bytes (...) = 7 bytes, fits one symbol
+        // 𝄞 is 4 bytes, so with 10 byte limit: 4 bytes (𝄞) + 3 bytes (...) = 7 bytes,
+        // fits one symbol
         assert_eq!(result, "𝄞...");
     }
 
@@ -4462,7 +4648,8 @@ def f3():\n  return 3\n";
         // Prepare a temporary project with a Python file that triggers a critical issue
         let dir = tempfile::tempdir().unwrap();
         let py_path = dir.path().join("bad.py");
-        // Hardcoded credential assignment should trigger HardcodedCredentials (Critical)
+        // Hardcoded credential assignment should trigger HardcodedCredentials
+        // (Critical)
         let code = "password = 'supersecret'\nprint('ok')\n";
         tokio::fs::write(&py_path, code).await.unwrap();
 
@@ -4483,7 +4670,3 @@ def f3():\n  return 3\n";
         assert_eq!(out1, out2);
     }
 }
-
-
-
-

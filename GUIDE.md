@@ -1,13 +1,13 @@
-# ULTIMATE MCP VALIDATION HOOKS - IMPLEMENTATION GUIDE
+# ULTIMATE CLAUDE CODE VALIDATION HOOKS - IMPLEMENTATION GUIDE
 
-> *"Making even a 2-bit AI into a programming monster"* - 2025 Edition
+> *"Making even a 2-bit AI into a programming monster through deterministic validation"* - 2025 Edition
 
 ## 🎯 MISSION
-Transform ValidationCodeHook into the **ultimate deterministic MCP tool** that makes ANY AI agent a programming powerhouse through:
-- **Zero ambiguity** - Every tool has ONE clear purpose
+Transform ValidationCodeHook into the **ultimate deterministic Claude Code hooks** that make ANY AI agent a programming powerhouse through:
+- **Zero ambiguity** - Every validation has ONE clear outcome
 - **Semantic understanding** - Not string manipulation, but AST-level comprehension
 - **Fail-safe validation** - Impossible to create bad code
-- **Self-documenting** - AI knows exactly what to use and when
+- **Self-documenting** - AI knows exactly what will be blocked and why
 
 ---
 
@@ -61,15 +61,15 @@ Transform ValidationCodeHook into the **ultimate deterministic MCP tool** that m
 3. **AI Native** - Designed for LLM consumption, not human CLI
 4. **Progressive Enhancement** - Basic → Advanced features gracefully
 
-### New Tool Structure
+### Hook Architecture
 
 ```rust
-// Each tool is a pure function with clear contract
-trait MCPTool {
-    fn capability() -> ToolCapability;
-    fn validate_input(input: &Value) -> Result<ValidatedInput>;
-    fn execute(input: ValidatedInput) -> DeterministicOutput;
-    fn explain_for_ai() -> AIReadableDoc;
+// Each hook is deterministic with clear contract
+trait ClaudeHook {
+    fn pre_validate(input: &HookInput) -> ValidationResult;
+    fn post_analyze(input: &HookInput) -> QualityReport;
+    fn provide_context(input: &HookInput) -> CompactContext;
+    fn explain_decision() -> String;
 }
 ```
 
@@ -106,21 +106,20 @@ trait MCPTool {
    - Build language-agnostic AST abstraction
    - **Verification**: Detect all OWASP Top 10 patterns
 
-### Phase 2: AI-Native Tools (Week 2)
-**Goal**: Tools that AI can't misuse
+### Phase 2: AI-Native Validation (Week 2)
+**Goal**: Hooks that AI understands perfectly
 
-1. **Tool Capability Matrix**
+1. **Hook Decision Matrix**
    ```json
    {
-     "tool": "detect_security_issues",
-     "capabilities": {
-       "detects": ["sql_injection", "xss", "hardcoded_secrets"],
-       "languages": ["rust", "python", "typescript"],
-       "confidence": 0.95,
-       "false_positive_rate": 0.02
+     "hook": "PreToolUse",
+     "blocks": {
+       "patterns": ["eval()", "exec()", "os.system()", "TODO", "pass"],
+       "security": ["sql_injection", "command_injection", "hardcoded_secrets"],
+       "quality": ["return_constant", "empty_except", "print_only"]
      },
-     "when_to_use": "Before any code commit",
-     "when_not_to_use": "For performance optimization"
+     "confidence": 0.98,
+     "false_positive_rate": 0.01
    }
    ```
 
@@ -156,39 +155,35 @@ trait MCPTool {
 
 ---
 
-## 🛠️ TOOLS SPECIFICATION
+## 🪝 HOOKS SPECIFICATION
 
-### Core Tools (Deterministic, Single-Purpose)
+### Core Hooks (Deterministic, Clear Purpose)
 
-#### 1. `mcp_analyze_security`
-- **Input**: `{ "file_path": string, "content": string }`
-- **Output**: `{ "issues": Issue[], "confidence": float, "fixes": Fix[] }`
-- **Capability**: Detects OWASP Top 10 with 0.98 confidence
-- **When to use**: Before any code deployment
+#### 1. **PreToolUse Hook**
+- **Purpose**: Block dangerous/fake code before creation
+- **Blocks**:
+  - Security: `eval()`, `exec()`, SQL injection, hardcoded credentials
+  - Quality: Fake implementations, `TODO`, empty `except`, constant returns
+- **Message**: Clear reason why blocked + what to fix
+- **Determinism**: 100% - same code always blocked/allowed
 
-#### 2. `mcp_validate_quality`
-- **Input**: `{ "file_path": string, "content": string, "standards": Standard[] }`
-- **Output**: `{ "score": 0-1000, "violations": Violation[], "suggestions": Suggestion[] }`
-- **Capability**: Enforces code quality standards
-- **When to use**: During code review
+#### 2. **PostToolUse Hook**
+- **Purpose**: Analyze quality and provide improvement suggestions
+- **Analyzes**:
+  - Security issues (OWASP Top 10)
+  - Code quality (complexity, nesting, parameters)
+  - Best practices violations
+- **Output**: Score 0-1000 + specific fixes
+- **Determinism**: Same code = same score always
 
-#### 3. `mcp_suggest_refactor`
-- **Input**: `{ "file_path": string, "content": string, "goal": RefactorGoal }`
-- **Output**: `{ "refactored_code": string, "explanation": string, "benefits": Benefit[] }`
-- **Capability**: Improves code structure without changing behavior
-- **When to use**: When complexity > threshold
-
-#### 4. `mcp_test_coverage`
-- **Input**: `{ "project_path": string }`
-- **Output**: `{ "coverage": float, "uncovered_critical": Function[], "suggested_tests": Test[] }`
-- **Capability**: Identifies testing gaps
-- **When to use**: Before release
-
-#### 5. `mcp_dependency_audit`
-- **Input**: `{ "project_path": string }`
-- **Output**: `{ "vulnerabilities": CVE[], "updates": Update[], "unused": Dependency[] }`
-- **Capability**: Security audit of dependencies
-- **When to use**: Weekly or before deployment
+#### 3. **UserPromptSubmit Hook**
+- **Purpose**: Give AI context about project state
+- **Provides**:
+  - Real source files count (no backups)
+  - Actual issues (no test data false positives)
+  - Recent work context
+- **Format**: Compact, <4KB, structured
+- **Determinism**: Same project state = same context
 
 ---
 

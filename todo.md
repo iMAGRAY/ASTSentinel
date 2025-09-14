@@ -58,6 +58,17 @@ K — Документация и техдолг
 
 ID E — UserPromptSubmit: компактный AST‑контекст
 - [+] E1. Секции «Project Summary» + «Risk/Health snapshot»
+
+2025-09-13 (hardening):
+- Добавлен feature `cache_hash_guard` (по умолчанию off); helper компилируется только при включенном флаге.
+- Поведение кэша зафиксировано: TTL `PROJECT_CACHE_TTL_SECS` (по умолчанию 300s).
+- Добавлен `.gitattributes` для нормализации EOL (LF для исходников; CRLF для .ps1).
+- Добавлен `scripts/windows/pre-commit.ps1` (fmt, clippy -D warnings, tests).
+
+2025-09-13 (ignore centralization):
+- Введён модуль `src/ignore/` (детерминированный .gitignore из корня + built-ins + опц. globset из конфига).
+- `UserPromptSubmit` и `PreToolUse` используют централизованный CombinedIgnore; оверлеи для `scripts/` и `test_data/` только в UserPromptSubmit.
+- `analysis::project` делегирует загрузку паттернов в модуль ignore (сигнатуры сохранены через врапперы).
   Критерий: snapshot‑тест формата; размер ≤ лимита.
 
 ID F — Языковые правила (точность)
@@ -232,3 +243,7 @@ N — Docs Finalization
 
 Рекомендация: постепенно заменить позиционные вызовы `format!("{}", var)` на интерполяцию `{var}` по файлам `src/bin/*` и в библиотеке — затем удалить временные `allow`.
 
+
+2025-09-13 20:48 +03:00: Стабилизирован UserPromptSubmit: заголовки (# PROJECT ANALYSIS, === PROJECT SUMMARY ===) соответствуют e2e; удалён лишний импорт в tests/test_project_cache.rs; исправлен warning unused_parens в pretooluse.rs. Запущен cargo fmt --all (массовое выравнивание кода). Clippy strict (-D warnings) сейчас FAIL из-за clippy::uninlined_format_args (в основном pretooluse.rs); создать подзадачу на замену форматирования строк.
+
+2025-09-13 20:54 +03:00: ProjectCache::load — возвращён TTL (5 мин, настраивается PROJECT_CACHE_TTL_SECS). Убрана попытка сравнения со структурным хешем (оставлена вспом. функция, помечена dead_code предупреждением). e2e/unit: зелёные.

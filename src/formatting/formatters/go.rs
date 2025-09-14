@@ -236,7 +236,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("gofmt formatting failed: {}", e);
-                    // This is acceptable if gofmt has issues with the test environment
+                    // This is acceptable if gofmt has issues with the test
+                    // environment
                 }
             }
         }
@@ -393,4 +394,3 @@ func main(){name:=os.Args[1];fmt.Println(strings.ToUpper(name))}"#;
         }
     }
 }
-

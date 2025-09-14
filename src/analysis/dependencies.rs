@@ -412,7 +412,8 @@ fn parse_cargo_dependency(line: &str, is_dev: bool) -> Option<DependencyInfo> {
             });
         }
 
-        // Handle object dependencies like: clap = { version = "4.0", features = ["derive"] }
+        // Handle object dependencies like: clap = { version = "4.0", features =
+        // ["derive"] }
         if version_part.starts_with('{') {
             // Look for version = "..." inside the object
             if let Some(version_start) = version_part.find("version") {
@@ -620,7 +621,8 @@ pytest = { version = "^7.4.0" }
         let deps = parse_pyproject_toml_poetry(&file_path).await.unwrap();
         assert!(deps.iter().any(|d| d.name == "requests" && !d.is_dev_dependency));
         assert!(deps.iter().any(|d| d.name == "pytest" && d.is_dev_dependency));
-        // 'python' entry is a platform constraint; we intentionally do not treat it as a dependency
+        // 'python' entry is a platform constraint; we intentionally do not treat it as
+        // a dependency
         assert!(!deps.iter().any(|d| d.name == "python"));
     }
 

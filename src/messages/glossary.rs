@@ -1,7 +1,8 @@
 use crate::analysis::ast::quality_scorer::{IssueCategory, QualityScore};
 use std::collections::HashSet;
 
-// Return a concise, action-oriented tip for an issue category (<= 120 chars per G1)
+// Return a concise, action-oriented tip for an issue category (<= 120 chars per
+// G1)
 pub fn tip_for_category(cat: &IssueCategory) -> &'static str {
     match cat {
         IssueCategory::HardcodedCredentials => "Never hardcode secrets; use env vars or a secret manager.",
@@ -29,7 +30,8 @@ pub fn tip_for_category(cat: &IssueCategory) -> &'static str {
 pub fn build_quick_tips(score: &QualityScore, max_tips: usize, max_line_chars: usize) -> Vec<String> {
     let mut seen: HashSet<&'static str> = HashSet::new();
     let mut out: Vec<String> = Vec::new();
-    // Deterministic: order by severity -> line -> rule_id already in callers; here keep stable iteration
+    // Deterministic: order by severity -> line -> rule_id already in callers; here
+    // keep stable iteration
     for i in &score.concrete_issues {
         let tip = tip_for_category(&i.category);
         if seen.insert(tip) {

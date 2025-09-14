@@ -35,7 +35,9 @@ pub fn redact_with_report(input: &str) -> (String, usize) {
     }
 
     // Connection strings / DSNs
-    if let Ok(re_conn) = Regex::new(r"(?i)(jdbc:|postgres(?:ql)?:|mongodb:|redis:|amqp:|mongodb\+srv:)[^\s\n]+") {
+    if let Ok(re_conn) =
+        Regex::new(r"(?i)(jdbc:|postgres(?:ql)?:|mongodb:|redis:|amqp:|mongodb\+srv:)[^\s\n]+")
+    {
         let c = re_conn.find_iter(&s).count();
         if c > 0 {
             s = re_conn.replace_all(&s, "<REDACTED:CONN_STRING>").to_string();

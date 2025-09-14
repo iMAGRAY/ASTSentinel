@@ -287,7 +287,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("clang-format formatting failed: {}", e);
-                    // This is acceptable if clang-format has issues with the test environment
+                    // This is acceptable if clang-format has issues with the
+                    // test environment
                 }
             }
         }
@@ -449,4 +450,3 @@ return adults;}
         }
     }
 }
-

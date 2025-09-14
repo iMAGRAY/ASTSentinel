@@ -236,7 +236,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("dotnet format formatting failed: {}", e);
-                    // This is acceptable if dotnet format has issues with the test environment
+                    // This is acceptable if dotnet format has issues with the
+                    // test environment
                 }
             }
         }
@@ -388,5 +389,3 @@ public class User{public string Name{get;set;}public int Age{get;set;}public boo
         }
     }
 }
-
-

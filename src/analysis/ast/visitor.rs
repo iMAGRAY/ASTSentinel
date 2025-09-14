@@ -102,7 +102,8 @@ impl ComplexityVisitor {
         match self.get_parameter_node_kinds() {
             Ok(valid_types) => valid_types.contains(&param_type),
             Err(_e) => {
-                // Log error for debugging - this typically happens for Rust which uses syn instead
+                // Log error for debugging - this typically happens for Rust which uses syn
+                // instead
                 #[cfg(debug_assertions)]
                 tracing::debug!(language=%self.language, error=%_e, "Parameter validation error");
                 false
@@ -111,8 +112,8 @@ impl ComplexityVisitor {
     }
 
     /// Get language-specific parameter node kinds
-    /// Returns the node types that represent parameter lists in function declarations
-    /// Process C#-specific AST nodes
+    /// Returns the node types that represent parameter lists in function
+    /// declarations Process C#-specific AST nodes
     pub fn process_csharp_node(&mut self, node_type: &str, node: &Node) -> Result<()> {
         if let Some(ref ids) = self.kind_ids {
             let k = node.kind_id();
@@ -238,7 +239,8 @@ impl ComplexityVisitor {
     }
 
     /// Get language-specific individual parameter node types
-    /// Returns the node types that represent individual parameters within parameter lists
+    /// Returns the node types that represent individual parameters within
+    /// parameter lists
     fn get_individual_parameter_kinds(&self) -> Result<&'static [&'static str]> {
         match self.language {
             SupportedLanguage::Python => Ok(&[
@@ -305,8 +307,9 @@ impl ComplexityVisitor {
         Ok(count)
     }
 
-    /// Find parameter node for arrow functions with different parameter structures
-    /// Arrow functions can have: (a, b) => {}, a => {}, ({x, y}) => {}
+    /// Find parameter node for arrow functions with different parameter
+    /// structures Arrow functions can have: (a, b) => {}, a => {}, ({x, y})
+    /// => {}
     fn find_arrow_function_parameter<'b>(&self, arrow_function_node: &Node<'b>) -> Option<Node<'b>> {
         let mut cursor = arrow_function_node.walk();
 
@@ -465,7 +468,8 @@ impl ComplexityVisitor {
                 self.function_count += 1;
                 self.enter_scope();
                 // Try both parameter list types for Python AST compatibility
-                // Tree-sitter Python may use "parameters" or "parameter_list" depending on version
+                // Tree-sitter Python may use "parameters" or "parameter_list" depending on
+                // version
                 if self.count_parameters(node, "parameters").is_err() {
                     let _ = self.count_parameters(node, "parameter_list"); // fallback for alternate AST shape
                 }
@@ -1165,7 +1169,8 @@ impl ComplexityVisitor {
             .par_iter()
             .map(|(content, language)| {
                 let visitor = ComplexityVisitor::new(content, *language);
-                // For now, return basic metrics - full AST parsing would require proper tree-sitter integration
+                // For now, return basic metrics - full AST parsing would require proper
+                // tree-sitter integration
                 Ok(visitor.build_metrics())
             })
             .collect()
@@ -1220,4 +1225,5 @@ impl ComplexityVisitor {
     }
 }
 
-// NOTE: KindIds and per-language caches are now provided by crate::analysis::ast::kind_ids
+// NOTE: KindIds and per-language caches are now provided by
+// crate::analysis::ast::kind_ids

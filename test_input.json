@@ -1,0 +1,9 @@
+{
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "main.go",
+    "old_string": "if err := foo(); err != nil { panic(err) }",
+    "new_string": "_ = foo()"
+  },
+  "hook_event_name": "PreToolUse"
+}

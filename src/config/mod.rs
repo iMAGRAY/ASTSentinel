@@ -88,7 +88,8 @@ pub fn load_config() -> Config {
         }
     }
 
-    // Optional JSON config file: path from HOOKS_CONFIG_FILE or .hooks-config.json in CWD
+    // Optional JSON config file: path from HOOKS_CONFIG_FILE or .hooks-config.json
+    // in CWD
     let cfg_path = std::env::var("HOOKS_CONFIG_FILE")
         .ok()
         .unwrap_or_else(|| ".hooks-config.json".to_string());

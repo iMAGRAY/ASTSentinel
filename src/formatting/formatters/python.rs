@@ -208,7 +208,8 @@ mod tests {
         assert!(args.contains(&"stdin.py".to_string()));
         assert!(args.contains(&"--target-version".to_string()));
         assert!(args.contains(&"py311".to_string()));
-        assert!(args.len() > 2); // Should have multiple arguments for proper formatting
+        assert!(args.len() > 2); // Should have multiple arguments for proper
+                                 // formatting
     }
 
     #[cfg(test)]
@@ -239,7 +240,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("black formatting failed: {}", e);
-                    // This is acceptable if black has issues with the test environment
+                    // This is acceptable if black has issues with the test
+                    // environment
                 }
             }
         }
@@ -392,4 +394,3 @@ class DataProcessor:
         }
     }
 }
-

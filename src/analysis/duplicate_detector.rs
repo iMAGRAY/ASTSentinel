@@ -1,5 +1,5 @@
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -19,7 +19,7 @@ pub struct DuplicateGroup {
     pub conflict_type: ConflictType,
 }
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone, PartialOrd, Ord)]
 pub enum ConflictType {
     ExactDuplicate,  // Same content, different names
     SimilarName,     // test.js, test2.js, test_old.js
@@ -119,7 +119,7 @@ impl DuplicateDetector {
         let mut groups = Vec::new();
 
         // 1. Find exact content duplicates
-        let mut hash_map: HashMap<String, Vec<&FileInfo>> = HashMap::new();
+        let mut hash_map: BTreeMap<String, Vec<&FileInfo>> = BTreeMap::new();
         for file in &self.files {
             hash_map.entry(file.hash.clone()).or_default().push(file);
         }
@@ -135,12 +135,13 @@ impl DuplicateDetector {
         }
 
         // 2. Find similar named files (potential versions)
-        let mut name_groups: HashMap<String, Vec<&FileInfo>> = HashMap::new();
+        let mut name_groups: BTreeMap<String, Vec<&FileInfo>> = BTreeMap::new();
         for file in &self.files {
             if let Some(stem) = file.path.file_stem() {
                 let stem_str = stem.to_string_lossy().to_lowercase();
 
-                // Skip standard Rust module files - these are expected to exist in multiple directories
+                // Skip standard Rust module files - these are expected to exist in multiple
+                // directories
                 if Self::is_standard_filename(&stem_str) {
                     continue;
                 }
@@ -200,7 +201,8 @@ impl DuplicateDetector {
         groups
     }
 
-    /// Check if a filename is a standard file that's expected to exist in multiple directories
+    /// Check if a filename is a standard file that's expected to exist in
+    /// multiple directories
     fn is_standard_filename(name: &str) -> bool {
         matches!(
             name,
@@ -225,7 +227,8 @@ impl DuplicateDetector {
 
     fn clean_filename(name: &str) -> String {
         // Only remove clear version/backup indicators, preserve meaningful name parts
-        // Don't strip numbers or 'v' indiscriminately as they may be part of the actual name
+        // Don't strip numbers or 'v' indiscriminately as they may be part of the actual
+        // name
         let cleaned = name
             .replace("_old", "")
             .replace("_new", "")
@@ -296,7 +299,7 @@ impl DuplicateDetector {
         let mut report = String::from("\n🔴 **КРИТИЧНО: Обнаружены дубликаты/конфликты файлов**\n");
 
         // Summary per conflict type
-        let mut counts: std::collections::HashMap<ConflictType, usize> = std::collections::HashMap::new();
+        let mut counts: std::collections::BTreeMap<ConflictType, usize> = std::collections::BTreeMap::new();
         for g in groups {
             *counts.entry(g.conflict_type.clone()).or_insert(0) += 1;
         }
@@ -323,7 +326,9 @@ impl DuplicateDetector {
             total_bytes += g.files.iter().map(|f| f.size).sum::<u64>();
         }
         let kb = (total_bytes as f64 / 1024.0).round() as u64;
-        report.push_str(&format!("Итого: групп {total_groups} , файлов {total_files} (~{kb} KB)\n"));
+        report.push_str(&format!(
+            "Итого: групп {total_groups} , файлов {total_files} (~{kb} KB)\n"
+        ));
 
         // Optional per-directory summary (top-K)
         let top_dirs: usize = std::env::var("DUP_REPORT_TOP_DIRS")
@@ -332,7 +337,7 @@ impl DuplicateDetector {
             .unwrap_or(3)
             .clamp(0, 20);
         if top_dirs > 0 {
-            use std::collections::HashMap as Map;
+            use std::collections::BTreeMap as Map;
             let mut dir_counts: Map<String, usize> = Map::new();
             for g in groups {
                 for f in &g.files {
@@ -407,7 +412,14 @@ impl DuplicateDetector {
                     "  "
                 };
 
-                report.push_str(&format!("  {marker} {relative_path} | {size}B | {lines}L | {hash}\n", marker=marker, relative_path=relative_path, size=file.size, lines=file.lines, hash=&file.hash[..8]));
+                report.push_str(&format!(
+                    "  {marker} {relative_path} | {size}B | {lines}L | {hash}\n",
+                    marker = marker,
+                    relative_path = relative_path,
+                    size = file.size,
+                    lines = file.lines,
+                    hash = &file.hash[..8]
+                ));
             }
 
             if hidden_files > 0 {
@@ -433,4 +445,3 @@ impl DuplicateDetector {
         report
     }
 }
-

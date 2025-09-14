@@ -33,15 +33,17 @@ fn ast_rust_should_use_syn_error() {
 
 #[test]
 fn ast_returns_timeout_error_on_long_timeout() {
-    // Extremely small timeout with modest but valid code to trip timeout in worst case; but
-    // our implementation runs fast. So this test simply exercises the API without asserting timeout.
+    // Extremely small timeout with modest but valid code to trip timeout in worst
+    // case; but our implementation runs fast. So this test simply exercises the
+    // API without asserting timeout.
     let code = "def f():\n  return 1\n";
     let res = MultiLanguageAnalyzer::analyze_with_tree_sitter_timeout(
         code,
         SupportedLanguage::Python,
         std::time::Duration::from_millis(1),
     );
-    // Either Ok (fast) or Err(AstError::AnalysisTimeout); both acceptable in CI environments.
+    // Either Ok (fast) or Err(AstError::AnalysisTimeout); both acceptable in CI
+    // environments.
     if let Err(e) = res {
         // If error, ensure it's our type
         let _ = e

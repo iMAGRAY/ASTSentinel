@@ -24,13 +24,20 @@ fn pretooluse_ast_only_denies_structural_breakage() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn pretooluse");
-    child.stdin.as_mut().unwrap().write_all(input_str.as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(input_str.as_bytes())
+        .unwrap();
     let out = child.wait_with_output().expect("wait");
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let decision = v["hookSpecificOutput"]["permissionDecision"].as_str().unwrap();
     assert_eq!(decision, "deny", "broken syntax should be denied");
-    let reason = v["hookSpecificOutput"]["permissionDecisionReason"].as_str().unwrap();
+    let reason = v["hookSpecificOutput"]["permissionDecisionReason"]
+        .as_str()
+        .unwrap();
     assert!(reason.to_lowercase().contains("structural"));
 }
 
@@ -60,11 +67,20 @@ fn posttooluse_offline_fallback_without_keys() {
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn posttooluse");
-    child.stdin.as_mut().unwrap().write_all(hook_input.to_string().as_bytes()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(hook_input.to_string().as_bytes())
+        .unwrap();
     let out = child.wait_with_output().unwrap();
     assert!(out.status.success());
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     let ctx = v["hookSpecificOutput"]["additionalContext"].as_str().unwrap();
-    assert!(ctx.contains("=== RISK REPORT ===") || ctx.contains("=== CODE HEALTH ===") || ctx.contains("=== CHANGE SUMMARY ===") || ctx.contains("=== NEXT STEPS ==="));
+    assert!(
+        ctx.contains("=== RISK REPORT ===")
+            || ctx.contains("=== CODE HEALTH ===")
+            || ctx.contains("=== CHANGE SUMMARY ===")
+            || ctx.contains("=== NEXT STEPS ===")
+    );
 }
-

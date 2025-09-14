@@ -33,8 +33,9 @@ impl RustFormatter {
         args.push("--edition".to_string());
         args.push(edition);
 
-        // For stdin formatting rustfmt does not require a file marker; avoid passing `--`
-        // which some versions may interpret as a literal argument when no files follow.
+        // For stdin formatting rustfmt does not require a file marker; avoid passing
+        // `--` which some versions may interpret as a literal argument when no
+        // files follow.
 
         args
     }
@@ -365,4 +366,3 @@ result}
         }
     }
 }
-

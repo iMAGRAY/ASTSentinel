@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -10,7 +10,7 @@ use std::time::SystemTime;
 pub struct ProjectCache {
     pub structure: crate::analysis::project::ProjectStructure,
     pub metrics: ProjectMetrics,
-    pub file_hashes: HashMap<String, FileHash>,
+    pub file_hashes: BTreeMap<String, FileHash>,
     pub cache_timestamp: i64,
     pub last_modified: SystemTime,
 }
@@ -28,8 +28,8 @@ pub struct FileHash {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ProjectMetrics {
     pub total_lines_of_code: usize,
-    pub code_by_language: HashMap<String, LanguageStats>,
-    pub file_importance_scores: HashMap<String, f32>,
+    pub code_by_language: BTreeMap<String, LanguageStats>,
+    pub file_importance_scores: BTreeMap<String, f32>,
     pub project_complexity_score: f32,
     pub test_coverage_estimate: f32,
     pub documentation_ratio: f32,
@@ -89,9 +89,14 @@ impl ProjectCache {
         let contents = fs::read_to_string(cache_path)?;
         let cache: ProjectCache = serde_json::from_str(&contents)?;
 
-        // Check if cache is still valid (default: 5 minutes)
+        // TTL-based freshness check (default 5 minutes)
+        let ttl_secs: i64 = std::env::var("PROJECT_CACHE_TTL_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .map(|n: i64| n.clamp(60, 86_400))
+            .unwrap_or(300);
         let now = chrono::Local::now().timestamp();
-        if now - cache.cache_timestamp > 300 {
+        if now - cache.cache_timestamp > ttl_secs {
             return Ok(None);
         }
 
@@ -105,8 +110,9 @@ impl ProjectCache {
         Ok(())
     }
 
-    /// Check if specific file needs update with enhanced AST-based hash verification
-    /// Uses AST structure hash for more precise change detection
+    /// Check if specific file needs update with enhanced AST-based hash
+    /// verification Uses AST structure hash for more precise change
+    /// detection
     pub fn needs_update(&self, file_path: &str) -> bool {
         use sha2::{Digest, Sha256};
         use std::io::Read;
@@ -260,6 +266,52 @@ impl ProjectCache {
             .filter(|line| !line.is_empty() && !line.starts_with("//") && !line.starts_with("#"))
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    /// Calculate a hash of project structure for content-based caching
+    #[cfg(feature = "cache_hash_guard")]
+    fn calculate_project_structure_hash(root_path: &Path) -> Result<i64> {
+        use sha2::{Digest, Sha256};
+        use std::collections::BTreeSet;
+
+        let mut hasher = Sha256::new();
+        let mut all_files = BTreeSet::new(); // Ordered for determinism
+
+        // Collect all files recursively
+        if let Ok(entries) = std::fs::read_dir(root_path) {
+            for entry in entries.flatten() {
+                if let Ok(path) = entry.path().canonicalize() {
+                    if path.is_file() {
+                        // Use relative path for consistency
+                        if let Ok(rel_path) = path.strip_prefix(root_path) {
+                            all_files.insert(rel_path.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Hash file list and modification times
+        for file_path in &all_files {
+            let full_path = root_path.join(file_path);
+            hasher.update(file_path.as_bytes());
+
+            if let Ok(metadata) = std::fs::metadata(&full_path) {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(duration) = modified.duration_since(std::time::SystemTime::UNIX_EPOCH) {
+                        hasher.update(duration.as_secs().to_be_bytes());
+                    }
+                }
+                hasher.update(metadata.len().to_be_bytes());
+            }
+        }
+
+        let hash = hasher.finalize();
+        // Convert to i64 by taking first 8 bytes
+        let bytes: [u8; 8] = hash[0..8]
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("Hash conversion failed"))?;
+        Ok(i64::from_be_bytes(bytes))
     }
 
     /// Get files that have changed since cache was created
@@ -468,7 +520,8 @@ pub fn calculate_file_importance(file: &crate::analysis::project::ProjectFile) -
     score.min(1.0) // Cap at 1.0
 }
 
-/// Compress project structure for efficient token usage with improved abbreviations
+/// Compress project structure for efficient token usage with improved
+/// abbreviations
 pub fn compress_structure(
     structure: &crate::analysis::project::ProjectStructure,
     metrics: &ProjectMetrics,
@@ -650,4 +703,3 @@ pub fn build_incremental_update(cache: &ProjectCache, changed_files: Vec<PathBuf
 
     Ok(format!("INCREMENTAL[{}]", updates.join(",")))
 }
-

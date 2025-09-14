@@ -224,7 +224,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("prettier formatting failed: {}", e);
-                    // This is acceptable if prettier has issues with the test environment
+                    // This is acceptable if prettier has issues with the test
+                    // environment
                 }
             }
         }
@@ -346,4 +347,3 @@ public getActiveUsers():T[]{return this.users.filter(u=>u.status==='active');}
         }
     }
 }
-

@@ -10,7 +10,8 @@ fn analyze(src: &str) -> Vec<(IssueCategory, String)> {
         .collect()
 }
 
-// unreachable after return — covered by existing engine; focus here on loop-specific cases
+// unreachable after return — covered by existing engine; focus here on
+// loop-specific cases
 
 #[test]
 fn rust_unreachable_after_break_continue_in_loop() {

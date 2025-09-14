@@ -1,6 +1,6 @@
 use rust_validation_hooks::analysis::project::*;
 use rust_validation_hooks::cache::project::*;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fs;
 use tempfile::TempDir;
 
@@ -8,8 +8,8 @@ use tempfile::TempDir;
 fn create_test_metrics() -> ProjectMetrics {
     ProjectMetrics {
         total_lines_of_code: 100,
-        code_by_language: HashMap::new(),
-        file_importance_scores: HashMap::new(),
+        code_by_language: BTreeMap::new(),
+        file_importance_scores: BTreeMap::new(),
         project_complexity_score: 5.0,
         test_coverage_estimate: 0.5,
         documentation_ratio: 0.2,
@@ -209,7 +209,7 @@ fn test_cache_loading_and_saving() {
             scan_timestamp: "2024-01-01 00:00:00".to_string(),
         },
         metrics: create_test_metrics(),
-        file_hashes: std::collections::HashMap::new(),
+        file_hashes: std::collections::BTreeMap::new(),
         cache_timestamp: chrono::Local::now().timestamp(),
         last_modified: std::time::SystemTime::now(),
     };
@@ -242,7 +242,7 @@ fn test_cache_expiration() {
             scan_timestamp: "2024-01-01 00:00:00".to_string(),
         },
         metrics: create_test_metrics(),
-        file_hashes: std::collections::HashMap::new(),
+        file_hashes: std::collections::BTreeMap::new(),
         cache_timestamp: chrono::Local::now().timestamp() - 400, // 400 seconds ago (> 5 min TTL)
         last_modified: std::time::SystemTime::now(),
     };
@@ -263,7 +263,7 @@ fn test_cache_expiration() {
             scan_timestamp: "2024-01-01 00:00:00".to_string(),
         },
         metrics: create_test_metrics(),
-        file_hashes: std::collections::HashMap::new(),
+        file_hashes: std::collections::BTreeMap::new(),
         cache_timestamp: chrono::Local::now().timestamp() - 100, // 100 seconds ago (< 5 min TTL)
         last_modified: std::time::SystemTime::now(),
     };
@@ -342,10 +342,10 @@ fn test_compressed_structure_format() {
         scan_timestamp: "2024-01-01 00:00:00".to_string(),
     };
 
-    let mut lang_stats = std::collections::HashMap::new();
+    let mut lang_stats = std::collections::BTreeMap::new();
     lang_stats.insert("rs".to_string(), create_test_language_stats());
 
-    let mut importance_scores = std::collections::HashMap::new();
+    let mut importance_scores = std::collections::BTreeMap::new();
     importance_scores.insert("src/main.rs".to_string(), 1.0);
     importance_scores.insert("src/lib.rs".to_string(), 0.9);
 
@@ -358,7 +358,8 @@ fn test_compressed_structure_format() {
 
     assert_eq!(compressed.format_version, 3);
 
-    // Check compressed tree format: "s" is shorthand for src, files are listed with type
+    // Check compressed tree format: "s" is shorthand for src, files are listed with
+    // type
     assert!(
         compressed.tree.contains("s[") || compressed.tree.contains("src["),
         "Tree should contain src directory in compressed format, got: {}",

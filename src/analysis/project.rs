@@ -9,7 +9,7 @@ use anyhow::Result;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -66,7 +66,7 @@ pub fn scan_project_structure(root_path: &str, config: Option<ScanConfig>) -> Re
         anyhow::bail!("Root path is not a directory: {}", root_path);
     }
 
-    // Load ignore patterns
+    // Load ignore patterns (centralized)
     let ignore_patterns = load_ignore_patterns(root)?;
 
     // Scan directory recursively
@@ -144,7 +144,7 @@ pub fn scan_project_with_cache(
 
     // Save to cache if we did a fresh scan
     if !from_cache {
-        let file_hashes = build_file_hashes(&structure)?;
+        let file_hashes = build_file_hashes(&structure)?.into_iter().collect();
         let cache = ProjectCache {
             structure: structure.clone(),
             metrics: metrics.clone(),
@@ -206,8 +206,9 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
 
     // Aggregate results with enhanced complexity tracking
     let mut total_loc = 0;
-    let mut code_by_language: HashMap<String, LanguageStats> = HashMap::new();
-    let mut file_importance_scores = HashMap::new();
+    let mut code_by_language: std::collections::BTreeMap<String, LanguageStats> =
+        std::collections::BTreeMap::new();
+    let mut file_importance_scores = std::collections::BTreeMap::new();
     let mut test_files = 0;
     let mut doc_files = 0;
 
@@ -377,8 +378,9 @@ pub fn calculate_project_metrics(structure: &ProjectStructure) -> Result<Project
     })
 }
 
-/// Build file hashes for cache validation with content hashing for important files
-fn build_file_hashes(structure: &ProjectStructure) -> Result<HashMap<String, FileHash>> {
+/// Build file hashes for cache validation with content hashing for important
+/// files
+fn build_file_hashes(structure: &ProjectStructure) -> Result<std::collections::BTreeMap<String, FileHash>> {
     use std::io::Read;
 
     // Use parallel processing for hashing
@@ -433,192 +435,22 @@ fn build_file_hashes(structure: &ProjectStructure) -> Result<HashMap<String, Fil
     Ok(hashes.into_iter().collect())
 }
 
-/// Load ignore patterns from .gitignore and built-in excludes
+/// Load ignore patterns from .gitignore and built-in excludes (delegates to crate::ignore)
 fn load_ignore_patterns(root: &Path) -> Result<HashSet<String>> {
-    let mut patterns = HashSet::new();
-
-    // Built-in ignore patterns for common build/cache directories
-    let builtin_patterns = [
-        // Build outputs
-        "target/",
-        "build/",
-        "dist/",
-        "out/",
-        "_build/",
-        "bin/",
-        "obj/",
-        "coverage/",
-        ".coverage/",
-        ".next/",
-        ".nuxt/",
-        ".output/",
-        ".vercel/",
-        // Package managers
-        "node_modules/",
-        ".npm/",
-        ".yarn/",
-        ".pnpm/",
-        ".cargo/",
-        "vendor/",
-        // Version control
-        ".git/",
-        ".svn/",
-        ".hg/",
-        ".bzr/",
-        // IDEs and editors
-        ".vscode/",
-        ".idea/",
-        "*.swp",
-        "*.swo",
-        "*~",
-        ".DS_Store",
-        "Thumbs.db",
-        // Temporary files
-        "tmp/",
-        "temp/",
-        ".tmp/",
-        ".temp/",
-        "*.tmp",
-        "*.temp",
-        "*.log",
-        "*.bak",
-        "*.backup",
-        "*.cache",
-        "*.pid",
-        // Note: not filtering *.lock as package-lock.json and Cargo.lock are important
-
-        // Language-specific
-        "__pycache__/",
-        "*.pyc",
-        "*.pyo",
-        ".pytest_cache/",
-        "*.class",
-        ".gradle/",
-        ".maven/",
-        ".nuget/",
-        "packages/",
-        // Compilation artifacts
-        "*.o",
-        "*.obj",
-        "*.pdb",
-        "*.exe",
-        "*.dll",
-        "*.so",
-        "*.dylib",
-        "*.a",
-        "*.lib",
-        "*.rlib",
-        "*.rmeta",
-        "*.wasm",
-        "*.bc",
-        // OS-specific
-        ".Trash/",
-        "$RECYCLE.BIN/",
-    ];
-
-    for pattern in builtin_patterns {
-        patterns.insert(pattern.to_string());
-    }
-
-    // Load .gitignore if exists
-    let gitignore_path = root.join(".gitignore");
-    if gitignore_path.exists() {
-        match fs::read_to_string(&gitignore_path) {
-            Ok(content) => {
-                for line in content.lines() {
-                    let line = line.trim();
-                    if !line.is_empty() && !line.starts_with('#') {
-                        patterns.insert(line.to_string());
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::warn!(error=%e, "Could not read .gitignore");
-            }
-        }
-    }
-
-    Ok(patterns)
+    let p = crate::ignore::Patterns::load(root)?;
+    Ok(p.entries)
 }
 
 /// Check if path should be ignored based on patterns
 fn should_ignore(path: &Path, root: &Path, patterns: &HashSet<String>) -> bool {
     // Get relative path from root
-    let relative_path = match path.strip_prefix(root) {
-        Ok(rel) => rel,
-        Err(_) => return true, // If we can't get relative path, ignore
-    };
-
-    let path_str = relative_path.to_string_lossy().replace('\\', "/");
-    let file_name = path
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_default();
-
-    // Check against all patterns
-    for pattern in patterns {
-        if pattern.ends_with('/') {
-            // Directory pattern
-            let dir_pattern = &pattern[..pattern.len() - 1];
-            if path_str.starts_with(dir_pattern) || path_str.contains(&format!("/{dir_pattern}")) {
-                return true;
-            }
-        } else if pattern.contains('*') {
-            // Glob pattern (simple implementation)
-            if matches_glob_pattern(&file_name, pattern) || matches_glob_pattern(&path_str, pattern) {
-                return true;
-            }
-        } else {
-            // Exact match
-            if path_str == *pattern || file_name == *pattern || path_str.ends_with(&format!("/{pattern}")) {
-                return true;
-            }
-        }
-    }
-
-    false
+    let pat = crate::ignore::Patterns { root: root.to_path_buf(), entries: patterns.clone() };
+    crate::ignore::matches(&pat, root, path)
 }
 
 /// Simple glob pattern matching (supports * wildcard)
-fn matches_glob_pattern(text: &str, pattern: &str) -> bool {
-    if !pattern.contains('*') {
-        return text == pattern;
-    }
-
-    let parts: Vec<&str> = pattern.split('*').collect();
-    if parts.is_empty() {
-        return true;
-    }
-
-    let mut pos = 0;
-    for (i, part) in parts.iter().enumerate() {
-        if part.is_empty() {
-            continue;
-        }
-
-        if i == 0 {
-            // First part must match from start
-            if !text.starts_with(part) {
-                return false;
-            }
-            pos = part.len();
-        } else if i == parts.len() - 1 {
-            // Last part must match to end
-            if !text[pos..].ends_with(part) {
-                return false;
-            }
-        } else {
-            // Middle part must exist somewhere after current position
-            if let Some(found) = text[pos..].find(part) {
-                pos += found + part.len();
-            } else {
-                return false;
-            }
-        }
-    }
-
-    true
-}
+#[allow(dead_code)]
+fn matches_glob_pattern(text: &str, pattern: &str) -> bool { crate::ignore::glob_match(text, pattern) }
 
 /// Recursively scan directory
 #[allow(clippy::too_many_arguments)]
@@ -1091,7 +923,8 @@ pub fn format_project_structure_for_ai_with_metrics(
     output
 }
 
-/// Format project structure as ultra-compact string for AI context (compatibility wrapper)
+/// Format project structure as ultra-compact string for AI context
+/// (compatibility wrapper)
 pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: usize) -> String {
     // For compatibility, calculate metrics on the fly if needed
     let metrics = calculate_project_metrics(structure).ok();
@@ -1104,7 +937,8 @@ pub fn format_project_structure_for_ai(structure: &ProjectStructure, max_chars: 
     // Original compact format continues below for backwards compatibility
     let mut output = String::new();
 
-    // Add summary statistics first so tests don't miss it on very long PROJECT trees
+    // Add summary statistics first so tests don't miss it on very long PROJECT
+    // trees
     if let Some(m) = metrics.as_ref() {
         output.push_str(&format!(
             "STATS: {} files, {} dirs, {} LOC\n",
@@ -1397,5 +1231,3 @@ mod tests {
         assert!(formatted.contains("bin[main.rs]")); // nested structure works
     }
 }
-
-

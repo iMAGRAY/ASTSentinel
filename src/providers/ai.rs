@@ -11,7 +11,8 @@ use crate::{Config, SecurityValidation};
 use crate::{GrokCodeAnalysis, GrokCodeIssue, GrokCodeMetrics, GrokCodeSuggestion};
 use std::collections::HashMap;
 
-// AI-assisted code review structures for enhanced analysis with security constraints
+// AI-assisted code review structures for enhanced analysis with security
+// constraints
 const MAX_REVIEW_TEXT_LENGTH: usize = 2000;
 const MAX_SUGGESTIONS_PER_REVIEW: usize = 20;
 const MAX_ISSUES_PER_REVIEW: usize = 50;
@@ -438,7 +439,8 @@ impl UniversalAIClient {
         // Return raw response from AI instead of parsing into structures
         match self.config.posttool_provider {
             AIProvider::OpenAI => {
-                // For GPT-5 family use Responses API with strict JSON schema; otherwise use Chat Completions
+                // For GPT-5 family use Responses API with strict JSON schema; otherwise use
+                // Chat Completions
                 if self.config.posttool_model.starts_with("gpt-5") {
                     self.analyze_with_gpt5_raw(code, prompt).await
                 } else {
@@ -695,7 +697,9 @@ impl UniversalAIClient {
         let model_name = &self.config.pretool_model;
         let response = self
             .client
-            .post(format!("{base_url}/models/{model_name}:generateContent?key={api_key}"))
+            .post(format!(
+                "{base_url}/models/{model_name}:generateContent?key={api_key}"
+            ))
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -744,7 +748,8 @@ impl UniversalAIClient {
             .await
             .context("Failed to send request to xAI")?;
 
-        self.parse_openai_response(response).await // xAI uses OpenAI-compatible format
+        self.parse_openai_response(response).await // xAI uses OpenAI-compatible
+                                                   // format
     }
 
     /// Get the JSON schema for security validation
@@ -977,7 +982,8 @@ impl UniversalAIClient {
         Ok(analysis)
     }
 
-    /// Analyze with GPT-5 (Responses API) and return raw JSON string (strict JSON via json_schema)
+    /// Analyze with GPT-5 (Responses API) and return raw JSON string (strict
+    /// JSON via json_schema)
     async fn analyze_with_gpt5_raw(&self, code: &str, prompt: &str) -> Result<String> {
         let api_key = self.config.get_api_key_for_provider(&AIProvider::OpenAI);
         let base_url = self.config.get_base_url_for_provider(&AIProvider::OpenAI);
@@ -1025,7 +1031,9 @@ impl UniversalAIClient {
                     if let Some(content) = item.get("content").and_then(|c| c.as_array()) {
                         for c in content {
                             if let Some(t) = c.get("text").and_then(|t| t.as_str()) {
-                                if !collected.is_empty() { collected.push('\n'); }
+                                if !collected.is_empty() {
+                                    collected.push('\n');
+                                }
                                 collected.push_str(t);
                             }
                         }
@@ -1329,11 +1337,17 @@ impl UniversalAIClient {
                 anyhow::bail!("xAI API error: {}", err);
             }
             #[derive(Deserialize)]
-            struct XaiResponse { choices: Vec<XaiChoice> }
+            struct XaiResponse {
+                choices: Vec<XaiChoice>,
+            }
             #[derive(Deserialize)]
-            struct XaiChoice { message: XaiMessage }
+            struct XaiChoice {
+                message: XaiMessage,
+            }
             #[derive(Deserialize)]
-            struct XaiMessage { content: String }
+            struct XaiMessage {
+                content: String,
+            }
             let xai: XaiResponse = resp.json().await.context("Failed to parse xAI response (chat)")?;
             let content = xai
                 .choices
@@ -1368,19 +1382,34 @@ impl UniversalAIClient {
                 let err = resp.text().await.unwrap_or_default();
                 anyhow::bail!("xAI API error (messages): {}", err);
             }
-            // Try two common shapes: {content:[{text:"..."}]} or {choices:[{message:{content:"..."}}]}
+            // Try two common shapes: {content:[{text:"..."}]} or
+            // {choices:[{message:{content:"..."}}]}
             let text = resp.text().await.unwrap_or_default();
             #[derive(Deserialize)]
-            struct ContentText { text: String }
-            #[derive(Deserialize)]
-            struct MsgContent { content: Vec<ContentText> }
-            #[derive(Deserialize)]
-            struct RespA { content: Vec<ContentText> }
-            if let Ok(a) = serde_json::from_str::<RespA>(&text) {
-                if let Some(first) = a.content.first() { return Ok(first.text.clone()); }
+            struct ContentText {
+                text: String,
             }
-            #[derive(Deserialize)] struct Choice { message: MsgContent }
-            #[derive(Deserialize)] struct RespB { choices: Vec<Choice> }
+            #[derive(Deserialize)]
+            struct MsgContent {
+                content: Vec<ContentText>,
+            }
+            #[derive(Deserialize)]
+            struct RespA {
+                content: Vec<ContentText>,
+            }
+            if let Ok(a) = serde_json::from_str::<RespA>(&text) {
+                if let Some(first) = a.content.first() {
+                    return Ok(first.text.clone());
+                }
+            }
+            #[derive(Deserialize)]
+            struct Choice {
+                message: MsgContent,
+            }
+            #[derive(Deserialize)]
+            struct RespB {
+                choices: Vec<Choice>,
+            }
             if let Ok(b) = serde_json::from_str::<RespB>(&text) {
                 if let Some(first) = b.choices.first().and_then(|c| c.message.content.first()) {
                     return Ok(first.text.clone());
@@ -1395,12 +1424,30 @@ impl UniversalAIClient {
         let max = self.config.get_max_output_tokens_for_provider(&AIProvider::XAI);
         let temp = self.config.temperature;
 
-        match xai_chat(&self.client, base_url, api_key, &self.config.posttool_model, system, &user, max, temp).await {
+        match xai_chat(
+            &self.client,
+            base_url,
+            api_key,
+            &self.config.posttool_model,
+            system,
+            &user,
+            max,
+            temp,
+        )
+        .await
+        {
             Ok(s) => Ok(s),
             Err(e1) => {
                 // Fallback to messages endpoint
                 tracing::warn!(error=%e1, "xAI chat/completions failed; trying /v1/messages");
-                xai_messages(&self.client, base_url, api_key, &self.config.posttool_model, &user).await
+                xai_messages(
+                    &self.client,
+                    base_url,
+                    api_key,
+                    &self.config.posttool_model,
+                    &user,
+                )
+                .await
             }
         }
     }
@@ -1694,7 +1741,8 @@ impl UniversalAIClient {
         let model_name = &self.config.posttool_model;
         let response = self
             .client
-            .post(format!("{base_url}/models/{model_name}:generateContent?key={api_key}"
+            .post(format!(
+                "{base_url}/models/{model_name}:generateContent?key={api_key}"
             ))
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -1878,7 +1926,8 @@ impl UniversalAIClient {
     /// Handles mixed JSON responses where schema and data are returned together
     fn extract_text_from_output_array(output: &[serde_json::Value]) -> String {
         for output_item in output.iter() {
-            // Check status first - skip incomplete reasoning entries but accept incomplete content
+            // Check status first - skip incomplete reasoning entries but accept incomplete
+            // content
             if let Some(item_type) = output_item.get("type").and_then(|v| v.as_str()) {
                 if item_type == "reasoning" {
                     // Skip reasoning entries as they don't contain actual content
@@ -1886,7 +1935,8 @@ impl UniversalAIClient {
                 }
             }
 
-            // Check if this is an incomplete message - we'll accept incomplete content for now
+            // Check if this is an incomplete message - we'll accept incomplete content for
+            // now
             if let Some(status) = output_item.get("status").and_then(|v| v.as_str()) {
                 if status == "incomplete" {
                     tracing::warn!("GPT-5 returned incomplete response, extracting partial content");
@@ -2323,8 +2373,3 @@ fn debug_hooks_enabled() -> bool {
         false
     }
 }
-
-
-
-
-

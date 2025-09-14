@@ -59,11 +59,12 @@ pub enum IssueCategory {
     MissingErrorHandling, // -30 points
 
     // Maintainability issues (200 points)
-    HighComplexity,    // -5 points per complexity point over 10
-    DuplicateCode,     // -30 points per duplicate block
-    LongMethod,        // -20 points (>50 lines)
-    TooManyParameters, // -15 points (>5 params)
-    DeepNesting,       // -10 points per level over 4
+    HighComplexity,        // -5 points per complexity point over 10
+    DuplicateCode,         // -30 points per duplicate block
+    LongMethod,            // -20 points (>50 lines)
+    TooManyParameters,     // -15 points (>5 params)
+    DeepNesting,           // -10 points per level over 4
+    RobustnessAntipattern, // Added missing variant
 
     // Performance issues (150 points)
     InefficientAlgorithm, // -40 points (O(n²) or worse)
@@ -159,7 +160,10 @@ impl AstQualityScorer {
                     result.concrete_issues.push(ConcreteIssue {
                         severity: IssueSeverity::Minor,
                         category: IssueCategory::LongLine,
-                        message: format!("Line too long ({count} > 120 chars)", count = line.chars().count()),
+                        message: format!(
+                            "Line too long ({count} > 120 chars)",
+                            count = line.chars().count()
+                        ),
                         file: String::new(),
                         line: idx + 1,
                         column: 1,
@@ -641,7 +645,8 @@ impl RustAstVisitor {
     }
 
     fn scan_block_unreachable(&mut self, block: &syn::Block) {
-        // Default: only return/panic-like terminate execution for the remainder of the block
+        // Default: only return/panic-like terminate execution for the remainder of the
+        // block
         self.scan_block_unreachable_with_flags(block, false);
     }
 
@@ -650,7 +655,8 @@ impl RustAstVisitor {
         let mut after_terminator = false;
         for stmt in &block.stmts {
             if after_terminator {
-                // Skip empty statements (there is no explicit Empty in syn::Stmt; any stmt counts)
+                // Skip empty statements (there is no explicit Empty in syn::Stmt; any stmt
+                // counts)
                 self.push_issue(
                     IssueSeverity::Major,
                     IssueCategory::UnreachableCode,
@@ -815,7 +821,8 @@ impl<'a> Visit<'a> for RustAstVisitor {
     }
 
     fn visit_stmt(&mut self, s: &Stmt) {
-        // Detect macro statements like panic!/todo!/unimplemented! used as a standalone stmt
+        // Detect macro statements like panic!/todo!/unimplemented! used as a standalone
+        // stmt
         if let Stmt::Macro(mac_stmt) = s {
             if let Some(seg) = mac_stmt.mac.path.segments.last() {
                 let ident = seg.ident.to_string();
@@ -1006,10 +1013,11 @@ impl AstRule for ComplexityRule {
         let complexity_threshold = match language {
             SupportedLanguage::Python => 8, // Python should be simpler
             SupportedLanguage::JavaScript | SupportedLanguage::TypeScript => 10,
-            SupportedLanguage::Java | SupportedLanguage::CSharp => 12, // Allow more complexity in strongly-typed languages
-            SupportedLanguage::Go => 8,                                // Go encourages simplicity
+            SupportedLanguage::Java | SupportedLanguage::CSharp => 12, /* Allow more complexity in
+                                                                         * strongly-typed languages */
+            SupportedLanguage::Go => 8, // Go encourages simplicity
             SupportedLanguage::C | SupportedLanguage::Cpp => 15, // System languages may need more complexity
-            _ => 10,                                             // Default threshold
+            _ => 10,                    // Default threshold
         };
 
         'outer: loop {
@@ -1108,7 +1116,8 @@ impl SecurityPatternRule {
             }
         }
 
-        // Check for SQL injection in string content (especially f-strings with interpolation)
+        // Check for SQL injection in string content (especially f-strings with
+        // interpolation)
         if node.kind() == "string_content" {
             if let Ok(text) = node.utf8_text(source.as_bytes()) {
                 if (text.contains("SELECT") && text.contains("WHERE"))
@@ -1287,5 +1296,3 @@ fn calculate_complexity(node: &tree_sitter::Node, source: &str) -> u32 {
 
     complexity
 }
-
-

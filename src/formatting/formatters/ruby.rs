@@ -405,7 +405,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("rubocop formatting failed: {}", e);
-                    // This is acceptable if rubocop has issues with the test environment
+                    // This is acceptable if rubocop has issues with the test
+                    // environment
                 }
             }
         }
@@ -587,4 +588,3 @@ end
         }
     }
 }
-

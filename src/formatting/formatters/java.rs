@@ -193,7 +193,8 @@ mod tests {
         assert!(args.contains(&"-".to_string()));
         assert!(args.contains(&"--skip-sorting-imports".to_string()));
         assert!(args.contains(&"--skip-removing-unused-imports".to_string()));
-        assert!(args.len() > 3); // Should have more arguments for proper Java formatting
+        assert!(args.len() > 3); // Should have more arguments for proper Java
+                                 // formatting
     }
 
     #[cfg(test)]
@@ -224,7 +225,8 @@ mod tests {
                 }
                 Err(e) => {
                     eprintln!("google-java-format formatting failed: {}", e);
-                    // This is acceptable if google-java-format has issues with the test environment
+                    // This is acceptable if google-java-format has issues with
+                    // the test environment
                 }
             }
         }
@@ -383,4 +385,3 @@ public void save(T entity){cache.put(entity.getId(),entity);}
         }
     }
 }
-

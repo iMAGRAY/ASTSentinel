@@ -30,8 +30,9 @@ pub fn calculate_rust_complexity(file_path: &Path) -> Result<ComplexityMetrics> 
     Ok(visitor.metrics)
 }
 
-/// Calculate complexity for JavaScript/TypeScript using Tree-sitter AST analysis
-/// This replaces the old heuristic-based approach with proper AST analysis
+/// Calculate complexity for JavaScript/TypeScript using Tree-sitter AST
+/// analysis This replaces the old heuristic-based approach with proper AST
+/// analysis
 pub fn calculate_js_complexity(content: &str) -> ComplexityMetrics {
     // Input validation to prevent DoS
     if content.is_empty() {
@@ -204,7 +205,8 @@ fn calculate_js_complexity_fallback(content: &str) -> ComplexityMetrics {
 }
 
 /// Helper function to check for keywords with word boundaries (panic-safe)
-/// This ensures we capture the deepest nesting level for code complexity metrics
+/// This ensures we capture the deepest nesting level for code complexity
+/// metrics
 fn contains_keyword(text: &str, keyword: &str) -> bool {
     // Input validation to prevent edge cases
     if text.is_empty() || keyword.is_empty() {

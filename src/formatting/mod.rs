@@ -1,8 +1,9 @@
 pub mod error;
 /// Multi-language code formatting system
 ///
-/// This module provides unified code formatting capabilities for all supported languages
-/// using language-specific formatters like rustfmt, prettier, black, etc.
+/// This module provides unified code formatting capabilities for all supported
+/// languages using language-specific formatters like rustfmt, prettier, black,
+/// etc.
 pub mod formatters;
 
 use crate::analysis::ast::SupportedLanguage;
@@ -225,7 +226,8 @@ impl FormattingService {
 
         // Ensure no existing temp file (cleanup from previous failures)
         if temp_path.exists() {
-            let _ = fs::remove_file(&temp_path); // Ignore errors - file might be locked
+            let _ = fs::remove_file(&temp_path); // Ignore errors - file might
+                                                 // be locked
         }
 
         // Atomic write operation with proper cleanup
@@ -247,7 +249,8 @@ impl FormattingService {
                     {
                         use std::io::ErrorKind;
                         // On Windows, rename fails if destination exists. Best-effort fallback:
-                        // remove destination and rename (not strictly atomic but safer than partial writes).
+                        // remove destination and rename (not strictly atomic but safer than partial
+                        // writes).
                         if matches!(e.kind(), ErrorKind::AlreadyExists | ErrorKind::PermissionDenied) {
                             if file_path.exists() {
                                 let _ = fs::remove_file(file_path);
@@ -447,4 +450,3 @@ mod tests {
         assert_eq!(result.formatted, formatted);
     }
 }
-

@@ -151,3 +151,11 @@ Updates (QA hardening)
 
 
 \n\n2025-09-12: Clippy run - added temporary allows for uninlined_format_args in binaries. Next: replace positional format args with named placeholders and remove allows.
+
+2025-09-13 20:48 +03:00: Regression guard — e2e_userpromptsubmit* зелёные после нормализации заголовков. fmt: OK (reformatted). Clippy strict: FAIL (uninlined_format_args ~20 мест, pretooluse.rs); next: заменить println!("{}", x) → println!("{x}") и format!(".. {} ..", a,b) → format!(".. {a} .. {b}") по проекту.
+
+2025-09-13 20:54 +03:00: Cache semantics: TTL restored for compatibility with tests; hash-check helper retained for future use. All tests green; clippy strict PASS; fmt OK.
+
+2025-09-13 21:06 +03:00 (hardening): cargo feature `cache_hash_guard` added (off); `.gitattributes` to normalize EOL; Windows `scripts/windows/pre-commit.ps1` introduced (fmt+clippy+tests). All tests remain green.
+
+2025-09-13 21:19 +03:00 (ignore centralization): Added `src/ignore` module; `UserPromptSubmit` and `PreToolUse` now consume project-root `.gitignore` deterministically (no global), merge with built-ins and optional config globs. `analysis::project` delegates to the module to keep tests untouched. All tests green.

@@ -401,7 +401,8 @@ impl TomlSection {
 
         // Add sorted key-value pairs
         for kv in key_values {
-            // key/value are simple structures; format explicitly to avoid clippy format issues
+            // key/value are simple structures; format explicitly to avoid clippy format
+            // issues
             result.push(format!("{} = {}", kv.key, kv.value));
         }
 
@@ -538,4 +539,3 @@ mod tests {
         assert!(beta_pos < zebra_pos);
     }
 }
-

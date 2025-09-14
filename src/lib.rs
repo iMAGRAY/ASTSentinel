@@ -9,13 +9,12 @@
         clippy::dbg_macro
     )
 )]
-
 // Allow inline format args (use `{var}`) lint to be fixed incrementally across codebase.
 #![allow(clippy::uninlined_format_args)]
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Common utilities for Claude Code hooks
 /// Safely truncate a UTF-8 string to a maximum number of characters
@@ -33,13 +32,14 @@ pub fn truncate_utf8_safe(s: &str, max_chars: usize) -> String {
     }
 }
 
-/// Sanitize input string by removing potentially malicious zero-width characters
-/// Used to prevent obfuscation attacks in user input
+/// Sanitize input string by removing potentially malicious zero-width
+/// characters Used to prevent obfuscation attacks in user input
 pub fn sanitize_zero_width_chars(input: &str) -> String {
     input.chars().filter(|&c| !is_zero_width_char(c)).collect()
 }
 
-/// Check if character is a zero-width character that could be used for obfuscation
+/// Check if character is a zero-width character that could be used for
+/// obfuscation
 fn is_zero_width_char(c: char) -> bool {
     matches!(
         c,
@@ -81,6 +81,9 @@ pub mod telemetry;
 /// Security helpers (redaction, sanitization)
 pub mod security;
 
+/// Centralized ignore logic (.gitignore + built-ins + config globs)
+pub mod ignore;
+
 // Re-export commonly used types for convenience
 pub use analysis::ast::{ComplexityVisitor, MultiLanguageAnalyzer, SupportedLanguage};
 pub use analysis::{
@@ -94,7 +97,7 @@ pub use providers::{AIProvider, UniversalAIClient};
 #[derive(Debug, Deserialize)]
 pub struct HookInput {
     pub tool_name: String,
-    pub tool_input: HashMap<String, serde_json::Value>,
+    pub tool_input: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub tool_response: Option<serde_json::Value>, // Tool response data (for post-tool hooks)
     #[serde(default)]
@@ -290,7 +293,8 @@ pub struct GrokCodeAnalysis {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GrokCodeIssue {
     pub severity: String, // "info", "minor", "major", "critical", "blocker"
-    pub category: String, // "intent", "correctness", "security", "robustness", "maintainability", "performance", "tests", "lint"
+    pub category: String, /* "intent", "correctness", "security", "robustness", "maintainability",
+                           * "performance", "tests", "lint" */
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
@@ -360,12 +364,13 @@ pub struct Config {
 }
 
 impl Config {
-    /// Attempt to load runtime configuration from a config file (JSON / YAML / TOML).
-    /// If a file is not present or fails to parse, returns None and callers may fallback to env.
+    /// Attempt to load runtime configuration from a config file (JSON / YAML /
+    /// TOML). If a file is not present or fails to parse, returns None and
+    /// callers may fallback to env.
     fn try_from_config_file_internal() -> Option<Self> {
+        use regex::Regex;
         use std::fs;
         use std::path::PathBuf;
-        use regex::Regex;
 
         #[derive(Debug, Default, Deserialize)]
         struct FileCfg {
@@ -399,7 +404,13 @@ impl Config {
 
         fn parse_any(path: &PathBuf) -> Option<FileCfg> {
             let text = fs::read_to_string(path).ok()?;
-            match path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase().as_str() {
+            match path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_ascii_lowercase()
+                .as_str()
+            {
                 "json" => serde_json::from_str::<FileCfg>(&text).ok(),
                 "yml" | "yaml" => serde_yaml::from_str::<FileCfg>(&text).ok(),
                 "toml" => toml::from_str::<FileCfg>(&text).ok(),
@@ -407,9 +418,12 @@ impl Config {
             }
         }
 
-        // Resolution order: explicit env var HOOKS_CONFIG_FILE, then defaults near CWD/exe
+        // Resolution order: explicit env var HOOKS_CONFIG_FILE, then defaults near
+        // CWD/exe
         let mut candidates: Vec<PathBuf> = Vec::new();
-        if let Ok(p) = std::env::var("HOOKS_CONFIG_FILE") { candidates.push(PathBuf::from(p)); }
+        if let Ok(p) = std::env::var("HOOKS_CONFIG_FILE") {
+            candidates.push(PathBuf::from(p));
+        }
         // Common default names
         for name in [
             ".hooks-config.json",
@@ -420,7 +434,9 @@ impl Config {
             "hooks.config.yaml",
             "hooks.config.yml",
             "hooks.config.toml",
-        ] { candidates.push(PathBuf::from(name)); }
+        ] {
+            candidates.push(PathBuf::from(name));
+        }
 
         // Next to executable as well
         if let Ok(exe) = std::env::current_exe() {
@@ -460,10 +476,8 @@ impl Config {
             v.map(expand_env)
         }
 
-        let pretool_provider_str = map_opt(fc.pretool_provider)
-            .unwrap_or_else(|| "xai".to_string());
-        let posttool_provider_str = map_opt(fc.posttool_provider)
-            .unwrap_or_else(|| "xai".to_string());
+        let pretool_provider_str = map_opt(fc.pretool_provider).unwrap_or_else(|| "xai".to_string());
+        let posttool_provider_str = map_opt(fc.posttool_provider).unwrap_or_else(|| "xai".to_string());
 
         let pretool_provider = pretool_provider_str.parse::<providers::AIProvider>().ok()?;
         let posttool_provider = posttool_provider_str.parse::<providers::AIProvider>().ok()?;
@@ -473,18 +487,14 @@ impl Config {
             anthropic_api_key: map_opt(fc.anthropic_api_key).unwrap_or_default(),
             google_api_key: map_opt(fc.google_api_key).unwrap_or_default(),
             xai_api_key: map_opt(fc.xai_api_key).unwrap_or_default(),
-            openai_base_url: map_opt(fc
-                .openai_base_url
-                ).unwrap_or_else(|| providers::AIProvider::OpenAI.default_base_url().to_string()),
-            anthropic_base_url: map_opt(fc
-                .anthropic_base_url
-                ).unwrap_or_else(|| providers::AIProvider::Anthropic.default_base_url().to_string()),
-            google_base_url: map_opt(fc
-                .google_base_url
-                ).unwrap_or_else(|| providers::AIProvider::Google.default_base_url().to_string()),
-            xai_base_url: map_opt(fc
-                .xai_base_url
-                ).unwrap_or_else(|| providers::AIProvider::XAI.default_base_url().to_string()),
+            openai_base_url: map_opt(fc.openai_base_url)
+                .unwrap_or_else(|| providers::AIProvider::OpenAI.default_base_url().to_string()),
+            anthropic_base_url: map_opt(fc.anthropic_base_url)
+                .unwrap_or_else(|| providers::AIProvider::Anthropic.default_base_url().to_string()),
+            google_base_url: map_opt(fc.google_base_url)
+                .unwrap_or_else(|| providers::AIProvider::Google.default_base_url().to_string()),
+            xai_base_url: map_opt(fc.xai_base_url)
+                .unwrap_or_else(|| providers::AIProvider::XAI.default_base_url().to_string()),
             pretool_provider,
             posttool_provider,
             pretool_model: map_opt(fc.pretool_model).unwrap_or_else(|| "grok-code-fast-1".to_string()),
@@ -494,40 +504,34 @@ impl Config {
             max_issues: fc.max_issues.unwrap_or(10).clamp(1, 50),
             request_timeout_secs: fc.request_timeout_secs.unwrap_or(60).clamp(10, 600),
             connect_timeout_secs: fc.connect_timeout_secs.unwrap_or(30).clamp(5, 120),
-            gpt5_max_output_tokens: fc
-                .gpt5_max_output_tokens
-                .unwrap_or(12000)
-                .clamp(1000, 128_000),
-            claude_max_output_tokens: fc
-                .claude_max_output_tokens
-                .unwrap_or(4000)
-                .clamp(1000, 8000),
-            gemini_max_output_tokens: fc
-                .gemini_max_output_tokens
-                .unwrap_or(8000)
-                .clamp(1000, 32_000),
-            grok_max_output_tokens: fc
-                .grok_max_output_tokens
-                .unwrap_or(8000)
-                .clamp(1000, 8000),
+            gpt5_max_output_tokens: fc.gpt5_max_output_tokens.unwrap_or(12000).clamp(1000, 128_000),
+            claude_max_output_tokens: fc.claude_max_output_tokens.unwrap_or(4000).clamp(1000, 8000),
+            gemini_max_output_tokens: fc.gemini_max_output_tokens.unwrap_or(8000).clamp(1000, 32_000),
+            grok_max_output_tokens: fc.grok_max_output_tokens.unwrap_or(8000).clamp(1000, 8000),
         };
 
-        // Validate basics (do not require keys here; PreToolUse may require them separately)
+        // Validate basics (do not require keys here; PreToolUse may require them
+        // separately)
         if let Err(e) = cfg.validate() {
             tracing::warn!(error=%e, "Runtime file config validation failed");
         }
         Some(cfg)
     }
 
-    /// Preferred loader: try configuration file (JSON/YAML/TOML). If not present, fall back to env/.env.
+    /// Preferred loader: try configuration file (JSON/YAML/TOML). If not
+    /// present, fall back to env/.env.
     pub fn from_file_or_env() -> Result<Self> {
-        if let Some(cfg) = Self::try_from_config_file_internal() { return Ok(cfg); }
+        if let Some(cfg) = Self::try_from_config_file_internal() {
+            return Ok(cfg);
+        }
         Self::from_env()
     }
 
     /// Preferred loader (graceful): try config file, else graceful env loader.
     pub fn from_file_or_env_graceful() -> Result<Self> {
-        if let Some(cfg) = Self::try_from_config_file_internal() { return Ok(cfg); }
+        if let Some(cfg) = Self::try_from_config_file_internal() {
+            return Ok(cfg);
+        }
         Self::from_env_graceful()
     }
     /// Create a new validated Config instance
@@ -668,7 +672,8 @@ impl Config {
                     tracing::debug!(".env file not found");
                 }
 
-                // Additionally check for .env.local to override settings only in debug/test builds
+                // Additionally check for .env.local to override settings only in debug/test
+                // builds
                 #[cfg(any(debug_assertions, test))]
                 {
                     let env_local = exe_dir.join(".env.local");
@@ -954,7 +959,7 @@ pub fn should_validate_file(file_path: &str) -> bool {
 /// Extract content from tool input based on tool type
 pub fn extract_content_from_tool_input(
     tool_name: &str,
-    tool_input: &HashMap<String, serde_json::Value>,
+    tool_input: &BTreeMap<String, serde_json::Value>,
 ) -> String {
     match tool_name {
         "Write" => tool_input
@@ -983,7 +988,7 @@ pub fn extract_content_from_tool_input(
 }
 
 /// Get file path from tool input
-pub fn extract_file_path(tool_input: &HashMap<String, serde_json::Value>) -> String {
+pub fn extract_file_path(tool_input: &BTreeMap<String, serde_json::Value>) -> String {
     tool_input
         .get("file_path")
         .and_then(|v| v.as_str())

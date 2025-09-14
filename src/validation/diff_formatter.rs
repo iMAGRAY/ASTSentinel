@@ -236,8 +236,9 @@ pub fn format_edit_as_unified_diff(
 
     // Try to find context in the actual file content
     if let Some(content) = file_content {
-        // Since posttooluse runs AFTER edit, new_string should be in the modified content
-        // We need to find where the change occurred by looking for lines that match new_string
+        // Since posttooluse runs AFTER edit, new_string should be in the modified
+        // content We need to find where the change occurred by looking for
+        // lines that match new_string
 
         let content_lines: Vec<&str> = content.lines().collect();
         let new_lines: Vec<&str> = new_string.lines().collect();
@@ -257,7 +258,8 @@ pub fn format_edit_as_unified_diff(
             let new_start = start_line + 1;
             let new_count = end_line - start_line;
 
-            result.push_str(&format!("@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
+            result.push_str(&format!(
+                "@@ -{old_start},{old_count} +{new_start},{new_count} @@\n"
             ));
 
             // Show context before change

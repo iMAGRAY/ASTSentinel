@@ -9,4 +9,3 @@ fn redact_detects_and_masks_common_secrets() {
     assert!(!out.contains("abcdefghijklmnop"));
     assert!(out.contains("<REDACTED"));
 }
-

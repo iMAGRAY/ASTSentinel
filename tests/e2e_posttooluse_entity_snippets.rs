@@ -8,7 +8,8 @@ fn e2e_posttooluse_entity_snippets_python() {
     let file_path = dir.join("calc.py");
 
     let old_code = "def add(a,b):\n    return a+b\n";
-    // Изменение в теле функции с добавлением хардкода секрета — попадёт в AST issues
+    // Изменение в теле функции с добавлением хардкода секрета — попадёт в AST
+    // issues
     let new_code = "def add(a,b):\n    password = 'secret'\n    return a + b\n";
     // PostToolUse выполняется после применения изменения — записываем новую версию
     std::fs::write(&file_path, new_code).expect("write new code");

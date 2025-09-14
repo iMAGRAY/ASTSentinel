@@ -97,7 +97,8 @@ fn ts_too_many_parameters_typed() {
 
 #[test]
 fn ts_arrow_destructured_and_rest_params_too_many() {
-    // Arrow function with multiple params (6+): two destructured + identifiers + rest
+    // Arrow function with multiple params (6+): two destructured + identifiers +
+    // rest
     let code = r#"const f = ({a,b},{c,d},{e,f}, g, h, ...rest) => { return 1 }"#;
     let s = AstQualityScorer::new();
     let res = s.analyze(code, SupportedLanguage::TypeScript).unwrap();
@@ -221,7 +222,8 @@ func f(){ password := "p@ss"; query := "SELECT * FROM users WHERE id=1" }"#;
 
 #[test]
 fn go_switch_good_code() {
-    // Good switch with returns inside cases — should not trigger unreachable on case boundaries
+    // Good switch with returns inside cases — should not trigger unreachable on
+    // case boundaries
     let code = r#"package main
 func pick(x int) string {
   switch x {

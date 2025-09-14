@@ -184,4 +184,3 @@ mod tests {
         assert_eq!(formatter.language(), SupportedLanguage::Json);
     }
 }
-
